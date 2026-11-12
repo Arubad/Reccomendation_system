@@ -47,7 +47,10 @@ def test_primary_artist_and_pop(synth):
     first = am.group_by("item_id").agg(pl.col("artist_id").min())
     idx = vocab.encode(first["item_id"].to_numpy())
     a = first["artist_id"].to_numpy()
-    known = idx > 0  # a rare item without audio can fall below min_count and stay out of the vocab
+    known = idx > 0  # items absent from the catalog (no events, no embedding) stay out of the vocab
+    gone = first["item_id"].to_numpy()[~known]
+    assert not synth["multi_event"]["item_id"].is_in(gone).any()
+    assert not emb["item_id"].is_in(gone).any()
     idx, a = idx[known], a[known]
     same_idx = f.artist_idx[idx][:, None] == f.artist_idx[idx][None, :]
     assert np.array_equal(same_idx, a[:, None] == a[None, :])

@@ -32,3 +32,11 @@ def test_save_run_serialises_numpy_path_nan_and_int_keys(tmp_path):
     assert d["config"] == {"dir": "/x/y", "lr": 0.5}
     assert d["metrics"] == {"ndcg@10": None, "inf": None, "by_uid": {"3": 0.25}}
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_two_saves_same_second_are_distinct_and_no_tmp_left(tmp_path):
+    a = save_run(tmp_path, "r", {}, {"x": 1.0})
+    b = save_run(tmp_path, "r", {}, {"x": 2.0})
+    assert a != b and a.exists() and b.exists()
+    assert json.loads(a.read_text())["metrics"] == {"x": 1.0}
+    assert not list(tmp_path.glob("*.tmp"))

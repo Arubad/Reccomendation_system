@@ -12,7 +12,11 @@ The split is anchored at the LAST timestamp, not the first:
   val_train = ts < t_val_start - gap  (the official "train" when val_size != 0).
 The gap is carved from the train side; the test day is a full day. The official code does not
 bound train from below (train = [0, ...)), so `train_days` is only validated (>= 2) and does not
-cut the start of history. All boundaries are ints in timestamp units.
+cut the start of history. All boundaries are ints in timestamp units. Raw Yambda timestamps are seconds (on a 5-s grid),
+so the defaults are `ts_unit_seconds=1`, day = 86400, gap = 1800.
+
+`test_timestamp` pins the test start explicitly (official `YAMBDA_TEST_TIMESTAMP`); when None it is
+`max(ts) - test_days * day`. `train_days` is validated only, kept for interface compatibility.
 """
 
 from __future__ import annotations
@@ -20,6 +24,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import polars as pl
+
+# constants.py:9-10 in yandex/yambda: TEST_TIMESTAMP = LAST_TIMESTAMP (26_000_000) - TEST_SIZE (1 day)
+YAMBDA_TEST_TIMESTAMP = 26_000_000 - 86_400
 
 
 @dataclass
@@ -31,8 +38,8 @@ class Split:
     t_train_end: int
     t_test_start: int
     t_test_end: int
-    day_units: int = 86400 // 5  # one day in ts units; sets the val window
-    gap_units: int = 1800 // 5  # gap in ts units (test_start - train_end)
+    day_units: int = 86400  # one day in ts units (seconds); sets the val window
+    gap_units: int = 1800  # gap in ts units (test_start - train_end)
 
     @property
     def t_val_start(self) -> int:
@@ -48,7 +55,8 @@ def global_temporal_split(
     train_days: int = 300,
     gap_seconds: int = 1800,
     test_days: int = 1,
-    ts_unit_seconds: int = 5,
+    ts_unit_seconds: int = 1,
+    test_timestamp: int | None = None,
 ) -> Split:
     if train_days < 2:
         raise ValueError(f"train_days must be >= 2 (need a validation day), got {train_days}")
@@ -58,8 +66,11 @@ def global_temporal_split(
     t_last = int(t_last)
     day = 86400 // ts_unit_seconds
     gap = gap_seconds // ts_unit_seconds
-    t_test_start = t_last - test_days * day
-    t_test_end = t_last + 1
+    if test_timestamp is None:
+        t_test_start = t_last - test_days * day
+    else:
+        t_test_start = int(test_timestamp)
+    t_test_end = max(t_last, t_test_start) + 1
     t_train_end = t_test_start - gap
     t_val_start = t_train_end - day
     t_val_train_end = t_val_start - gap

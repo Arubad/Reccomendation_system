@@ -1,10 +1,10 @@
 """Small structured synthetic Yambda-like data for tests.
 
-Layout follows the official Yambda split (anchored at the last timestamp, DAY = 17280 units):
+Layout follows the official Yambda split (anchored at the last timestamp, DAY = 86400 seconds):
   t_last      BASE_TS + n_days*DAY - 1 (the last event; nothing exists after it)
   test        [t_last - DAY, t_last]
   gap         the 30 minutes before the test day (no events)
-  train       [BASE_TS, t_last - DAY - 30min), >= 300 days with the default n_days=301
+  train       [BASE_TS, t_last - DAY - 30min), >= 300 days with the default n_days=302
 Users prefer 1-2 artist clusters; audio embeddings are artist centroid + noise.
 Special users (ids): 0-2 have events only in the test window, 3-5 only skip in the test window,
 6 only ever skips, 7+ are regular. The last N_NEW items first appear inside the test window.
@@ -16,8 +16,8 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-DAY = 86400 // 5
-GAP = 30 * 60 // 5
+DAY = 86400  # timestamps are seconds
+GAP = 30 * 60
 N_NEW = 8
 BASE_TS = 100_000
 N_SPECIAL = 7  # users 0..6 have scripted roles; regular users start here
@@ -32,13 +32,13 @@ def _sample_items(rng, artists: np.ndarray, n_pool: int, n_artists: int) -> np.n
 def make_synthetic_yambda(
     n_users: int = 50,
     n_items: int = 200,
-    n_days: int = 301,
+    n_days: int = 302,
     n_artists: int = 20,
     emb_dim: int = 16,
     missing_audio_frac: float = 0.1,
     seed: int = 0,
 ) -> dict[str, pl.DataFrame]:
-    assert n_users > N_SPECIAL + 2 and n_days >= 301 and n_items > 4 * N_NEW
+    assert n_users > N_SPECIAL + 2 and n_days >= 302 and n_items > 4 * N_NEW
     rng = np.random.default_rng(seed)
     t_last = BASE_TS + n_days * DAY - 1
     w_start = t_last - DAY  # test window start (inclusive)

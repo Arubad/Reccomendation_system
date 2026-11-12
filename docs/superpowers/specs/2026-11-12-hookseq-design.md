@@ -60,7 +60,7 @@
 | Headline results (Kaggle) | `flat/500m/multi_event.parquet` (or `sequential/500m`) | ~480M events, 100K users |
 | Item side info | `embeddings.parquet`, `artist_item_mapping`, `album_item_mapping` | root of repo |
 
-**Schema (multi_event):** `uid`, `item_id`, `timestamp` (uint32, 5-second bins), `is_organic` (uint8), `event_type` (listen/like/dislike/unlike/undislike), `played_ratio_pct`, `track_length_seconds` (null for non-listens).
+**Schema (multi_event):** `uid`, `item_id`, `timestamp` (uint32, seconds on a 5-s grid; see official `constants.py`, LAST_TIMESTAMP = 26,000,000), `is_organic` (uint8), `event_type` (listen/like/dislike/unlike/undislike), `played_ratio_pct`, `track_length_seconds` (null for non-listens).
 **Embeddings:** `item_id`, `embed`, `normalized_embed` (CNN audio embeddings; not every track has one).
 
 **Download** goes through `huggingface_hub` / `datasets` into a configurable `DATA_DIR` (Kaggle: `/kaggle/working/data` or an attached Kaggle Dataset cache).

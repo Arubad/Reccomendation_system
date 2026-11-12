@@ -6,8 +6,8 @@ import pytest
 from hookrec.data.clean import clean_events
 from hookrec.data.split import Split, assert_no_leakage, global_temporal_split
 
-DAY = 86400 // 5
-GAP = 1800 // 5
+DAY = 86400
+GAP = 1800
 
 
 @pytest.fixture(scope="module")
@@ -31,7 +31,7 @@ def test_split_boundaries(parts):
     assert te_lo >= s.t_test_start and te_hi == t_last
     tr_lo, tr_hi = _rng(s.train)
     assert tr_hi < s.t_train_end
-    assert s.t_train_end - tr_lo >= 299 * DAY  # train keeps the earliest history
+    assert s.t_train_end - tr_lo >= 300 * DAY  # train keeps the earliest history
     assert s.test.collect().height > 0
     v_lo, v_hi = _rng(s.val)
     assert v_lo >= s.t_train_end - DAY and v_hi < s.t_train_end
@@ -96,3 +96,16 @@ def test_split_input_validation(synth):
         global_temporal_split(lf.head(0))
     with pytest.raises(ValueError, match="train_days"):
         global_temporal_split(lf, train_days=1)
+
+
+def test_explicit_test_timestamp_anchor():
+    from hookrec.data.split import YAMBDA_TEST_TIMESTAMP
+
+    assert YAMBDA_TEST_TIMESTAMP == 26_000_000 - 86_400
+    lf = pl.DataFrame({"timestamp": [10, 500_000, 25_000_000, 25_999_970]}).lazy()
+    s = global_temporal_split(lf, test_timestamp=YAMBDA_TEST_TIMESTAMP)
+    assert s.t_test_start == YAMBDA_TEST_TIMESTAMP
+    assert s.t_train_end == YAMBDA_TEST_TIMESTAMP - GAP
+    assert s.test.collect()["timestamp"].to_list() == [25_999_970]
+    assert s.train.collect()["timestamp"].to_list() == [10, 500_000, 25_000_000]
+    assert_no_leakage(s)

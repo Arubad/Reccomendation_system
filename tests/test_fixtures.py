@@ -1,7 +1,7 @@
 import polars as pl
 
-DAY = 86400 // 5  # one day in 5-second timestamp units
-GAP = 30 * 60 // 5
+DAY = 86400  # timestamps are seconds
+GAP = 30 * 60
 
 
 def _window(me):
@@ -35,7 +35,7 @@ def test_schema(synth):
     missing = 1 - emb["item_id"].n_unique() / n_items
     assert 0.05 <= missing <= 0.15
 
-    assert me["timestamp"].max() - me["timestamp"].min() >= 301 * DAY - 1
+    assert me["timestamp"].max() - me["timestamp"].min() >= 302 * DAY - 1
 
 
 def test_no_events_after_test_day_and_train_before_gap(synth):
@@ -43,7 +43,7 @@ def test_no_events_after_test_day_and_train_before_gap(synth):
     t0, w_start, w_end = _window(me)
     assert w_end - 1 == me["timestamp"].max()
     before = me.filter(pl.col("timestamp") < w_start)["timestamp"]
-    assert before.max() < w_start - GAP and w_start - GAP - t0 >= 299 * DAY
+    assert before.max() < w_start - GAP and w_start - GAP - t0 >= 300 * DAY
 
 
 def test_test_window_structure(synth):

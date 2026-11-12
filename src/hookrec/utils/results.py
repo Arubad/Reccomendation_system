@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,13 +32,32 @@ def save_run(
     text = json.dumps(_clean(record), indent=2, allow_nan=False)
     stem = f"{run_name}-{now.strftime('%Y%m%d-%H%M%S')}"
     path = out_dir / f"{stem}.json"
-    n = 0
-    while path.exists():
-        n += 1
-        path = out_dir / f"{stem}-{n}.json"
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text)
-    os.replace(tmp, path)
+    with tempfile.NamedTemporaryFile("w", dir=out_dir, delete=False, suffix=".tmp") as fd:
+        tmp = Path(fd.name)
+        try:
+            fd.write(text)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
+    try:
+        n = 0
+        while True:
+            try:
+                os.link(tmp, path)  # publish without overwriting
+                break
+            except FileExistsError:
+                n += 1
+                path = out_dir / f"{stem}-{n}.json"
+            except OSError:  # hard links unsupported: exclusive create + write
+                try:
+                    with open(path, "x") as f:
+                        f.write(text)
+                    break
+                except FileExistsError:
+                    n += 1
+                    path = out_dir / f"{stem}-{n}.json"
+    finally:
+        tmp.unlink(missing_ok=True)
     return path
 
 

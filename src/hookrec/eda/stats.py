@@ -1,7 +1,7 @@
 """EDA statistics on a cleaned Yambda events LazyFrame (sorted by uid, timestamp).
 
 All aggregations are Polars group_bys; nothing loops over events in Python.
-Timestamps are in 5-second units.
+Timestamps are in seconds (on a 5-s grid).
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import Literal
 import numpy as np
 import polars as pl
 
-TS_UNIT_SECONDS = 5
+TS_UNIT_SECONDS = 1  # raw Yambda timestamps are seconds (official constants.py)
 DAY_UNITS = 86400 // TS_UNIT_SECONDS
 DEFAULT_SESSION_GAP_SECONDS = 1800.0
 
