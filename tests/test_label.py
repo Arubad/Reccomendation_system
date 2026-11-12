@@ -37,3 +37,15 @@ def test_ratio_buckets():
 def test_custom_threshold():
     df = _lab([("listen", 70)], full_threshold=80)
     assert df["token"].to_list() == [LISTEN_SKIP]
+
+
+def test_null_ratio_listen_is_skip_bucket_1():
+    df = _lab([("listen", None)])
+    assert df["token"].to_list() == [LISTEN_SKIP]
+    assert df["ratio_bucket"].to_list() == [1]
+    assert df["is_positive"].to_list() == [False]
+
+
+def test_unknown_event_type_not_positive():
+    df = _lab([("unlike", None)])
+    assert df["is_positive"].to_list() == [False]

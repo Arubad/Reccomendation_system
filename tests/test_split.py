@@ -4,7 +4,7 @@ import polars as pl
 import pytest
 
 from hookrec.data.clean import clean_events
-from hookrec.data.split import assert_no_leakage, global_temporal_split
+from hookrec.data.split import Split, assert_no_leakage, global_temporal_split
 
 DAY = 86400 // 5
 GAP = 1800 // 5
@@ -55,3 +55,27 @@ def test_assert_no_leakage_raises(parts):
     # val_train overlapping the val window
     with pytest.raises(ValueError):
         assert_no_leakage(replace(s, val_train=s.train))
+
+
+def test_split_seven_field_construction(parts):
+    _, s = parts
+    s7 = Split(s.train, s.val_train, s.val, s.test, s.t_train_end, s.t_test_start, s.t_test_end)
+    assert s7.t_val_train_end == s.t_val_train_end and s7.t_val_start == s.t_val_start
+    assert_no_leakage(s7)
+
+
+def test_assert_no_leakage_val_branches(parts):
+    _, s = parts
+    with pytest.raises(ValueError, match="val events"):
+        assert_no_leakage(replace(s, val=s.train))
+    # val_train must stay before the val window (gap enforced by derived bounds)
+    with pytest.raises(ValueError, match="val_train"):
+        assert_no_leakage(replace(s, val_train=s.train))
+
+
+def test_split_input_validation(synth):
+    lf = synth["multi_event"].lazy()
+    with pytest.raises(ValueError, match="empty"):
+        global_temporal_split(lf.head(0))
+    with pytest.raises(ValueError, match="train_days"):
+        global_temporal_split(lf, train_days=1)

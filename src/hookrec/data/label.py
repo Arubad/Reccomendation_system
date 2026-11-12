@@ -20,7 +20,7 @@ def label_events(lf: pl.LazyFrame, full_threshold: int = 50) -> pl.LazyFrame:
     Positive = LISTEN_FULL or LIKE.
     """
     et = pl.col("event_type").cast(pl.String)
-    ratio = pl.col("played_ratio_pct").cast(pl.Int32)
+    ratio = pl.col("played_ratio_pct").cast(pl.Int32).fill_null(0)  # null listen = skip
     is_listen = et == "listen"
     token = (
         pl.when(is_listen & (ratio >= full_threshold))
@@ -43,5 +43,5 @@ def label_events(lf: pl.LazyFrame, full_threshold: int = 50) -> pl.LazyFrame:
     return lf.with_columns(
         token.alias("token"),
         bucket.alias("ratio_bucket"),
-        ((token == LISTEN_FULL) | (token == LIKE)).alias("is_positive"),
+        ((token == LISTEN_FULL) | (token == LIKE)).fill_null(False).alias("is_positive"),
     )

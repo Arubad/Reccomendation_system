@@ -24,8 +24,15 @@ class Split:
     t_train_end: int
     t_test_start: int
     t_test_end: int
-    t_val_start: int
-    t_val_train_end: int
+    day_units: int = 86400 // 5  # one day in ts units; sets the val window
+
+    @property
+    def t_val_train_end(self) -> int:
+        return self.t_train_end - self.day_units
+
+    @property
+    def t_val_start(self) -> int:
+        return self.t_val_train_end + (self.t_test_start - self.t_train_end)
 
 
 def global_temporal_split(
@@ -35,7 +42,12 @@ def global_temporal_split(
     test_days: int = 1,
     ts_unit_seconds: int = 5,
 ) -> Split:
-    t0 = int(lf.select(pl.col("timestamp").min()).collect().item())
+    if train_days < 2:
+        raise ValueError(f"train_days must be >= 2 (need a validation day), got {train_days}")
+    t0 = lf.select(pl.col("timestamp").min()).collect().item()
+    if t0 is None:
+        raise ValueError("cannot split an empty event table")
+    t0 = int(t0)
     day = 86400 // ts_unit_seconds
     gap = gap_seconds // ts_unit_seconds
     t_train_end = t0 + train_days * day
@@ -53,8 +65,7 @@ def global_temporal_split(
         t_train_end=t_train_end,
         t_test_start=t_test_start,
         t_test_end=t_test_end,
-        t_val_start=t_val_start,
-        t_val_train_end=t_val_train_end,
+        day_units=day,
     )
 
 
@@ -66,14 +77,11 @@ def _bounds(lf: pl.LazyFrame) -> tuple[int | None, int | None]:
 def assert_no_leakage(split: Split) -> None:
     """Raise ValueError if the split's parts overlap or leave their windows."""
     s = split
-    gap = s.t_test_start - s.t_train_end
     errs = []
     if not s.t_train_end <= s.t_test_start < s.t_test_end:
         errs.append("train must end before the test window")
     if not s.t_val_start < s.t_train_end:
         errs.append("val window must be inside train")
-    if s.t_val_train_end + gap > s.t_val_start:
-        errs.append("val_train end + gap must be <= val start")
 
     _, tr_hi = _bounds(s.train)
     if tr_hi is not None and tr_hi >= min(s.t_train_end, s.t_test_start):
