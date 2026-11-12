@@ -18,10 +18,10 @@ import time
 from pathlib import Path
 
 from hookrec.data.processed import ProcessedData, load_processed
-from hookrec.eval.protocol import evaluate
 from hookrec.models import REGISTRY, fit_recommender
+from hookrec.models.base import evaluate_split
 from hookrec.utils.config import load_config
-from hookrec.utils.results import load_runs, save_run
+from hookrec.utils.results import best_run, save_run
 
 log = logging.getLogger("run_baselines")
 
@@ -39,27 +39,12 @@ def grid_points(block: dict, quick: bool) -> list[dict]:
     return [{**fixed, **dict(zip(names, vals))} for vals in itertools.product(*value_lists)]
 
 
-def _evaluate_split(model, data: ProcessedData, split: str) -> dict:
-    """Metrics on the warm truth plus the cold-user slice (served by the model's fallback)."""
-    n = data.vocab.n_items
-    warm_truth = data.truth_val if split == "val" else data.truth_test
-    cold_truth = data.truth_val_cold if split == "val" else data.truth_test_cold
-    warm = evaluate(model, warm_truth, n)
-    cold = evaluate(model, cold_truth, n).metrics if cold_truth else {}
-    return {
-        "metrics": warm.metrics,
-        "metrics_cold": cold,
-        "n_eval_users": len(warm.uids),
-        "n_cold_users": len(cold_truth),
-    }
-
-
 def _run_one(
     name: str, cfg: dict, data: ProcessedData, split: str, out: Path, quick: bool = False
 ) -> dict:
     t0 = time.perf_counter()
     model = fit_recommender(name, data, cfg, split)
-    res = _evaluate_split(model, data, split)
+    res = evaluate_split(model, data, split)
     extra = {
         "split": split,
         "quick": quick,
@@ -84,19 +69,16 @@ def _run_one(
 
 
 def _best_val_cfg(out: Path, name: str, processed_dir: str, quick: bool = False) -> dict:
-    runs = [
-        r
-        for r in load_runs(out)
-        if r["run_name"] == f"{name}-val"
-        and r["extra"].get("processed_dir") == processed_dir
-        and (quick or not r["extra"].get("quick"))  # quick runs only count for a quick test run
-    ]
-    if not runs:
+    # quick runs only count for a quick test run
+    best = best_run(
+        out, f"{name}-val", processed_dir, lambda r: quick or not r["extra"].get("quick")
+    )
+    if best is None:
         raise SystemExit(
             f"no '{name}-val' run for processed dir '{processed_dir}' in {out}; "
             "run with --split val first"
         )
-    return max(runs, key=lambda r: r["metrics"].get("ndcg@10") or float("-inf"))["config"]
+    return best["config"]
 
 
 def _table(rows: list[dict], grids: dict[str, dict]) -> str:

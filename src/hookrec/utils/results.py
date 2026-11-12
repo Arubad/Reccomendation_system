@@ -6,6 +6,7 @@ import json
 import math
 import os
 import tempfile
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -83,3 +84,26 @@ def load_runs(dir) -> list[dict]:
         return []
     runs = [json.loads(p.read_text()) for p in sorted(d.glob("*.json"))]
     return sorted(runs, key=lambda r: r["timestamp"])
+
+
+def best_run(
+    dir,
+    run_name: str,
+    processed_dir: str,
+    where: Callable[[dict], bool] | None = None,
+    metric: str = "ndcg@10",
+) -> dict | None:
+    """The `run_name` record for `processed_dir` with the highest `metric` (None if none match).
+
+    `where` filters further; missing/null metrics rank last.
+    """
+    runs = [
+        r
+        for r in load_runs(dir)
+        if r["run_name"] == run_name
+        and r["extra"].get("processed_dir") == processed_dir
+        and (where is None or where(r))
+    ]
+    if not runs:
+        return None
+    return max(runs, key=lambda r: r["metrics"].get(metric) or float("-inf"))

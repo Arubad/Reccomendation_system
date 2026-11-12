@@ -1,0 +1,24 @@
+model: {name: sasrec, d_model: 64, n_layers: 2, n_heads: 2, max_len: 200, dropout: 0.2}
+train:
+  batch_size: 256
+  lr: 1.0e-3
+  weight_decay: 0.01
+  warmup_steps: 1000
+  max_steps: 200000
+  eval_every_steps: 2000
+  patience: 5
+  ckpt_every_steps: 2000
+  max_grad_norm: 1.0
+  max_hours: 8.0
+  num_workers: 4
+  seed: 42
+  log_every_steps: 100
+  eval_max_users: null  # subsample of val users for the periodic eval; the final eval uses all
+loss:
+  n_uniform_negatives: 8192
+  n_in_batch_negatives: 4096
+  logq: false
+  mix_uniform: 0.0
+  temperature: 1.0
+  dislike_hard_negatives: false
+  n_hard: 4
