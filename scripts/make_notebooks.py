@@ -4,7 +4,7 @@ python scripts/make_notebooks.py [--out notebooks/kaggle] [--repo-url URL] [--gi
 
 Each notebook is import-and-run: attach inputs, then Save Version -> Save & Run All. Code cells:
   1. parameters (defaults work unedited) + HOOKREC_SESSION_START
-  2. clone the repo (optional GITHUB_TOKEN secret) + pip install -e
+  2. clone the repo (public repo; optional GITHUB_TOKEN secret only for a private fork) + pip install -e
   3. environment report + input discovery by marker files under /kaggle/input
   4. the stage's script(s) via `run_logged` (streams output, raises on failure)
   5. disk check + output summary
@@ -18,8 +18,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_REPO_URL = "https://github.com/Arubad/hookseq.git"
-DEFAULT_GIT_REF = "main"
+DEFAULT_REPO_URL = "https://github.com/Arubad/Reccomendation_system.git"
+DEFAULT_GIT_REF = "hookseq-impl"
 POLARS_FLOOR = "2.1"  # = pyproject's `polars>=` floor (tests/test_notebooks.py checks they agree)
 
 CPU = {"accelerator": "none", "isGpuEnabled": False}
@@ -34,8 +34,8 @@ def _py(v) -> str:
 
 def params_cell(repo_url: str, git_ref: str, extra: list[tuple[str, object, str]]) -> str:
     rows = [
-        ("REPO_URL", repo_url, "the HookSeq repo (private: add a GITHUB_TOKEN secret)"),
-        ("GIT_REF", git_ref, "branch or tag to run (pin a tag for reproducible runs)"),
+        ("REPO_URL", repo_url, "the HookSeq repo (public: no token needed; GITHUB_TOKEN only for a private fork)"),
+        ("GIT_REF", git_ref, "branch or tag to run (hookseq-impl until merged, then main; pin a tag for reproducible runs)"),
         ("SIZE", "50m", "Yambda size: '50m' or '500m'"),
         *extra,
     ]
@@ -92,6 +92,7 @@ def _stream(cmd, timeout):
             print(line, end="", flush=True)
     finally:
         timer.cancel()
+        p.stdout.close()
     code = p.wait()
     if expired:
         raise RuntimeError(f"{' '.join(cmd[:5])} ... timed out after {timeout} s (network?)")
@@ -101,8 +102,8 @@ def _stream(cmd, timeout):
 
 if os.path.exists(REPO):
     shutil.rmtree(REPO)
-token = ""
-try:  # optional, only for a private repo: Add-ons -> Secrets -> GITHUB_TOKEN (attached)
+token = basic = u = ""
+try:  # optional, only for a private fork: Add-ons -> Secrets -> GITHUB_TOKEN (attached)
     from kaggle_secrets import UserSecretsClient
 
     token = UserSecretsClient().get_secret("GITHUB_TOKEN") or ""
@@ -132,10 +133,10 @@ if r.returncode != 0:
         log = log.replace(token, "***").replace(basic, "***")
     raise RuntimeError(
         f"git clone {REPO_URL} -b {GIT_REF} failed (exit {r.returncode}):\\n{log}\\n"
-        "Check REPO_URL / GIT_REF and that Internet is ON; a private repo needs the "
+        "Check REPO_URL / GIT_REF and that Internet is ON; a private fork needs the "
         "GITHUB_TOKEN secret attached to this notebook."
     )
-del token, git_env, r
+del token, git_env, r, basic, u
 _stream([sys.executable, "-m", "pip", "install", "-q", "-e", REPO], timeout=1800)
 sys.path.insert(0, os.path.join(REPO, "src"))
 importlib.invalidate_caches()

@@ -1,7 +1,7 @@
 """Yambda download from Hugging Face and streamed embedding filtering.
 
 HF file tree confirmed via list_repo_files("yandex/yambda", repo_type="dataset"):
-  root: embeddings.parquet, artist_item_mapping.parquet, album_item_mapping.parquet
+  root: embeddings.parquet, artist_item_mapping.parquet
   {flat,sequential}/50m/{listens,likes,dislikes,unlikes,undislikes,multi_event}.parquet
 (500m and 5b follow the same pattern.) The plan's defaults hold.
 """

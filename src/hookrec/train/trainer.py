@@ -305,7 +305,7 @@ def train(
         sampler=sampler,
         drop_last=True,
         num_workers=nw,
-        pin_memory=amp,
+        pin_memory=device.type == "cuda",
         persistent_workers=nw > 0,
         generator=torch.Generator().manual_seed(tc["seed"]),  # keep the global RNG untouched
     )
