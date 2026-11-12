@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 from scipy.sparse import csr_matrix
 
@@ -10,6 +12,8 @@ from hookrec.data.processed import ProcessedData
 from hookrec.data.sequences import PackedSequences
 from hookrec.models.base import Split, history_for, register
 from hookrec.models.popularity import MostPop, fill_cold
+
+log = logging.getLogger(__name__)
 
 
 class IALS:
@@ -52,6 +56,7 @@ class IALS:
         from implicit.als import AlternatingLeastSquares
 
         use_gpu = implicit.gpu.HAS_CUDA if self.use_gpu is None else bool(self.use_gpu)
+        log.info("iALS backend: %s", "gpu" if use_gpu else "cpu")
         self._seqs = seqs
         self._user_items = self._confidence_matrix(seqs, n_items)
         kw = {} if use_gpu else {"num_threads": 0}  # 0 = all cores
@@ -71,7 +76,9 @@ class IALS:
     def recommend(self, uids: np.ndarray, k: int) -> np.ndarray:
         uids = np.asarray(uids)
         rows = self._seqs.index_of(uids)
-        known = rows >= 0
+        # users without a positive (empty CSR row) get the fallback too: their factors are arbitrary
+        has_pos = np.diff(self._user_items.indptr) > 0
+        known = (rows >= 0) & has_pos[np.maximum(rows, 0)]
         out = np.zeros((len(uids), k), dtype=np.int64)
         if known.any():
             r = rows[known]

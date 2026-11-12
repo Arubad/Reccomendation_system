@@ -54,12 +54,15 @@ def _evaluate_split(model, data: ProcessedData, split: str) -> dict:
     }
 
 
-def _run_one(name: str, cfg: dict, data: ProcessedData, split: str, out: Path) -> dict:
+def _run_one(
+    name: str, cfg: dict, data: ProcessedData, split: str, out: Path, quick: bool = False
+) -> dict:
     t0 = time.perf_counter()
     model = fit_recommender(name, data, cfg, split)
     res = _evaluate_split(model, data, split)
     extra = {
         "split": split,
+        "quick": quick,
         "processed_dir": data.path.name,
         "dataset_size": data.cfg["size"],
         "wall_time_s": round(time.perf_counter() - t0, 2),
@@ -80,26 +83,28 @@ def _run_one(name: str, cfg: dict, data: ProcessedData, split: str, out: Path) -
     return {"model": name, "split": split, "cfg": cfg, "metrics": res["metrics"], **extra}
 
 
-def _best_val_cfg(out: Path, name: str, processed_dir: str) -> dict:
+def _best_val_cfg(out: Path, name: str, processed_dir: str, quick: bool = False) -> dict:
     runs = [
         r
         for r in load_runs(out)
-        if r["run_name"] == f"{name}-val" and r["extra"].get("processed_dir") == processed_dir
+        if r["run_name"] == f"{name}-val"
+        and r["extra"].get("processed_dir") == processed_dir
+        and (quick or not r["extra"].get("quick"))  # quick runs only count for a quick test run
     ]
     if not runs:
         raise SystemExit(
             f"no '{name}-val' run for processed dir '{processed_dir}' in {out}; "
             "run with --split val first"
         )
-    return max(runs, key=lambda r: r["metrics"]["ndcg@10"])["config"]
+    return max(runs, key=lambda r: r["metrics"].get("ndcg@10") or float("-inf"))["config"]
 
 
-def _table(rows: list[dict]) -> str:
+def _table(rows: list[dict], grids: dict[str, dict]) -> str:
     head = "| model | split | config | ndcg@10 | recall@10 | ndcg@100 | recall@100 | cov@10 | cold ndcg@10 |"
     lines = [head, "|" + "---|" * 9]
     for r in rows:
         m, c = r["metrics"], r["metrics_cold"]
-        cfg = ", ".join(f"{k}={v}" for k, v in r["cfg"].items())
+        cfg = ", ".join(f"{k}={r['cfg'][k]}" for k in grids.get(r["model"], {}))
         cold = f"{c['ndcg@10']:.4f}" if c else "-"
         lines.append(
             f"| {r['model']} | {r['split']} | {cfg or '-'} | {m['ndcg@10']:.4f} | "
@@ -132,11 +137,11 @@ def main(argv: list[str] | None = None) -> list[dict]:
         if args.split == "val":
             points = grid_points(cfg[name], args.quick)
         else:
-            points = [_best_val_cfg(args.out, name, data.path.name)]
+            points = [_best_val_cfg(args.out, name, data.path.name, args.quick)]
         log.info("%s: %d config(s) on %s", name, len(points), args.split)
-        rows += [_run_one(name, p, data, args.split, args.out) for p in points]
+        rows += [_run_one(name, p, data, args.split, args.out, args.quick) for p in points]
 
-    print(_table(rows))
+    print(_table(rows, {m: cfg[m].get("grid") or {} for m in models}))
     return rows
 
 
