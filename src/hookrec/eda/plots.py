@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 
-from hookrec.eda.stats import lorenz_curve
+from hookrec.eda.stats import gini, lorenz_curve
 
 
 def _save(fig, out_path: Path) -> None:
@@ -43,8 +43,6 @@ def plot_loglog_counts(item_counts: np.ndarray, user_counts: np.ndarray, out_pat
 
 
 def plot_lorenz(item_counts: np.ndarray, user_counts: np.ndarray, out_path) -> None:
-    from hookrec.eda.stats import gini
-
     fig, ax = plt.subplots(figsize=(5, 5), layout="constrained")
     for c, name in ((item_counts, "items"), (user_counts, "users")):
         x, y = lorenz_curve(c)
@@ -115,13 +113,15 @@ def plot_organic_share(by: dict[str, pl.DataFrame], out_path) -> None:
 
 
 def plot_daily(df: pl.DataFrame, out_path) -> None:
-    fig, axes = plt.subplots(2, 1, figsize=(8, 5), sharex=True, layout="constrained")
+    fig, axes = plt.subplots(3, 1, figsize=(8, 7), sharex=True, layout="constrained")
     axes[0].plot(df["day"].to_numpy(), df["events"].to_numpy())
     axes[0].set_ylabel("events")
     axes[1].plot(df["day"].to_numpy(), df["new_items"].to_numpy())
     axes[1].set_ylabel("new items")
-    axes[1].set_xlabel("day")
-    axes[0].set_title("Daily volume and item arrivals")
+    axes[2].plot(df["day"].to_numpy(), df["churn"].fill_null(float("nan")).to_numpy())
+    axes[2].set_ylabel("top-100 churn (Jaccard dist.)")
+    axes[2].set_xlabel("day")
+    axes[0].set_title("Daily volume, item arrivals and popularity churn")
     _save(fig, out_path)
 
 

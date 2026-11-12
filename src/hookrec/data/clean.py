@@ -62,10 +62,14 @@ def clean_events(lf: pl.LazyFrame) -> pl.LazyFrame:
     return pl.concat(parts).select(names).sort(["uid", "timestamp"], maintain_order=True)
 
 
-def clean_report(before: pl.LazyFrame, after: pl.LazyFrame) -> dict[str, int]:
+def clean_report(
+    before: pl.LazyFrame | pl.DataFrame, after: pl.LazyFrame | pl.DataFrame
+) -> dict[str, int]:
     """Row counts before/after cleaning, overall and per event type (flat dict of ints)."""
     report: dict[str, int] = {}
     for tag, lf in (("before", before), ("after", after)):
+        if isinstance(lf, pl.DataFrame):  # already materialised: no recomputation
+            lf = lf.lazy()
         report[f"rows_{tag}"] = lf.select(pl.len()).collect().item()
         counts = lf.group_by("event_type").len().collect()
         for et, n in counts.iter_rows():

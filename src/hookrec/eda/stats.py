@@ -60,8 +60,9 @@ def entity_counts(lf: pl.LazyFrame) -> tuple[np.ndarray, np.ndarray]:
     return items, users
 
 
-def popularity_stats(lf: pl.LazyFrame) -> dict:
-    item_c, user_c = entity_counts(lf)
+def popularity_stats(lf: pl.LazyFrame, counts: tuple[np.ndarray, np.ndarray] | None = None) -> dict:
+    """Popularity summary; pass precomputed `counts=entity_counts(lf)` to avoid recomputing."""
+    item_c, user_c = counts if counts is not None else entity_counts(lf)
     by_type = lf.group_by("event_type").len().collect()
     desc = np.sort(item_c)[::-1]
     total = desc.sum()
@@ -162,11 +163,11 @@ def _listens(lf: pl.LazyFrame) -> pl.LazyFrame:
 def repeat_stats(lf: pl.LazyFrame) -> dict:
     """Re-listen share (item already heard by the user) and consecutive-duplicate share.
 
-    Computed over listens (or all rows if there is no `event_type`), in (uid, timestamp) order.
+    Computed over listens (or all rows if there is no `event_type`). Precondition: `lf` is
+    already sorted by (uid, timestamp), as `clean_events` output is.
     """
     r = (
         _listens(lf)
-        .sort("uid", "timestamp", maintain_order=True)
         .select(
             relisten=(pl.int_range(pl.len()).over("uid", "item_id") > 0),
             prev_dup=(pl.col("item_id") == pl.col("item_id").shift(1).over("uid")),
@@ -222,8 +223,12 @@ def organic_share(
     )
 
 
-def daily_stats(lf: pl.LazyFrame) -> pl.DataFrame:
-    """Events and newly-appearing items per day (day 0 = first day in the data)."""
+def daily_stats(lf: pl.LazyFrame, churn_top_k: int = 100) -> pl.DataFrame:
+    """Per day: events, newly-appearing items, and popularity churn.
+
+    `churn` is the Jaccard distance between the top-`churn_top_k` items (by events) of
+    consecutive days; null on the first day. Day 0 = first day in the data.
+    """
     t0 = lf.select(pl.col("timestamp").min()).collect().item()
     day = (pl.col("timestamp").cast(pl.Int64) - t0) // DAY_UNITS
     events = lf.group_by(day=day).agg(events=pl.len())
@@ -231,21 +236,43 @@ def daily_stats(lf: pl.LazyFrame) -> pl.DataFrame:
     new = first.group_by(day=(pl.col("first_ts").cast(pl.Int64) - t0) // DAY_UNITS).agg(
         new_items=pl.len()
     )
-    return (
+    out = (
         events.join(new, on="day", how="left")
         .with_columns(pl.col("new_items").fill_null(0))
         .sort("day")
         .collect()
     )
+    top = (
+        lf.group_by(day=day, item_id=pl.col("item_id"))
+        .agg(n=pl.len())
+        .sort(["day", "n", "item_id"], descending=[False, True, False])
+        .group_by("day", maintain_order=True)
+        .head(churn_top_k)
+        .group_by("day")
+        .agg(items=pl.col("item_id"))
+        .collect()
+    )
+    sets = {d: set(items) for d, items in top.iter_rows()}  # one set per day, not per event
+    churn = []
+    prev = None
+    for d in out["day"].to_list():
+        cur = sets.get(d, set())
+        union = len(cur | prev) if prev is not None else 0
+        churn.append(None if prev is None else (1 - len(cur & prev) / union if union else None))
+        prev = cur
+    return out.with_columns(pl.Series("churn", churn, dtype=pl.Float64))
 
 
 def seq_lengths(lf: pl.LazyFrame) -> np.ndarray:
     return lf.group_by("uid").len().collect()["len"].to_numpy()
 
 
-def seq_length_quantiles(lf: pl.LazyFrame, qs: tuple = (0.5, 0.9, 0.95, 0.99)) -> dict:
+def seq_length_quantiles(
+    lf: pl.LazyFrame, qs: tuple = (0.5, 0.9, 0.95, 0.99), lengths: np.ndarray | None = None
+) -> dict:
     """Per-user event-count quantiles (`q50`, `q90`, ...) plus mean and max."""
-    lengths = seq_lengths(lf)
+    if lengths is None:
+        lengths = seq_lengths(lf)
     out = {f"q{round(q * 100)}": float(np.quantile(lengths, q)) for q in qs}
     out["mean"] = float(lengths.mean())
     out["max"] = int(lengths.max())

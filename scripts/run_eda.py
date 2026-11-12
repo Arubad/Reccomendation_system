@@ -41,8 +41,8 @@ def _jsonable(o):
         return _jsonable(o.tolist())
     if isinstance(o, np.integer):
         return int(o)
-    if isinstance(o, np.floating):
-        return float(o)
+    if isinstance(o, (float, np.floating)):
+        return float(o) if np.isfinite(o) else None  # NaN/inf -> null, never abort the run
     if isinstance(o, np.bool_):
         return bool(o)
     return o
@@ -65,11 +65,11 @@ def main(argv: list[str] | None = None) -> dict:
     df = cleaned.select(KEEP_COLS).collect()
     df = df.with_columns(pl.col("event_type").cast(pl.Categorical))
     lf = df.lazy()
-    report = clean_report(raw, cleaned)
+    report = clean_report(raw, df)
 
     out: dict = {"clean_report": report}
-    item_c, user_c = stats.entity_counts(lf)
-    out["popularity"] = stats.popularity_stats(lf)
+    item_c, user_c = counts = stats.entity_counts(lf)
+    out["popularity"] = stats.popularity_stats(lf, counts)
     plots.plot_event_mix(out["popularity"]["by_event_type"], fig_dir / "event_mix.png")
     plots.plot_loglog_counts(item_c, user_c, fig_dir / "loglog_counts.png")
     plots.plot_lorenz(item_c, user_c, fig_dir / "lorenz.png")
@@ -99,7 +99,7 @@ def main(argv: list[str] | None = None) -> dict:
     plots.plot_daily(out["daily"], fig_dir / "daily.png")
 
     lengths = stats.seq_lengths(lf)
-    out["seq_length"] = stats.seq_length_quantiles(lf)
+    out["seq_length"] = stats.seq_length_quantiles(lf, lengths=lengths)
     plots.plot_seq_length(lengths, out["seq_length"], fig_dir / "seq_length.png")
 
     emb = pl.read_parquet(args.raw / "embeddings.parquet", columns=["item_id", "normalized_embed"])
