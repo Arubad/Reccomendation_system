@@ -143,7 +143,7 @@ def test_missing_inputs_listed_in_one_error(tmp_path):
     with pytest.raises(FileNotFoundError) as e:
         preprocess(tmp_path / "nope", cfg, tmp_path / "out")
     msg = str(e.value)
-    for name in ("multi_event.parquet", "embeddings.parquet", "artist_item_mapping.parquet"):
+    for name in ("multi_event.parquet", "embeddings_50m.parquet", "artist_item_mapping.parquet"):
         assert name in msg
 
 

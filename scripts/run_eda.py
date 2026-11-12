@@ -1,6 +1,7 @@
 """Run the full HookSeq EDA: stats JSON + figures.
 
-python scripts/run_eda.py --raw DIR --size 50m --out reports/ [--gap-max-users N]
+python scripts/run_eda.py --raw DIR --size 50m --out reports/ [--gap-max-users N] \
+    [--embeddings-file embeddings_50m.parquet --emb-column embed]
 """
 
 from __future__ import annotations
@@ -43,6 +44,14 @@ def main(argv: list[str] | None = None) -> dict:
     ap.add_argument("--size", default="50m")
     ap.add_argument("--out", type=Path, default=Path("reports"))
     ap.add_argument("--gap-max-users", type=int, default=None)
+    ap.add_argument(
+        "--embeddings-file",
+        default="embeddings.parquet",
+        help="embeddings parquet under --raw; K0 writes embeddings_<size>.parquet",
+    )
+    ap.add_argument(
+        "--emb-column", default="normalized_embed", help="embedding column (`embed` for K0's file)"
+    )
     ap.add_argument(
         "--test-timestamp",
         default=None,
@@ -97,7 +106,9 @@ def main(argv: list[str] | None = None) -> dict:
     out["seq_length"] = stats.seq_length_quantiles(lf, lengths=lengths)
     plots.plot_seq_length(lengths, out["seq_length"], fig_dir / "seq_length.png")
 
-    emb = pl.read_parquet(args.raw / "embeddings.parquet", columns=["item_id", "normalized_embed"])
+    emb = pl.read_parquet(
+        args.raw / args.embeddings_file, columns=["item_id", args.emb_column]
+    ).rename({args.emb_column: "normalized_embed"})
     out["embedding_coverage"] = stats.embedding_coverage(lf, emb["item_id"].to_numpy())
     plots.plot_embedding_coverage(out["embedding_coverage"], fig_dir / "embedding_coverage.png")
 

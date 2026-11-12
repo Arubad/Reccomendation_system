@@ -160,4 +160,11 @@ def write_yambda_layout(data: dict[str, pl.DataFrame], root: str | Path) -> Path
     data["multi_event"].write_parquet(root / "flat" / "50m" / "multi_event.parquet")
     data["embeddings"].write_parquet(root / "embeddings.parquet")
     data["artist_item_mapping"].write_parquet(root / "artist_item_mapping.parquet")
+    # what K0 (scripts/run_download.py) writes: the subset's items, float16 `embed`
+    from hookrec.data.download import filter_embeddings, subset_item_ids
+
+    events = root / "flat" / "50m" / "multi_event.parquet"
+    filter_embeddings(
+        root / "embeddings.parquet", subset_item_ids(events), root / "embeddings_50m.parquet"
+    )
     return root

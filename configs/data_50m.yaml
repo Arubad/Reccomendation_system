@@ -10,6 +10,6 @@ split:
   gap_seconds: 1800
   test_days: 1
   test_timestamp: 25913600    # official YAMBDA_TEST_TIMESTAMP = 26_000_000 - 86_400; null = max-anchored
-embeddings_file: embeddings.parquet   # K0 may point to a pre-filtered file with an `embed` column
-emb_column: normalized_embed          # `embed` for a pre-filtered file
+embeddings_file: embeddings_{size}.parquet  # K0's filtered file; embeddings.parquet = full HF file
+emb_column: embed                           # `normalized_embed` for the full HF file
 include_embedding_only_items: false   # embedding-only items never appear in events

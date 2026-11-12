@@ -119,7 +119,9 @@ def _counts(lf: pl.LazyFrame) -> tuple[int, int]:
 
 def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
     src = Path(raw_dir) / "flat" / cfg["size"] / "multi_event.parquet"
-    emb_path = Path(raw_dir) / cfg.get("embeddings_file", "embeddings.parquet")
+    # `{size}` placeholder: K0 writes the filtered `embeddings_{size}.parquet`
+    emb_name = cfg.get("embeddings_file", "embeddings.parquet").format(size=cfg["size"])
+    emb_path = Path(raw_dir) / emb_name
     artist_path = Path(raw_dir) / "artist_item_mapping.parquet"
     missing = [str(p) for p in (src, emb_path, artist_path) if not p.exists()]
     if missing:
