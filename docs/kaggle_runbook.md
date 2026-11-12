@@ -38,8 +38,11 @@ records the commit SHA it ran at.
      **`GITHUB_TOKEN`** and the value to the token.
    - Tick the box that attaches the secret to this notebook.
 
-   The clone cell injects the token into the URL, never prints it, and resets the remote URL
-   afterwards, so the token never ends up in the saved output. For a public repo, skip this step.
+   The clone cell sends the token only as an HTTP header for the repo's host. The header lives
+   in the clone process's environment, so the token is never in the URL, the command line,
+   `.git/config` or `.git/logs`, and it is never printed. The clone never prompts for
+   credentials (`GIT_TERMINAL_PROMPT=0`): a wrong or missing token fails fast. For a public
+   repo, skip this step.
 4. **Look for an existing Yambda mirror first.** Search Kaggle Datasets for "yambda". If a
    public dataset has the Hugging Face layout (`flat/50m/multi_event.parquet`, plus
    `embeddings.parquet` and `artist_item_mapping.parquet` at its root), attach it to K0. K0 then
@@ -79,7 +82,7 @@ with a disk check that warns above 18 GB.
 
 | # | Notebook | Accelerator | Attach | Output (`/kaggle/working/out/`) | Marker | Est. time |
 |---|---|---|---|---|---|---|
-| K0 | `k0_download` | None (CPU) | nothing, or a Yambda mirror | `raw/`: `flat/<size>/multi_event.parquet`, `artist_item_mapping.parquet`, `album_item_mapping.parquet`, `embeddings_<size>.parquet` (subset items, float16 `embed`) | `raw/_HOOKREC_RAW_<size>` | 50m 0.5-1 h, 500m 1-1.5 h |
+| K0 | `k0_download` | None (CPU) | nothing, or a Yambda mirror | `raw/`: `flat/<size>/multi_event.parquet`, `artist_item_mapping.parquet`, `embeddings_<size>.parquet` (subset items, float16 `embed`) | `raw/_HOOKREC_RAW_<size>` | 50m 0.5-1 h, 500m 1-1.5 h |
 | K1 | `k1_eda` | None (CPU) | K0 (50m) | `reports/`: figures, `eda_stats.json` | `reports/_HOOKREC_EDA` | < 1 h |
 | K2 | `k2_preprocess` | None (CPU) | K0 (same size) | `processed/<size>-<hash>/` | `_DONE` | 50m < 0.5 h, 500m 2-4 h |
 | K3 | `k3_baselines` | None (CPU) | K2 | `results/*.json` (MostPop, DecayPop, iALS: val grid + test refit) | `results/_HOOKREC_RESULTS_baselines` | 50m < 0.5 h, 500m 1-3 h |
@@ -89,9 +92,11 @@ with a disk check that warns above 18 GB.
 What each notebook does, and the defaults its parameter cell ships with:
 
 - **K0** runs `scripts/run_download.py --size SIZE --out out/raw [--mirror <found mirror>]`.
-  - It downloads `multi_event` plus the root files, filters the embeddings to the items that
-    occur in the subset (as float16), then deletes the full `embeddings.parquet`, which keeps
-    the output lean.
+  - It downloads only the files still missing: `multi_event`, the artist map, and the full
+    `embeddings.parquet`, which it skips if a mirror has it.
+  - It filters the embeddings to the items that occur in the subset (as float16), then deletes
+    the full `embeddings.parquet`, which keeps the output lean. The album map is not used, so it
+    is not fetched.
   - It is idempotent: finished files are kept.
 - **K1** runs `scripts/run_eda.py --raw <K0> --size SIZE --out out/reports --embeddings-file
   embeddings_<size>.parquet --emb-column embed`.
@@ -108,10 +113,14 @@ What each notebook does, and the defaults its parameter cell ships with:
   `test`.
   - Default `CONFIG = configs/ablations/a0_sasrec.yaml` (run name `a0_sasrec`).
   - It skips any split whose record already exists, so a re-run is a no-op.
+  - When it carries a finished split's record over from an earlier output, it also copies that
+    split's `model_final.pt` and `best.pt`. So the newest K4 output alone is always enough for
+    K5.
 - **K5** runs `scripts/run_eval.py --processed <K2> --run <record> [--ckpt <K4>/ckpt/<name>/test]
   --out out/results` for the latest test run of every attached results input that has no
   newer eval yet. It then writes `reports/results.md` (`write_readme_tables`) and prints it.
-  - Neural runs need the K4 output that trained them, which holds `model_final.pt`.
+  - Neural runs need a K4 output holding their `ckpt/<name>/test/model_final.pt`. The newest
+    K4 version of that config is enough, because K4 carries finished weights forward.
   - If one run fails, the rest are still evaluated and the report is still written; then the
     version fails, listing the failed runs.
 
@@ -140,7 +149,8 @@ To continue:
    finished `val` record is kept and `val` is skipped. Training continues from the last good
    checkpoint, with the same RNG and data-loader position.
 4. Repeat until the log ends with `<name>: val, test done`. For the next round, attach only
-   the newest version: each version carries `best.pt` and the results forward.
+   the newest version: each version carries the results, `best.pt` and the finished splits'
+   `model_final.pt` forward.
 
 `RESUME_INPUTS = False` in the parameter cell ignores attached earlier outputs and starts
 fresh.
@@ -182,10 +192,13 @@ record. If a 500M run exceeds a session, it chains through the resume procedure 
 - **First K4 run = fp16 check.** K4 trains with fp16 AMP on CUDA; the T4 has no bf16 or TF32.
   The GradScaler already skips steps with inf/NaN gradients. Watch the `loss` in the first
   log lines.
-  - If the loss stays NaN, set `OVERRIDES = ["train.lr=3e-4"]`, optionally adding
-    `"train.max_grad_norm=0.5"`, and save a new version.
-  - There is no separate AMP switch. `train.device=cpu` disables AMP but is far too slow for
-    Yambda, and the notebook refuses to run without a GPU unless `REQUIRE_GPU = False`.
+  - If the loss goes NaN, set `OVERRIDES = ["train.amp=false"]`; K4 passes it as `--override
+    train.amp=false`. Then save a new version. It stays on the GPU in fp32, without autocast or
+    the GradScaler: slower, but numerically safe.
+  - `train.amp` is an operational key, like `device`, so the new version can resume the last
+    good checkpoint of the fp16 run.
+  - If fp32 also diverges, the problem is not precision. Lower the learning rate as well:
+    `OVERRIDES = ["train.amp=false", "train.lr=3e-4"]`.
 - **Single GPU.** The trainer uses one T4 by default. The second T4 stays idle.
 - **Reproducibility.** Each record stores the config, the git SHA, the dataset size and the wall
   time. Pin `GIT_REF` to a tag for paper-grade runs.
@@ -197,10 +210,13 @@ record. If a 500M run exceeds a session, it chains through the resume procedure 
 | `no attached input contains '_HOOKREC_RAW_50m' under /kaggle/input ...` (or `_DONE`, `_HOOKREC_RESULTS_*`) | The previous stage's output is not attached, is an older version that has no marker, or is for another `SIZE`. The error lists what *is* under `/kaggle/input`. Attach the right output (section 2) and save again. |
 | `no finished processed bundle '50m-*/_DONE'` | Attach the K2 output. A K2 version that failed has no `_DONE`; re-run K2. |
 | `N processed bundles for 50m` | Two K2 outputs, with different configs, are attached. Attach only the one you want. |
+| `N attached inputs contain '_HOOKREC_RAW_50m'` | Two K0 outputs (for example a notebook output and a Dataset made from it) are attached. The error lists both; remove one. |
+| `polars X is installed but hookrec needs polars>=2.1` | pip did not upgrade the image's polars. The pip log above it says why, usually a conflicting pin. Save again; if it persists, report the pip log. |
+| `... timed out after 600 s` (clone) or `1800 s` (pip) | Network trouble on Kaggle's side, or Internet is Off. Check the toggle and save again. |
 | Disk warning above 18 GB, or the output fails to save | Usually stale K4 checkpoints. Don't keep several in-progress splits in one version. Lower `train.ckpt_every_steps` only if needed. K0 already drops the full embeddings file. |
 | The version **succeeded** but the log ends with `RESUME NEEDED` | Expected: training hit `max_hours`. Follow section 4. |
 | `no GPU: set Accelerator = GPU T4 x2` (K4) | The sidebar accelerator is None. Set GPU T4 x2 and save again. |
-| `git clone ... failed` | Check `REPO_URL` / `GIT_REF` and that Internet is On. A private repo needs the `GITHUB_TOKEN` secret, attached to *this* notebook (section 1). The token is masked as `***` in the error. |
-| K5: `<run>: no ckpt/<name>/test/model_final.pt` | Attach the K4 output of the version that trained that run's test split. |
+| `git clone ... failed` | Check `REPO_URL` / `GIT_REF` and that Internet is On. A private repo needs the `GITHUB_TOKEN` secret, attached to *this* notebook (section 1). The clone never prompts, so a missing or invalid token fails immediately, and the token is masked as `***` in the error. |
+| K5: `<run>: no ckpt/<name>/test/model_final.pt` | Attach the newest K4 output of that config, or the version that trained its test split. Outputs saved before K4 carried weights forward may lack the file. |
 | K5: `rebuilt model does not reproduce the recorded ndcg@10` | Wrong checkpoint or processed dir for that record. Attach the matching K2 and K4 outputs. As a last resort, `NO_DRIFT_CHECK = True`. |
 | K0: download fails or times out | Save a new version: each Kaggle session starts with an empty `/kaggle/working`, so it downloads again. Or attach a Yambda mirror (section 1). |

@@ -52,6 +52,21 @@ def test_find_one_errors_name_marker_and_list_root(tmp_path):
         kaggle.find_one("_HOOKREC_EDA", root, hint="attach the K1 output")
     msg = str(e.value)
     assert "_HOOKREC_EDA" in msg and "k0-out" in msg and "attach the K1 output" in msg
+    # the listing is depth-limited: 2 levels, never the files deep inside a dataset
+    assert "k0-out/raw/" in msg and "_HOOKREC_RAW_50m" not in msg
+
+
+def test_find_one_several_matches_raise_naming_each(tmp_path, capsys):
+    root = _tree(tmp_path)
+    (root / "k0-old" / "raw").mkdir(parents=True)
+    (root / "k0-old" / "raw" / "_HOOKREC_RAW_50m").write_text("{}")
+    with pytest.raises(RuntimeError) as e:
+        kaggle.find_one("_HOOKREC_RAW_50m", root)
+    assert "k0-out" in str(e.value) and "k0-old" in str(e.value)
+    got = kaggle.find_one("_HOOKREC_RAW_50m", root, allow_multiple=True)
+    assert got == root / "k0-old" / "raw"
+    out = capsys.readouterr().out
+    assert "k0-out" in out and "k0-old" in out
 
 
 def test_find_processed_by_size(tmp_path):
@@ -124,7 +139,10 @@ def test_check_disk_and_env_report(tmp_path, capsys):
         rep
     )
     assert rep["disk_free_gb"] > 0
+    for pkg in ("polars", "numpy", "torch", "huggingface_hub", "implicit"):
+        assert rep[pkg], pkg  # installed in the dev venv: a version string
     assert "python" in capsys.readouterr().out
+    assert kaggle.package_versions(("no-such-dist-hookrec",)) == {"no-such-dist-hookrec": None}
 
 
 def test_has_run(tmp_path):

@@ -10,8 +10,10 @@ train:
   patience: 5
   ckpt_every_steps: 2000
   max_grad_norm: 1.0
+  amp: true  # fp16 autocast + GradScaler on CUDA; false = fp32 on the GPU (NaN fallback)
   # Kaggle sessions die at 9 h. The 1 h margin covers the final checkpoint, the last eval in
-  # flight and output saving. max_hours is measured from process start, data loading included.
+  # flight and output saving. max_hours is measured from HOOKREC_SESSION_START (exported by
+  # the notebook's first cell) if set, else from process start (data loading included).
   max_hours: 8.0
   num_workers: 4
   seed: 42

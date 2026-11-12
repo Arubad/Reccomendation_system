@@ -30,10 +30,7 @@ def fake_hf(synth_dir, monkeypatch):
         dest = Path(local_dir) / filename
         dest.parent.mkdir(parents=True, exist_ok=True)
         src = synth_dir / filename
-        if src.exists():
-            shutil.copyfile(src, dest)
-        else:  # album_item_mapping is not in the fixture
-            pl.DataFrame({"item_id": [1], "album_id": [1]}).write_parquet(dest)
+        shutil.copyfile(src, dest)  # a file the fixture lacks fails loudly
         (Path(local_dir) / ".cache" / "huggingface").mkdir(parents=True, exist_ok=True)
         return str(dest)
 
@@ -62,7 +59,9 @@ def test_run_download_hf_idempotent(fake_hf, synth_dir, tmp_path):
     out = tmp_path / "raw"
     mod.main(["--size", "50m", "--out", str(out)])
     _check_raw(out, synth_dir)
-    assert "flat/50m/multi_event.parquet" in fake_hf and "embeddings.parquet" in fake_hf
+    assert sorted(fake_hf) == [
+        "artist_item_mapping.parquet", "embeddings.parquet", "flat/50m/multi_event.parquet",
+    ]  # fmt: skip
     n = len(fake_hf)
     mod.main(["--size", "50m", "--out", str(out)])  # complete: nothing is fetched again
     assert len(fake_hf) == n
@@ -77,7 +76,19 @@ def test_run_download_resumes_partial(fake_hf, synth_dir, tmp_path):
         synth_dir / "flat/50m/multi_event.parquet", out / "flat/50m/multi_event.parquet"
     )
     mod.main(["--size", "50m", "--out", str(out)])
-    assert "flat/50m/multi_event.parquet" not in fake_hf
+    assert sorted(fake_hf) == ["artist_item_mapping.parquet", "embeddings.parquet"]
+    _check_raw(out, synth_dir)
+
+
+def test_run_download_fetches_only_missing_root_files(fake_hf, synth_dir, tmp_path):
+    """Mirror with events + embeddings but no artist map: only the artist map is downloaded."""
+    mirror = tmp_path / "mirror"
+    (mirror / "flat/50m").mkdir(parents=True)
+    for name in ("flat/50m/multi_event.parquet", "embeddings.parquet"):
+        shutil.copyfile(synth_dir / name, mirror / name)
+    out = tmp_path / "raw"
+    _load("run_download").main(["--size", "50m", "--out", str(out), "--mirror", str(mirror)])
+    assert fake_hf == ["artist_item_mapping.parquet"]
     _check_raw(out, synth_dir)
 
 

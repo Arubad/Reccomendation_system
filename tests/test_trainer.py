@@ -344,3 +344,20 @@ def test_prune_removes_sidecars_and_stale_tmp(tmp_path):
     assert sorted(p.name for p in tmp_path.iterdir()) == [
         "ckpt-00000002.json", "ckpt-00000002.pt", "ckpt-00000003.json", "ckpt-00000003.pt",
     ]  # fmt: skip
+
+
+def test_amp_false_trains_on_cpu_unchanged(processed_synth, tmp_path):
+    """train.amp only gates CUDA autocast + GradScaler: on CPU amp=false is bit-identical."""
+    from hookrec.train.trainer import OPERATIONAL_KEYS
+
+    data = processed_synth
+    assert tiny_cfg()["train"]["amp"] is True  # shipped default
+    assert "amp" in OPERATIONAL_KEYS  # a run may resume with AMP switched off after a NaN
+    a = _fresh(tiny_cfg(), data)
+    ra = train(tiny_cfg(), data, a, "test", tmp_path / "a")
+    b = _fresh(tiny_cfg(), data)
+    rb = train(tiny_cfg(**{"train.amp": False}), data, b, "test", tmp_path / "b")
+    assert ra.steps == rb.steps == 20 and math.isfinite(rb.final_loss)
+    assert ra.final_loss == rb.final_loss
+    for (k, va), vb in zip(a.state_dict().items(), b.state_dict().values()):
+        assert torch.equal(va, vb), k

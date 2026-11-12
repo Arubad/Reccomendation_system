@@ -1,4 +1,5 @@
-"""Resumable sampled-softmax trainer for sequence models (fp16 AMP on CUDA, fp32 on CPU).
+"""Resumable sampled-softmax trainer for sequence models (fp16 AMP on CUDA unless
+`train.amp: false`; fp32 on CPU).
 
 split="val": train on `seqs_val_train`, evaluate warm NDCG@10 on `truth_val` every
 `eval_every_steps`, early-stop after `patience` evals without improvement, keep `best.pt`.
@@ -74,11 +75,12 @@ def session_elapsed_seconds() -> float:
     return time.monotonic() - _PROCESS_T0
 
 # train.* keys that do not change what is learned (or that define the horizon, which is
-# persisted separately); they are excluded from `training_hash`.
+# persisted separately); they are excluded from `training_hash`. `amp` is a precision switch
+# like `device`: a run that NaNs under fp16 may resume its last good checkpoint without it.
 OPERATIONAL_KEYS = frozenset(
     {
         "max_hours", "num_workers", "device", "log_every_steps", "eval_max_users",
-        "eval_batch_size", "ckpt_every_steps", "max_steps", "schedule_steps",
+        "eval_batch_size", "ckpt_every_steps", "max_steps", "schedule_steps", "amp",
     }
 )  # fmt: skip
 
@@ -207,7 +209,7 @@ def train(
     ckpt_dir = Path(ckpt_dir)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device(tc.get("device") or ("cuda" if torch.cuda.is_available() else "cpu"))
-    amp = device.type == "cuda"
+    amp = device.type == "cuda" and bool(tc.get("amp", True))  # fp16 autocast + GradScaler
     log.info("training %s on %s (split=%s)", cfg["model"]["name"], device_name(device), split)
 
     set_seed(tc["seed"])
@@ -272,7 +274,8 @@ def train(
         model.load_state_dict(payload["model"])
         opt.load_state_dict(payload["optimizer"])
         sched.load_state_dict(payload["scheduler"])
-        scaler.load_state_dict(payload["scaler"])
+        if payload.get("scaler"):  # empty when saved with AMP off (CPU or train.amp=false)
+            scaler.load_state_dict(payload["scaler"])
         restore_rng_states(payload["rng_states"])
         gen.set_state(payload["rng_states"]["sampler"])
         step = payload["step"]

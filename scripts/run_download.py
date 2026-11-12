@@ -3,13 +3,14 @@
 python scripts/run_download.py --size 50m --out DIR [--mirror DIR] [--keep-full-embeddings]
 
 Writes the Yambda layout under --out: `flat/{size}/multi_event.parquet`,
-`artist_item_mapping.parquet`, `album_item_mapping.parquet` and `embeddings_{size}.parquet` (only
-the subset's items, float16 `embed` column), then the marker `_HOOKREC_RAW_{size}`. The full
-`embeddings.parquet` (all items) is deleted afterwards unless --keep-full-embeddings.
+`artist_item_mapping.parquet` and `embeddings_{size}.parquet` (only the subset's items, float16
+`embed` column), then the marker `_HOOKREC_RAW_{size}`. The full `embeddings.parquet` (all items)
+is deleted afterwards unless --keep-full-embeddings. (The album mapping is not used downstream.)
 
 --mirror is an existing copy in the Yambda layout (e.g. a public Kaggle dataset): files found
-there are copied (events, mappings) or read (full embeddings) instead of downloaded from HF.
-Idempotent: finished files are kept, and a dir that already has the marker is not re-fetched.
+there are copied (events, artist map) or read (full embeddings) instead of downloaded from HF.
+Only files still missing are downloaded, and the full embeddings only while the filtered file
+does not exist. Idempotent: finished files are kept; a dir with the marker is not re-fetched.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from hookrec.data import download as dl
 log = logging.getLogger("run_download")
 
 FULL_EMB = "embeddings.parquet"
-MAPPINGS = ("artist_item_mapping.parquet", "album_item_mapping.parquet")
+MAPPINGS = ("artist_item_mapping.parquet",)
 
 
 def marker_name(size: str) -> str:
@@ -71,10 +72,17 @@ def build_raw(size: str, out: Path, mirror: Path | None = None, keep_full: bool 
     emb_src = out / FULL_EMB
     if mirror is not None and (Path(mirror) / FULL_EMB).exists():
         emb_src = Path(mirror) / FULL_EMB
-    needed = [events, out / MAPPINGS[0]] + ([] if filtered.exists() else [emb_src])
-    if not all(p.exists() for p in needed):
-        log.info("downloading Yambda %s from Hugging Face (%s) into %s", size, dl.REPO_ID, out)
-        dl.download_yambda(size, out)  # skips files already present
+    # fetch only what is still missing (the full embeddings only if not yet filtered)
+    fetch_events = () if events.exists() else ("multi_event.parquet",)
+    fetch_root = tuple(m for m in MAPPINGS if not (out / m).exists())
+    if not filtered.exists() and not emb_src.exists():
+        fetch_root += (FULL_EMB,)
+    if fetch_events or fetch_root:
+        log.info(
+            "downloading %s from Hugging Face (%s) into %s",
+            [*(f"flat/{size}/{f}" for f in fetch_events), *fetch_root], dl.REPO_ID, out,
+        )  # fmt: skip
+        dl.download_yambda(size, out, files=fetch_events, root_files=fetch_root)
 
     if not filtered.exists():
         ids = dl.subset_item_ids(events)

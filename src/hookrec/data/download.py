@@ -23,13 +23,15 @@ def download_yambda(
     out_dir: Path,
     fmt: Literal["flat", "sequential"] = "flat",
     files: tuple[str, ...] = ("multi_event.parquet",),
+    root_files: tuple[str, ...] = ROOT_FILES,
 ) -> dict[str, Path]:
     """Download requested files (idempotent: existing files are skipped).
 
+    `root_files` are the repo-root files (embeddings, mappings) to fetch alongside.
     Returns {relative_name: local path}, keyed e.g. "flat/50m/multi_event.parquet".
     """
     out_dir = Path(out_dir)
-    names = [f"{fmt}/{size}/{f}" for f in files] + list(ROOT_FILES)
+    names = [f"{fmt}/{size}/{f}" for f in files] + list(root_files)
     paths: dict[str, Path] = {}
     for name in names:
         dest = out_dir / name

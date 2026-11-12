@@ -8,14 +8,14 @@ version = "0.1.0"
 description = "HookSeq: SASRec-style music recommender on the Yambda dataset"
 requires-python = ">=3.10"
 dependencies = [
-    "polars",
+    "polars>=2.1",  # pl.Float16, collect(engine="streaming")
     "pyarrow",
     "numpy",
     "scipy",
     "scikit-learn",
     "pyyaml",
     "matplotlib",
-    "huggingface_hub",
+    "huggingface_hub>=0.23",
     "implicit",
 ]
 

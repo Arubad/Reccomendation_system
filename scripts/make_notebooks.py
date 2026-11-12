@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_URL = "https://github.com/Arubad/hookseq.git"
 DEFAULT_GIT_REF = "main"
+POLARS_FLOOR = "2.1"  # = pyproject's `polars>=` floor (tests/test_notebooks.py checks they agree)
 
 CPU = {"accelerator": "none", "isGpuEnabled": False}
 GPU = {"accelerator": "nvidiaTeslaT4", "isGpuEnabled": True}
@@ -70,13 +71,32 @@ import subprocess
 import sys
 
 
-def _stream(cmd):
+import base64
+import re
+import threading
+from importlib import metadata
+from urllib.parse import urlsplit
+
+
+def _stream(cmd, timeout):
     """Run cmd, streaming its output; raise on a non-zero exit (a `!cmd` magic would not)."""
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-    for line in p.stdout:
-        print(line, end="", flush=True)
-    if p.wait() != 0:
-        raise RuntimeError(f"{' '.join(cmd[:5])} ... exited {p.returncode}")
+    p = subprocess.Popen(
+        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1,
+    )
+    expired = []
+    timer = threading.Timer(timeout, lambda: (expired.append(1), p.kill()))
+    timer.start()
+    try:
+        for line in p.stdout:
+            print(line, end="", flush=True)
+    finally:
+        timer.cancel()
+    code = p.wait()
+    if expired:
+        raise RuntimeError(f"{' '.join(cmd[:5])} ... timed out after {timeout} s (network?)")
+    if code != 0:
+        raise RuntimeError(f"{' '.join(cmd[:5])} ... exited {code}")
 
 
 if os.path.exists(REPO):
@@ -88,31 +108,50 @@ try:  # optional, only for a private repo: Add-ons -> Secrets -> GITHUB_TOKEN (a
     token = UserSecretsClient().get_secret("GITHUB_TOKEN") or ""
 except Exception:
     token = ""
-url = REPO_URL
-if token and REPO_URL.startswith("https://"):
-    url = "https://x-access-token:" + token + "@" + REPO_URL[len("https://"):]
-r = subprocess.run(
-    ["git", "clone", "--depth", "1", "-b", GIT_REF, url, REPO], capture_output=True, text=True
-)
+# never prompt (a headless run would hang); the token travels only in this process's env
+# as an HTTP header for REPO_URL's host: never in argv, the URL, .git/config or .git/logs
+git_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
+if token:
+    u = urlsplit(REPO_URL)
+    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    git_env.update(
+        GIT_CONFIG_COUNT="1",
+        GIT_CONFIG_KEY_0=f"http.{u.scheme}://{u.netloc}/.extraheader",
+        GIT_CONFIG_VALUE_0=f"Authorization: Basic {basic}",
+    )
+try:
+    r = subprocess.run(
+        ["git", "clone", "--depth", "1", "-b", GIT_REF, REPO_URL, REPO],
+        env=git_env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600,
+    )
+except subprocess.TimeoutExpired:
+    raise RuntimeError(f"git clone {REPO_URL} -b {GIT_REF} timed out after 600 s") from None
 if r.returncode != 0:
     log = r.stdout + r.stderr
     if token:
-        log = log.replace(token, "***")
+        log = log.replace(token, "***").replace(basic, "***")
     raise RuntimeError(
         f"git clone {REPO_URL} -b {GIT_REF} failed (exit {r.returncode}):\\n{log}\\n"
         "Check REPO_URL / GIT_REF and that Internet is ON; a private repo needs the "
         "GITHUB_TOKEN secret attached to this notebook."
     )
-# the clone is saved with the output: never leave the token in .git/config
-subprocess.run(["git", "-C", REPO, "remote", "set-url", "origin", REPO_URL], check=True)
-del token, url
-_stream([sys.executable, "-m", "pip", "install", "-q", "-e", REPO])
+del token, git_env, r
+_stream([sys.executable, "-m", "pip", "install", "-q", "-e", REPO], timeout=1800)
 sys.path.insert(0, os.path.join(REPO, "src"))
 importlib.invalidate_caches()
+# the installed (not an already-imported, possibly stale) polars must meet pyproject's floor
+pl_version = metadata.version("polars")
+if tuple(int(x) for x in re.findall(r"\\d+", pl_version)[:2]) < POLARS_MIN:
+    raise RuntimeError(
+        f"polars {pl_version} is installed but hookrec needs polars>=POLARS_FLOOR (pl.Float16, "
+        "streaming collect); pip did not upgrade it. Check the pip log above."
+    )
 SHA = subprocess.run(
     ["git", "-C", REPO, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
 ).stdout.strip()
-print(f"hookrec {REPO_URL} {GIT_REF} @ {SHA}")'''
+print(f"hookrec {REPO_URL} {GIT_REF} @ {SHA} (polars {pl_version})")'''
+INSTALL = INSTALL.replace("POLARS_MIN", repr(tuple(int(x) for x in POLARS_FLOOR.split("."))))
+INSTALL = INSTALL.replace("POLARS_FLOOR", POLARS_FLOOR)
 
 DISCOVER_HEAD = """\
 # Environment + input discovery (inputs are found by marker files; no slugs to edit).
@@ -212,9 +251,9 @@ print(Path(OUT, "raw", f"_HOOKREC_RAW_{SIZE}").read_text())"""
 # --- K1 --------------------------------------------------------------------------------
 K1_DISCOVER = (
     DISCOVER_HEAD
-    + """
-RAW = find_one(f"_HOOKREC_RAW_{SIZE}", INPUT_ROOT, hint=RAW_HINT)
-print("raw:", RAW)""".replace("RAW_HINT", json.dumps(RAW_HINT))
+    + f"""
+RAW = find_one(f"_HOOKREC_RAW_{{SIZE}}", INPUT_ROOT, hint={json.dumps(RAW_HINT)})
+print("raw:", RAW)"""
 )
 
 K1_WORK = """\
@@ -331,6 +370,22 @@ for d in PREV_RESULTS:
         if not (RESULTS / p.name).exists():
             shutil.copyfile(p, RESULTS / p.name)
             print("carried over", p.name)
+# a finished (carried-over) split brings its weights along, so the newest K4 output alone is
+# enough for K5 (test/model_final.pt); outputs that hold the split's record are preferred
+for split in ("val", "test"):
+    rec = f"{NAME}-{split}"
+    if not has_run(RESULTS, rec, PROCESSED.name):
+        continue
+    homes = sorted(
+        PREV_CKPTS, key=lambda d: not has_run(d.parent.parent / "results", rec, PROCESSED.name)
+    )
+    for fname in ("model_final.pt", "best.pt"):
+        dest = CKPT / split / fname
+        src = next((d / split / fname for d in homes if (d / split / fname).exists()), None)
+        if src is not None and not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dest)
+            print("carried over", dest.relative_to(OUT))
 
 RESUME_NEEDED = False
 for split in RUN_SPLITS:  # test takes its step count from the val record, so val runs first
@@ -479,7 +534,7 @@ def notebooks(repo_url: str, git_ref: str) -> dict[str, dict]:
                 "nothing, or a public Kaggle mirror of Yambda (any dataset containing "
                 "`flat/<size>/multi_event.parquet`; it then skips the HF download)",
                 "50m 0.5-1 h, 500m 1-1.5 h",
-                "`raw/`: events, artist/album maps, `embeddings_<size>.parquet` (subset, f16), "
+                "`raw/`: events, artist map, `embeddings_<size>.parquet` (subset, f16), "
                 "marker `_HOOKREC_RAW_<size>`",
             ),
             [],

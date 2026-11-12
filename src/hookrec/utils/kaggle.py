@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
+from importlib import metadata
 from pathlib import Path
 
 INPUT_ROOT = "/kaggle/input"
@@ -34,21 +35,41 @@ def find_inputs(marker: str, root: str | Path = INPUT_ROOT) -> list[Path]:
     return sorted({p.parents[up] for p in root.rglob(marker)})
 
 
-def _listing(root: Path, depth: int = 2) -> str:
+def _listing(root: Path, depth: int = 2, limit: int = 60) -> str:
+    """The first `limit` entries of `root`, `depth` levels deep (never walks deeper)."""
     if not root.is_dir():
         return f"{root} does not exist (no inputs attached?)"
-    lines = []
-    for p in sorted(root.rglob("*")):
-        rel = p.relative_to(root)
-        if len(rel.parts) <= depth:
-            lines.append(f"  {rel}{'/' if p.is_dir() else ''}")
-    return "\n".join(lines[:60]) or f"  ({root} is empty)"
+    lines: list[str] = []
+
+    def walk(d: Path, level: int) -> None:
+        try:
+            entries = sorted(d.iterdir())
+        except OSError:
+            return
+        for p in entries:
+            if len(lines) >= limit:
+                return
+            is_dir = p.is_dir()
+            lines.append(f"  {p.relative_to(root)}{'/' if is_dir else ''}")
+            if is_dir and level < depth:
+                walk(p, level + 1)
+
+    walk(root, 1)
+    return "\n".join(lines) or f"  ({root} is empty)"
 
 
 def find_one(
-    marker: str, root: str | Path = INPUT_ROOT, required: bool = True, hint: str = ""
+    marker: str,
+    root: str | Path = INPUT_ROOT,
+    required: bool = True,
+    hint: str = "",
+    allow_multiple: bool = False,
 ) -> Path | None:
-    """The first dir from `find_inputs`; raises FileNotFoundError naming `marker` if none."""
+    """The one dir from `find_inputs`.
+
+    FileNotFoundError naming `marker` if there is none (unless not `required`); RuntimeError
+    naming every match if there are several (unless `allow_multiple`: the first is used).
+    """
     found = find_inputs(marker, root)
     if not found:
         if not required:
@@ -58,7 +79,13 @@ def find_one(
             f"What is under {root}:\n{_listing(Path(root))}"
         )
     if len(found) > 1:
-        print(f"note: {len(found)} inputs contain {marker!r}; using {found[0]}", flush=True)
+        names = "\n".join(f"  {p}" for p in found)
+        if not allow_multiple:
+            raise RuntimeError(
+                f"{len(found)} attached inputs contain {marker!r}:\n{names}\n"
+                f"Attach only the one this run should use. {hint}"
+            )
+        print(f"note: {len(found)} inputs contain {marker!r}; using {found[0]}:\n{names}")
     return found[0]
 
 
@@ -161,17 +188,34 @@ def _meminfo() -> tuple[float | None, float | None]:
         return None, None
 
 
+VERSIONED = ("polars", "numpy", "torch", "huggingface_hub", "implicit")
+
+
+def package_versions(names: tuple[str, ...] = VERSIONED) -> dict[str, str | None]:
+    """Installed distribution versions (None if missing), from importlib.metadata.
+
+    Read from the installed metadata, not `module.__version__`: a module imported earlier in
+    the kernel may be stale after a pip install.
+    """
+    out: dict[str, str | None] = {}
+    for n in names:
+        try:
+            out[n] = metadata.version(n)
+        except metadata.PackageNotFoundError:
+            out[n] = None
+    return out
+
+
 def env_report(work: str | Path = WORKING) -> dict:
-    """Print and return python/torch versions, GPUs, RAM and free disk on `work` (or cwd)."""
-    rep: dict = {"python": platform.python_version()}
+    """Print and return python + package versions, GPUs, RAM and free disk on `work` (or cwd)."""
+    rep: dict = {"python": platform.python_version(), **package_versions()}
     try:
         import torch
 
-        rep["torch"] = torch.__version__
         n = torch.cuda.device_count() if torch.cuda.is_available() else 0
         rep["gpus"] = [torch.cuda.get_device_name(i) for i in range(n)] or ["cpu"]
     except ImportError:
-        rep["torch"], rep["gpus"] = None, ["cpu"]
+        rep["gpus"] = ["cpu"]
     total, avail = _meminfo()
     rep["ram_total_gb"] = round(total, 2) if total else None
     rep["ram_available_gb"] = round(avail, 2) if avail else None

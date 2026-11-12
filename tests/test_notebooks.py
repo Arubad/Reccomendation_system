@@ -2,15 +2,20 @@
 
 The end-to-end test executes each notebook's own cells (params, discovery, work, summary; the
 clone/install cell is skipped) with the /kaggle paths redirected to tmp dirs, chaining every
-stage's output into the next stage's inputs exactly as Kaggle would mount them.
+stage's output into the next stage's inputs exactly as Kaggle would mount them. The
+clone/install cell has its own tests against a local bare repo.
 """
 
 import ast
+import base64
 import importlib.util
 import json
 import os
 import re
 import shutil
+import subprocess
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -84,6 +89,107 @@ def test_notebooks_up_to_date(tmp_path):
         assert (tmp_path / n).read_bytes() == (NB_DIR / n).read_bytes(), f"{n} is stale"
 
 
+def test_polars_floor_matches_pyproject():
+    m = re.search(r'"polars>=([\d.]+)"', (ROOT / "pyproject.toml").read_text())
+    assert m and m.group(1) == _gen().POLARS_FLOOR
+
+
+# --- the clone + install cell -------------------------------------------------------------
+
+FAKE_TOKEN = "ghp_FAKE0123456789abcdefTOKEN"
+FAKE_URL = "https://example.invalid/hookseq.git"
+
+
+def _git(*args, cwd=None):
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+        cwd=cwd, check=True, capture_output=True,
+    )  # fmt: skip
+
+
+@pytest.fixture
+def install_cell(tmp_path, monkeypatch):
+    """Runs cells 1-2 against a local bare repo that git serves as FAKE_URL (insteadOf), with a
+    stub kaggle_secrets returning FAKE_TOKEN and `pip install -e` replaced by a no-op (the dev
+    venv's own editable install must not be repointed at the tmp clone)."""
+    src = tmp_path / "src-repo"
+    (src / "src" / "hookrec").mkdir(parents=True)
+    (src / "src" / "hookrec" / "__init__.py").write_text("MARK = 'cloned'\n")
+    _git("init", "-q", "-b", "main", str(src))
+    _git("add", "-A", cwd=src)
+    _git("commit", "-q", "-m", "init", cwd=src)
+    bare = tmp_path / "bare.git"
+    _git("clone", "-q", "--bare", str(src), str(bare))
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".gitconfig").write_text(f'[url "{bare}"]\n\tinsteadOf = {FAKE_URL}\n')
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    monkeypatch.setenv("HOOKREC_SESSION_START", "1")  # recorded, so the cell's value is undone
+    monkeypatch.delenv("HOOKREC_SESSION_START")
+
+    secrets = types.ModuleType("kaggle_secrets")
+
+    class UserSecretsClient:
+        def get_secret(self, label):
+            assert label == "GITHUB_TOKEN"
+            return FAKE_TOKEN
+
+    secrets.UserSecretsClient = UserSecretsClient
+    monkeypatch.setitem(sys.modules, "kaggle_secrets", secrets)
+    monkeypatch.setattr(sys, "path", list(sys.path))  # the cell prepends REPO/src
+    code = _code(_nb("k0_download"))
+    pip_e = '"-m", "pip", "install", "-q", "-e", REPO]'
+    assert pip_e in code[1]
+    install = code[1].replace(pip_e, '"-c", "print(\'pip stub\')"]')
+
+    def run(git_ref="main", polars_min=None):
+        g = {"__name__": "__notebook__"}
+        exec(code[0], g)  # noqa: S102
+        repo = tmp_path / "work" / "repo"
+        g.update(REPO_URL=FAKE_URL, GIT_REF=git_ref, REPO=str(repo))
+        cell = install
+        if polars_min is not None:
+            assert "< (2, 1):" in cell
+            cell = cell.replace("< (2, 1):", f"< {polars_min!r}:")
+        exec(cell, g)  # noqa: S102
+        return g, repo
+
+    return run
+
+
+def test_install_cell_clones_without_leaking_the_token(install_cell, capsys):
+    g, repo = install_cell()
+    assert re.fullmatch(r"[0-9a-f]{40}", g["SHA"])
+    assert sys.path[0] == str(repo / "src")
+    out = subprocess.run(
+        [sys.executable, "-c", "import hookrec; print(hookrec.MARK, hookrec.__file__)"],
+        env={**os.environ, "PYTHONPATH": str(repo / "src")}, capture_output=True, text=True,
+        check=True,
+    ).stdout  # fmt: skip
+    assert out.startswith("cloned ") and str(repo) in out
+    basic = base64.b64encode(f"x-access-token:{FAKE_TOKEN}".encode())
+    for p in (repo / ".git").rglob("*"):  # config, logs/HEAD, logs/refs/..., packed-refs, ...
+        if p.is_file():
+            data = p.read_bytes()
+            assert FAKE_TOKEN.encode() not in data and basic not in data, p
+    assert (repo / ".git" / "config").read_text().count(FAKE_URL) == 1
+    assert list((repo / ".git" / "logs").rglob("*"))  # the reflogs were checked
+    assert FAKE_TOKEN not in capsys.readouterr().out
+
+
+def test_install_cell_bad_ref_fails_with_token_masked(install_cell):
+    with pytest.raises(RuntimeError, match="no-such-branch") as e:
+        install_cell(git_ref="no-such-branch")
+    assert FAKE_TOKEN not in str(e.value) and "GITHUB_TOKEN" in str(e.value)
+
+
+def test_install_cell_rejects_old_polars(install_cell):
+    with pytest.raises(RuntimeError, match=r"polars .* needs polars>="):
+        install_cell(polars_min=(99, 0))
+
+
 # --- end-to-end: the notebooks' own cells on synthetic data -------------------------------
 
 TINY_TRAIN = [
@@ -127,7 +233,7 @@ def _runs(results: Path, prefix: str) -> list[dict]:
     return [json.loads(p.read_text()) for p in sorted(results.glob(f"{prefix}*.json"))]
 
 
-def test_pipeline_end_to_end(kaggle_fs, capsys):
+def test_pipeline_end_to_end(kaggle_fs, tmp_path, capsys):
     over_data = ["min_count=2", "split.test_timestamp=null"]
     _, out = kaggle_fs("k0_download", attach_as="k0")
     assert (out / "raw" / "_HOOKREC_RAW_50m").exists()
@@ -165,12 +271,18 @@ def test_pipeline_end_to_end(kaggle_fs, capsys):
     assert not list((out / "ckpt" / "a0_sasrec").rglob("ckpt-*"))
     assert (out / "ckpt" / "a0_sasrec" / "val" / "best.pt").exists()
 
-    # session 3 with v2 attached: both records already exist, so nothing is retrained
-    g, out = kaggle_fs("k4_train", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN)
+    # session 3 with v1 + v2 attached: both records exist, so nothing is retrained, but the
+    # finished splits' weights are carried forward with the records
+    g, out = kaggle_fs("k4_train", attach_as="k4-v3", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN)
     assert "skip" in capsys.readouterr().out.lower()
     assert len(_runs(out / "results", "a0_sasrec-test")) == 1
-    assert not (out / "ckpt" / "a0_sasrec" / "test").exists()
+    ck = out / "ckpt" / "a0_sasrec"
+    assert (ck / "test" / "model_final.pt").exists() and (ck / "val" / "best.pt").exists()
+    assert not list(ck.rglob("ckpt-*"))
 
+    # K5 with only the newest K4 output attached (v3 never trained anything itself)
+    shutil.rmtree(tmp_path / "input" / "k4-v1")
+    shutil.rmtree(tmp_path / "input" / "k4-v2")
     g, out = kaggle_fs("k5_eval_report")
     evals = {r["extra"]["source_run"] for r in _runs(out / "results", "")
              if r["extra"].get("kind") == "eval"}  # fmt: skip
