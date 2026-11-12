@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import itertools
 import threading
+import weakref
 from pathlib import Path
 from typing import Literal
 
@@ -53,13 +54,24 @@ _ZEROGPU_DEVICE = "cuda"  # emulated outside @spaces.GPU, real inside
 
 
 def _spaces_active() -> bool:
-    return gpu._spaces is not None
+    """ZeroGPU mode: `spaces` is installed AND CUDA is (emulated or real) available. With
+    `spaces` installed on CPU hardware, or locally, this is False and the engine runs on CPU."""
+    return gpu._spaces is not None and torch.cuda.is_available()
 
 
 def _device(device: str | None) -> torch.device:
     if _spaces_active():  # placement was done once, at construction
         return torch.device(_ZEROGPU_DEVICE)
     return torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+
+
+def _vecs_on(res: dict, name: str, dev: torch.device) -> torch.Tensor:
+    """Item vectors on `dev`, copied once and cached (ZeroGPU fills the cache at construction)."""
+    key = (name, dev.type)
+    if key not in res["on_device"]:
+        with _MOVE_LOCK:
+            res["on_device"].setdefault(key, res["vecs"][name].to(dev))
+    return res["on_device"][key]
 
 
 @contextlib.contextmanager
@@ -87,7 +99,7 @@ def _topk_impl(token: int, name: str, batch: dict, k: int, device: str | None = 
     model = res["models"][name]
     with _on_device(model, device) as dev, torch.no_grad():
         users = model.user_state({key: v.to(dev) for key, v in batch.items()})
-        vals, idx = score_topk(users, res["vecs"][name].to(dev), k)
+        vals, idx = score_topk(users, _vecs_on(res, name, dev), k)
     return vals.cpu().numpy(), idx.cpu().numpy()
 
 
@@ -118,11 +130,19 @@ class DemoEngine:
             dev = torch.device(_ZEROGPU_DEVICE)
             for m in self.models.values():
                 m.to(dev)
-            self._vecs = {k: v.to(dev) for k, v in self._vecs.items()}
-        _RESIDENT[self._token] = {"models": self.models, "vecs": self._vecs}
+        # `_vecs` stays on the CPU for host-side reads; the device copies live in `on_device`
+        on_device = (
+            {(k, dev.type): v.to(dev) for k, v in self._vecs.items()} if _spaces_active() else {}
+        )
+        _RESIDENT[self._token] = {"models": self.models, "vecs": self._vecs, "on_device": on_device}
+        weakref.finalize(self, _RESIDENT.pop, self._token, None)
         self._w = {k: a[k] for k in a if k.startswith("w_")}
         self.idless_audio_items = self.raw_ids[~self.has_id & self.has_audio].tolist()
         self._states: np.ndarray | None = None
+
+    def close(self) -> None:
+        """Release the engine's models and vectors from the module registry."""
+        _RESIDENT.pop(self._token, None)
 
     # ---- sessions -------------------------------------------------------------------------
     def to_compact(self, raw: np.ndarray) -> np.ndarray:
@@ -231,7 +251,7 @@ class DemoEngine:
             raise ValueError(f"track {raw_item_id} has an ID embedding: pick an ID-less track")
         if not self.has_audio[i]:
             raise ValueError(f"track {raw_item_id} has no audio embedding")
-        scores = self._sample_states() @ self._vecs["hookseq"][i + 1].cpu().numpy()
+        scores = self._sample_states() @ self._vecs["hookseq"][i + 1].numpy()
         order = np.argsort(-scores, kind="stable")[: max(1, int(k))]
         uids = self._w["w_uids"]
         return [{"uid": int(uids[j]), "score": float(scores[j])} for j in order]

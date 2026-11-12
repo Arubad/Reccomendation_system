@@ -30,6 +30,7 @@ Notes: the Space runs Python 3.12 (supported by ZeroGPU, and the version gradio 
 on). The engine never touches CUDA at import. On ZeroGPU it moves the models and item vectors to
 `cuda` once at construction, as the ZeroGPU docs advise (CUDA is emulated outside `spaces.GPU` and
 the transfer deferred), and the two `spaces.GPU` scoring functions only compute. Without
-`spaces` it runs on CPU, or moves to CUDA on first use if available. Session items
+`spaces`, or with `spaces` installed but no CUDA (CPU hardware, local runs), it runs on CPU,
+or moves to CUDA on first use if available. Session items
 outside the bundle's item subset are encoded as an "unknown" item; the bundle's sample users, and
 every item of their windows, are always in the subset.

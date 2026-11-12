@@ -29,10 +29,17 @@ HOOKREC_REF = "v0.1-demo"  # TODO create this tag (or put a commit SHA) before d
 def ensure_hookrec(ref: str = HOOKREC_REF) -> None:
     if importlib.util.find_spec("hookrec") is not None:
         return
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--no-deps", f"{HOOKREC_REPO}@{ref}"],
-        check=True,
-    )
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--no-deps", f"{HOOKREC_REPO}@{ref}"],
+            check=True,
+        )
+    except (subprocess.CalledProcessError, OSError) as e:
+        raise RuntimeError(
+            f"could not install hookrec at ref {ref!r} from {HOOKREC_REPO}: {e}. "
+            "Check that the tag or commit exists and is pushed."
+        ) from e
+    importlib.invalidate_caches()
 
 
 ensure_hookrec()

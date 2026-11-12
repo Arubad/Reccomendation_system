@@ -354,6 +354,7 @@ def test_zerogpu_placement_is_once_at_construction(bundle_dir, engine, monkeypat
 
     monkeypatch.setattr(gpu, "_spaces", FakeSpaces)
     monkeypatch.setattr(eng, "_ZEROGPU_DEVICE", "cpu")  # no CUDA here: stand in for the emulation
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)  # ZeroGPU emulates CUDA
     moves = []
     real_to = torch.nn.Module.to
     monkeypatch.setattr(
@@ -366,3 +367,28 @@ def test_zerogpu_placement_is_once_at_construction(bundle_dir, engine, monkeypat
     assert e.recommend(session, "hookseq", 5) == engine.recommend(session, "hookseq", 5)
     e.new_track_audience(e.idless_audio_items[0], 3)
     assert len(moves) == placed  # nothing moves inside the scoring calls
+
+
+def test_spaces_installed_without_cuda_runs_on_cpu(bundle_dir, engine, monkeypatch):
+    import hookrec.demo.engine as eng
+
+    class FakeSpaces:
+        @staticmethod
+        def GPU(fn):
+            return fn
+
+    monkeypatch.setattr(gpu, "_spaces", FakeSpaces)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    moves = []
+    real_to = torch.nn.Module.to
+    monkeypatch.setattr(
+        torch.nn.Module, "to", lambda self, *a, **k: moves.append(a) or real_to(self, *a, **k)
+    )
+    e = eng.DemoEngine(bundle_dir)
+    session = engine.sample_user_session(0)
+    assert e.recommend(session, "sasrec", 5) == engine.recommend(session, "sasrec", 5)
+    assert e.new_track_audience(e.idless_audio_items[0], 3)
+    assert moves == []  # nothing was placed anywhere
+    token = e._token
+    e.close()
+    assert token not in eng._RESIDENT
