@@ -8,12 +8,15 @@ train:
   lr: 1.0e-3
   weight_decay: 0.01
   warmup_steps: 1000
+  lr_schedule: warmup_cosine  # warmup_cosine | constant (no warmup)
   max_steps: 200000
   schedule_steps: null  # LR cosine horizon; null = max_steps (test refits use the val run's)
-  eval_every_steps: 2000
-  patience: 5
-  ckpt_every_steps: 2000
-  max_grad_norm: 1.0
+  # F3: an eval costs ~1.6 s on a T4, so a fine cadence is cheap and stops ~2K steps after
+  # the val peak (it was 10K with 2000 x 5)
+  eval_every_steps: 500
+  patience: 4
+  ckpt_every_steps: 1000
+  max_grad_norm: 1.0  # null = no clipping
   amp: true  # fp16 autocast + GradScaler on CUDA; false = fp32 on the GPU (NaN fallback)
   # Kaggle sessions die at 9 h. The 1 h margin covers the final checkpoint, the last eval in
   # flight and output saving. max_hours is measured from HOOKREC_SESSION_START (exported by
@@ -25,6 +28,9 @@ train:
   eval_max_users: null  # subsample of val users for the periodic eval; the final eval uses all
   eval_batch_size: 1024
 loss:
+  type: softmax  # softmax (sampled, shared negatives) | bce (official SASRec; sasrec_bce.yaml)
+  chunk_rows: 8192  # rows of the [M, S] logits per chunk: memory only, not in training_hash
+  max_rows: null  # speed knob, off: keep this many valid rows per batch (uniform, seeded)
   n_uniform_negatives: 8192
   n_in_batch_negatives: 4096
   logq: false

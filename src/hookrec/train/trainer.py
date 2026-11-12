@@ -1,5 +1,7 @@
-"""Resumable sampled-softmax trainer for sequence models (fp16 AMP on CUDA unless
-`train.amp: false`; fp32 on CPU).
+"""Resumable trainer for sequence models (fp16 AMP on CUDA unless `train.amp: false`; fp32 on
+CPU). `loss.type`: "softmax" (default; sampled softmax over shared negatives, optional logQ and
+dislike hard negatives) or "bce" (the official Yambda SASRec loss, one uniform negative per
+position; see `hookrec.models.losses.bce_loss`).
 
 split="val": train on the val_train sequences, evaluate warm NDCG@10 on `truth_val` every
 `eval_every_steps`, early-stop after `patience` evals without improvement, keep `best.pt`.
@@ -37,7 +39,13 @@ from hookrec.data.label import DISLIKE
 from hookrec.data.processed import ProcessedData
 from hookrec.eval.protocol import evaluate
 from hookrec.models.base import aggregates_for, history_for, input_filter_of
-from hookrec.models.losses import make_log_q, sample_negatives, sampled_softmax_loss
+from hookrec.models.losses import (
+    DEFAULT_CHUNK_ROWS,
+    bce_loss,
+    make_log_q,
+    sample_negatives,
+    sampled_softmax_loss,
+)
 from hookrec.models.popularity import mostpop_fallback
 from hookrec.train.checkpoint import (
     atomic_save,
@@ -88,11 +96,19 @@ OPERATIONAL_KEYS = frozenset(
 )  # fmt: skip
 
 
+# loss.* keys that only trade memory for speed (the chunked loss is the same function)
+OPERATIONAL_LOSS_KEYS = frozenset({"chunk_rows"})
+LOSS_TYPES = ("softmax", "bce")
+
+
 def training_hash(cfg: dict) -> str:
-    """Config hash ignoring OPERATIONAL_KEYS: resume compatibility and the val<->test match."""
+    """Config hash ignoring OPERATIONAL_KEYS (train.*) and OPERATIONAL_LOSS_KEYS (loss.*):
+    resume compatibility and the val<->test match."""
     c = copy.deepcopy(cfg)
     for k in OPERATIONAL_KEYS:
         c.get("train", {}).pop(k, None)
+    for k in OPERATIONAL_LOSS_KEYS:
+        c.get("loss", {}).pop(k, None)
     return config_hash(c)
 
 
@@ -125,6 +141,23 @@ def warmup_cosine(warmup_steps: int, total_steps: int):
     return f
 
 
+def _constant_lr(step: int) -> float:
+    return 1.0
+
+
+def lr_multiplier(tc: dict, schedule_steps: int):
+    """The LambdaLR multiplier for `train.lr_schedule`: "warmup_cosine" (default) or
+    "constant" (a flat LR, as the official SASRec's plain Adam; takes no warmup)."""
+    kind = tc.get("lr_schedule", "warmup_cosine")
+    if kind == "warmup_cosine":
+        return warmup_cosine(tc["warmup_steps"], schedule_steps)
+    if kind == "constant":
+        if tc["warmup_steps"]:
+            raise ValueError("train.lr_schedule=constant takes no warmup (set warmup_steps: 0)")
+        return _constant_lr
+    raise ValueError(f"train.lr_schedule must be warmup_cosine or constant, got {kind!r}")
+
+
 def param_groups(model: nn.Module, weight_decay: float) -> list[dict]:
     """AdamW groups: no weight decay on embeddings, biases and LayerNorm parameters."""
     no_decay = set()
@@ -151,6 +184,122 @@ def hard_negatives(items: Tensor, tokens: Tensor, n_hard: int) -> Tensor:
     out = torch.zeros(items.shape[0], n_hard + 1, dtype=items.dtype, device=items.device)
     out.scatter_(1, slot, torch.where(sel, items, torch.zeros_like(items)))
     return out[:, :n_hard]
+
+
+@dataclass(frozen=True)
+class LossSpec:
+    """A run's `loss.*` settings, as one training step uses them (trainer and profiler)."""
+
+    type: str  # LOSS_TYPES
+    n_items: int  # catalog 1..N for uniform negatives
+    n_ib: int  # in-batch negatives (softmax)
+    n_uni: int  # shared uniform negatives (softmax)
+    n_hard: int  # dislike hard negatives per row (softmax), 0 = off
+    temperature: float
+    like_weight: float  # 0 unless the model has a like head
+    chunk_rows: int  # rows of the [M, S] block per chunk (memory only)
+    max_rows: int | None  # optional: valid rows kept per batch (uniform, seeded); None = all
+
+
+def loss_spec(cfg: dict, model: nn.Module, n_items: int) -> LossSpec:
+    lc = cfg["loss"]
+    kind = lc.get("type", "softmax")
+    if kind not in LOSS_TYPES:
+        raise ValueError(f"loss.type must be one of {LOSS_TYPES}, got {kind!r}")
+    n_hard = lc.get("n_hard", 4) if lc.get("dislike_hard_negatives") else 0
+    temperature = lc.get("temperature", 1.0)
+    if kind == "bce" and (lc.get("logq") or n_hard or temperature != 1.0):
+        raise ValueError(
+            "loss.type=bce is the official SASRec loss: it takes no logq, no "
+            "dislike_hard_negatives and temperature 1.0"
+        )
+    max_rows = lc.get("max_rows")
+    if max_rows is not None and max_rows < 1:
+        raise ValueError(f"loss.max_rows must be null or >= 1, got {max_rows}")
+    return LossSpec(
+        type=kind,
+        n_items=n_items,
+        n_ib=lc.get("n_in_batch_negatives", 4096),
+        n_uni=lc["n_uniform_negatives"],
+        n_hard=n_hard,
+        temperature=temperature,
+        like_weight=lc.get("like_weight", 0.0) if getattr(model, "like_head", False) else 0.0,
+        chunk_rows=lc.get("chunk_rows", DEFAULT_CHUNK_ROWS),
+        max_rows=max_rows,
+    )
+
+
+def loss_inputs(
+    spec: LossSpec, model: nn.Module, batch: dict[str, Tensor], hidden: Tensor,
+    gen: torch.Generator,
+) -> dict[str, Tensor | None]:  # fmt: skip
+    """One step's loss rows and negatives (run under the step's autocast, as the encoder).
+
+    Rows = positions with a target. With `max_rows`, a uniform seeded subset of them (drawn
+    from `gen`, so it resumes exactly) is kept first. softmax: the shared negatives are
+    `n_uni` uniform items, preceded by `n_ib` in-batch positives drawn with replacement
+    (~ popularity). bce: one uniform negative per row, as the official SASRec samples them.
+    """
+    device = hidden.device
+    valid = batch["target"] != 0
+    user_vecs, pos_items = hidden[valid], batch["target"][valid]
+    like_y = batch["target_is_like"][valid]
+    rows = valid.nonzero()[:, 0] if spec.n_hard else None  # batch row of each position
+    if spec.max_rows is not None and len(pos_items) > spec.max_rows:
+        keep = torch.randperm(len(pos_items), generator=gen)[: spec.max_rows].to(device)
+        user_vecs, pos_items, like_y = user_vecs[keep], pos_items[keep], like_y[keep]
+        rows = rows[keep] if rows is not None else None
+    if spec.type == "bce":
+        neg_items = sample_negatives(spec.n_items, len(pos_items), gen).to(device)
+    else:
+        neg = [sample_negatives(spec.n_items, spec.n_uni, gen).to(device)]
+        if spec.n_ib and len(pos_items):
+            neg.insert(
+                0, pos_items[torch.randint(len(pos_items), (spec.n_ib,), generator=gen).to(device)]
+            )
+        neg_items = torch.cat(neg)
+    pos_vecs, neg_vecs = model.item_repr(pos_items), model.item_repr(neg_items)
+    hard_items = hard_vecs = None
+    if spec.n_hard:
+        hard_items = hard_negatives(batch["items"], batch["tokens"], spec.n_hard)[rows]
+        hard_vecs = model.item_repr(hard_items).float()
+    return {
+        "user_vecs": user_vecs, "pos_items": pos_items, "pos_vecs": pos_vecs,
+        "neg_items": neg_items, "neg_vecs": neg_vecs, "like_y": like_y,
+        "hard_items": hard_items, "hard_vecs": hard_vecs,
+    }  # fmt: skip
+
+
+def rank_loss(
+    spec: LossSpec, model: nn.Module, inp: dict, log_q: Tensor | None, amp: bool
+) -> tuple[Tensor, dict]:
+    """The step's loss and its parts {"rank", "like"} (detached), from `loss_inputs`.
+
+    Softmax arithmetic is fp32. With `amp` (CUDA), the sampled softmax runs its [M, S]
+    matmuls in fp16 (its autocast region is only that call); BCE and the like head are fp32.
+    """
+    u, pos_vecs = inp["user_vecs"].float(), inp["pos_vecs"].float()
+    if spec.type == "bce":
+        out = bce_loss(u, pos_vecs, inp["neg_vecs"].float())
+    else:
+        with torch.autocast(u.device.type, dtype=torch.float16, enabled=amp):
+            out = sampled_softmax_loss(
+                u, inp["pos_items"], pos_vecs, inp["neg_items"], inp["neg_vecs"].float(),
+                log_q, spec.temperature, hard_neg_vecs=inp["hard_vecs"],
+                hard_neg_items=inp["hard_items"], chunk_rows=spec.chunk_rows,
+            )  # fmt: skip
+    parts = {"rank": out.detach(), "like": 0.0}
+    if spec.like_weight:  # multi-task: does the target event get a like? (positions with target)
+        with torch.autocast(u.device.type, enabled=False):
+            like_y = inp["like_y"]
+            logits = model.like_logit(u, pos_vecs)
+            # sum / max(n, 1): an empty batch gives 0 (BCE's mean would be NaN)
+            like_loss = F.binary_cross_entropy_with_logits(
+                logits, like_y.float(), reduction="sum"
+            ) / max(len(like_y), 1)
+        parts["like"] = like_loss.detach()
+        out = out + spec.like_weight * like_loss
+    return out, parts
 
 
 class _EpochIndexed(Dataset):
@@ -221,10 +370,8 @@ def train(
     n_items = data.vocab.n_items
     eval_every, ckpt_every = tc["eval_every_steps"], tc["ckpt_every_steps"]
     log_every = tc.get("log_every_steps", 100)
-    n_ib, n_uni = lc.get("n_in_batch_negatives", 4096), lc["n_uniform_negatives"]
-    n_hard = lc.get("n_hard", 4) if lc.get("dislike_hard_negatives") else 0
+    spec = loss_spec(cfg, model, n_items)
     session_gap = session_gap_from(cfg, data.cfg)
-    like_weight = lc.get("like_weight", 0.0) if getattr(model, "like_head", False) else 0.0
 
     cfg_hash = training_hash(cfg)
     payload = load_latest([ckpt_dir, *resume_dirs])
@@ -248,16 +395,16 @@ def train(
 
     model.to(device).train()
     opt = torch.optim.AdamW(param_groups(model, tc["weight_decay"]), lr=tc["lr"])
-    sched = LambdaLR(opt, warmup_cosine(tc["warmup_steps"], schedule_steps))
+    sched = LambdaLR(opt, lr_multiplier(tc, schedule_steps))
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
-    gen = torch.Generator().manual_seed(tc["seed"])  # negative sampling
+    gen = torch.Generator().manual_seed(tc["seed"])  # negative sampling (and max_rows)
     fallback = mostpop_fallback(data, split)
     log_q = None
     if lc.get("logq"):
         # R20: the full period the run trains on, counted like its targets
         agg = aggregates_for(data, split)
         pop = agg.pop_lp if input_filter == "listen_plus" else agg.pop_pos
-        log_q = make_log_q(pop, lc.get("mix_uniform", 0.0), n_ib, n_uni).to(device)
+        log_q = make_log_q(pop, lc.get("mix_uniform", 0.0), spec.n_ib, spec.n_uni).to(device)
     eval_truth = _eval_truth(data.truth_val, tc.get("eval_max_users"), tc["seed"])
 
     st = {
@@ -369,40 +516,14 @@ def train(
         batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
         with torch.autocast(device.type, dtype=torch.float16, enabled=amp):
             hidden = model.encode(batch)
-            valid = batch["target"] != 0
-            user_vecs, pos_items = hidden[valid], batch["target"][valid]
-            neg = [sample_negatives(n_items, n_uni, gen).to(device)]
-            if n_ib and len(pos_items):  # in-batch: positives drawn with replacement ~ popularity
-                neg.insert(
-                    0, pos_items[torch.randint(len(pos_items), (n_ib,), generator=gen).to(device)]
-                )
-            neg_items = torch.cat(neg)
-            pos_vecs, neg_vecs = model.item_repr(pos_items), model.item_repr(neg_items)
-            like_y = batch["target_is_like"][valid]
-            hard_items = hard_vecs = None
-            if n_hard:
-                rows = valid.nonzero()[:, 0]
-                hard_items = hard_negatives(batch["items"], batch["tokens"], n_hard)[rows]
-                hard_vecs = model.item_repr(hard_items).float()
-        with torch.autocast(device.type, enabled=False):  # logits / softmax in fp32
-            out = sampled_softmax_loss(
-                user_vecs.float(), pos_items, pos_vecs.float(), neg_items, neg_vecs.float(),
-                log_q, lc.get("temperature", 1.0), hard_neg_vecs=hard_vecs,
-                hard_neg_items=hard_items,
-            )  # fmt: skip
-            parts["rank"] = out.detach()
-            if like_weight:  # multi-task: does the target event get a like? (positions with target)
-                logits = model.like_logit(user_vecs.float(), pos_vecs.float())
-                # sum / max(n, 1): an empty batch gives 0 (BCE's mean would be NaN)
-                like_loss = F.binary_cross_entropy_with_logits(
-                    logits, like_y.float(), reduction="sum"
-                ) / max(len(like_y), 1)
-                parts["like"] = like_loss.detach()
-                out = out + like_weight * like_loss
+            inp = loss_inputs(spec, model, batch, hidden, gen)
+        out, step_parts = rank_loss(spec, model, inp, log_q, amp)
+        parts.update(step_parts)
         opt.zero_grad(set_to_none=True)
         scaler.scale(out).backward()
         scaler.unscale_(opt)
-        nn.utils.clip_grad_norm_(model.parameters(), tc["max_grad_norm"])
+        if tc["max_grad_norm"] is not None:  # null = no clipping (the official SASRec)
+            nn.utils.clip_grad_norm_(model.parameters(), tc["max_grad_norm"])
         scale_before = scaler.get_scale()
         scaler.step(opt)
         scaler.update()

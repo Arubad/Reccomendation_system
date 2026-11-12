@@ -1,0 +1,33 @@
+# R28: the paper-faithful SASRec row (success criterion 1). The official Yambda SASRec recipe,
+# HF dataset yandex/yambda, benchmarks/models/sasrec/{model,train,data}.py, mirrored where our
+# pipeline allows. `sasrec.yaml` (sampled softmax, 12K negatives) stays the strong baseline that
+# HookSeq must beat. Each line cites the official file:line it reproduces.
+extends: sasrec.yaml
+# d_model 64, n_layers 2, n_heads 2, max_len 200 are inherited (train.py:68-71 defaults), as are
+# batch_size 256 (train.py:67), seed 42 (train.py:74), Listen+ input (data.py:60-66) and one
+# last window per user (data.py:89, 116-117).
+model: {dropout: 0.0}  # train.py:73 (--dropout default 0.0)
+train:
+  lr: 1.0e-3  # train.py:72; plain Adam (train.py:134) = our AdamW with weight_decay 0
+  weight_decay: 0.0  # torch.optim.Adam default
+  warmup_steps: 0  # no scheduler in train.py: a flat LR
+  lr_schedule: constant
+  max_grad_norm: null  # no clipping (train.py:41-43: zero_grad, backward, step)
+  # num_epochs 100 (train.py:76) x 35 full batches per epoch (9,207 Listen+ val_train users //
+  # 256, drop_last as train.py:118; K4P profile). The official run has no validation
+  # (val_size=0, train.py:107) and trains a fixed number of epochs, so our val pass evaluates
+  # once, at the end: best_step = max_steps and the test refit trains the same 3,500 steps
+  # (~100 epochs; the full train period may hold a few more users). No early stopping.
+  max_steps: 3500
+  eval_every_steps: 3500
+  # fp32 as the official run (it only enables TF32, train.py:98, which a T4 lacks). With BCE
+  # the step is cheap, so fp32 costs little. Operational: not in training_hash.
+  amp: false
+loss:
+  type: bce  # model.py:244-265: one uniform negative per position (data.py:118), BCE mean
+  # logq false, dislike_hard_negatives false and temperature 1.0 are inherited (BCE needs them so)
+# Not mirrored (documented in the F3 report): the official SASRec is post-LN with LayerNorm
+# eps 1e-9 and truncated-normal init (model.py:59-88, 172-188), while ours is pre-LN; it trains
+# 199 (input, target) pairs from the last 200 events (ours: 200 from the last 201); its catalog,
+# for negatives and ranking, is the items seen in Listen+ data (data.py:68-72), ours the full
+# vocab (R4).

@@ -7,12 +7,14 @@ python scripts/profile_train.py --processed DIR --config configs/sasrec.yaml \
 
 It sets up training exactly as `hookrec.train.trainer.train` does (same seeds, model, optimizer,
 scheduler, GradScaler, negative sampler, dataset, sampler and DataLoader settings, no resume)
-and runs `train_step` below, a phase-annotated copy of the trainer's step (tests/
+and runs `train_step` below, a phase-annotated copy of the trainer's step that calls the same
+loss helpers (`loss_inputs`, `rank_loss`: either `loss.type`, `max_rows`, `chunk_rows`; tests/
 test_profile_train.py checks that both give bit-identical weights). Then, in order:
 
 1. warmup: W steps, each phase timed (per-step times kept, to expose the cold start);
 2. phased: N steps with `torch.cuda.synchronize()` at every phase boundary (only here):
-   data_wait, h2d, encode, negatives_item_repr, loss_fwd, backward, optimizer;
+   data_wait, h2d, encode, negatives_item_repr, loss_fwd, backward, optimizer (the chunked
+   sampled softmax computes its own gradients inside loss_fwd, so backward is the rest);
 3. throughput: steps without any extra sync (the real steps/s), GPU utilisation via NVML
    when available;
 4. torch.profiler over --profile-steps steps (phases as record_function ranges);
@@ -39,7 +41,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
@@ -55,7 +56,7 @@ from hookrec.models.base import (
     history_for,
     input_filter_of,
 )
-from hookrec.models.losses import make_log_q, sample_negatives, sampled_softmax_loss
+from hookrec.models.losses import make_log_q
 from hookrec.models.popularity import mostpop_fallback
 from hookrec.train.datasets import (
     SeqTrainDataset,
@@ -64,13 +65,16 @@ from hookrec.train.datasets import (
 )
 from hookrec.train.scoring import SeqRecommender
 from hookrec.train.trainer import (
+    LossSpec,
     _EpochIndexed,
     _eval_truth,
     _ResumableSampler,
     device_name,
-    hard_negatives,
+    loss_inputs,
+    loss_spec,
+    lr_multiplier,
     param_groups,
-    warmup_cosine,
+    rank_loss,
 )
 from hookrec.utils.config import load_config
 from hookrec.utils.seed import set_seed
@@ -148,12 +152,8 @@ class Ctx:
     gen: torch.Generator
     log_q: Tensor | None
     n_items: int
-    n_ib: int
-    n_uni: int
-    n_hard: int
-    like_weight: float
-    max_grad_norm: float
-    temperature: float
+    spec: LossSpec
+    max_grad_norm: float | None
     seqs: object
     ds: _EpochIndexed
     sampler: _ResumableSampler
@@ -190,15 +190,13 @@ def setup(cfg: dict, data, model: nn.Module, split: str) -> Ctx:
     input_filter = input_filter_of(cfg)
     seqs, _ = history_for(data, split, input_filter)
     n_items = data.vocab.n_items
-    n_ib, n_uni = lc.get("n_in_batch_negatives", 4096), lc["n_uniform_negatives"]
-    n_hard = lc.get("n_hard", 4) if lc.get("dislike_hard_negatives") else 0
+    spec = loss_spec(cfg, model, n_items)
     session_gap = session_gap_from(cfg, data.cfg)
-    like_weight = lc.get("like_weight", 0.0) if getattr(model, "like_head", False) else 0.0
     schedule_steps = tc.get("schedule_steps") or tc["max_steps"]
 
     model.to(device).train()
     opt = torch.optim.AdamW(param_groups(model, tc["weight_decay"]), lr=tc["lr"])
-    sched = LambdaLR(opt, warmup_cosine(tc["warmup_steps"], schedule_steps))
+    sched = LambdaLR(opt, lr_multiplier(tc, schedule_steps))
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
     gen = torch.Generator().manual_seed(tc["seed"])
     fallback = mostpop_fallback(data, split)
@@ -206,7 +204,7 @@ def setup(cfg: dict, data, model: nn.Module, split: str) -> Ctx:
     if lc.get("logq"):
         agg = aggregates_for(data, split)
         pop = agg.pop_lp if input_filter == "listen_plus" else agg.pop_pos
-        log_q = make_log_q(pop, lc.get("mix_uniform", 0.0), n_ib, n_uni).to(device)
+        log_q = make_log_q(pop, lc.get("mix_uniform", 0.0), spec.n_ib, spec.n_uni).to(device)
     eval_truth = _eval_truth(data.truth_val, tc.get("eval_max_users"), tc["seed"])
 
     ds = _EpochIndexed(
@@ -215,13 +213,12 @@ def setup(cfg: dict, data, model: nn.Module, split: str) -> Ctx:
     sampler = _ResumableSampler(len(seqs), tc["batch_size"], tc["seed"])
     if sampler.batches_per_epoch == 0:
         raise ValueError(f"{len(seqs)} sequences cannot fill one batch of {tc['batch_size']}")
-    spec = {"ds": ds, "sampler": sampler, "batch_size": tc["batch_size"], "seed": tc["seed"]}
-    loader = make_loader(spec, tc.get("num_workers", 0), device.type == "cuda")
+    lspec = {"ds": ds, "sampler": sampler, "batch_size": tc["batch_size"], "seed": tc["seed"]}
+    loader = make_loader(lspec, tc.get("num_workers", 0), device.type == "cuda")
     return Ctx(
         cfg=cfg, model=model, device=device, amp=amp, opt=opt, sched=sched, scaler=scaler,
-        gen=gen, log_q=log_q, n_items=n_items, n_ib=n_ib, n_uni=n_uni, n_hard=n_hard,
-        like_weight=like_weight, max_grad_norm=tc["max_grad_norm"],
-        temperature=lc.get("temperature", 1.0), seqs=seqs, ds=ds, sampler=sampler,
+        gen=gen, log_q=log_q, n_items=n_items, spec=spec, max_grad_norm=tc["max_grad_norm"],
+        seqs=seqs, ds=ds, sampler=sampler,
         loader=loader, session_gap=session_gap, fallback=fallback, eval_truth=eval_truth,
     )  # fmt: skip
 
@@ -239,8 +236,7 @@ def batches(ctx: Ctx):
 
 def train_step(ctx: Ctx, batch: dict[str, Tensor], ph: Phases) -> Tensor:
     """`trainer.train`'s `train_step`, statement for statement, with phase boundaries."""
-    model, device, amp, gen = ctx.model, ctx.device, ctx.amp, ctx.gen
-    n_items, n_uni, n_ib, n_hard = ctx.n_items, ctx.n_uni, ctx.n_ib, ctx.n_hard
+    model, device, amp, spec = ctx.model, ctx.device, ctx.amp, ctx.spec
     opt, scaler, sched = ctx.opt, ctx.scaler, ctx.sched
     ph.start("h2d")
     batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
@@ -248,43 +244,20 @@ def train_step(ctx: Ctx, batch: dict[str, Tensor], ph: Phases) -> Tensor:
         ph.start("encode")
         hidden = model.encode(batch)
         ph.start("negatives_item_repr")
-        valid = batch["target"] != 0
-        user_vecs, pos_items = hidden[valid], batch["target"][valid]
-        neg = [sample_negatives(n_items, n_uni, gen).to(device)]
-        if n_ib and len(pos_items):
-            neg.insert(
-                0, pos_items[torch.randint(len(pos_items), (n_ib,), generator=gen).to(device)]
-            )
-        neg_items = torch.cat(neg)
-        pos_vecs, neg_vecs = model.item_repr(pos_items), model.item_repr(neg_items)
-        like_y = batch["target_is_like"][valid]
-        hard_items = hard_vecs = None
-        if n_hard:
-            rows = valid.nonzero()[:, 0]
-            hard_items = hard_negatives(batch["items"], batch["tokens"], n_hard)[rows]
-            hard_vecs = model.item_repr(hard_items).float()
-    ctx.stats["M"].append(len(pos_items))
-    ctx.stats["S"].append(len(neg_items) + (n_hard or 0))
+        inp = loss_inputs(spec, model, batch, hidden, ctx.gen)
+    ctx.stats["M"].append(len(inp["pos_items"]))
+    # negatives per row: the shared set + hard ones (softmax), or the row's own one (bce)
+    ctx.stats["S"].append(1 if spec.type == "bce" else len(inp["neg_items"]) + spec.n_hard)
     ph.start("loss_fwd")
-    with torch.autocast(device.type, enabled=False):
-        out = sampled_softmax_loss(
-            user_vecs.float(), pos_items, pos_vecs.float(), neg_items, neg_vecs.float(),
-            ctx.log_q, ctx.temperature, hard_neg_vecs=hard_vecs, hard_neg_items=hard_items,
-        )  # fmt: skip
-        ctx.parts["rank"] = out.detach()
-        if ctx.like_weight:
-            logits = model.like_logit(user_vecs.float(), pos_vecs.float())
-            like_loss = F.binary_cross_entropy_with_logits(
-                logits, like_y.float(), reduction="sum"
-            ) / max(len(like_y), 1)
-            ctx.parts["like"] = like_loss.detach()
-            out = out + ctx.like_weight * like_loss
+    out, parts = rank_loss(spec, model, inp, ctx.log_q, amp)
+    ctx.parts.update(parts)
     ph.start("backward")
     opt.zero_grad(set_to_none=True)
     scaler.scale(out).backward()
     ph.start("optimizer")
     scaler.unscale_(opt)
-    nn.utils.clip_grad_norm_(model.parameters(), ctx.max_grad_norm)
+    if ctx.max_grad_norm is not None:
+        nn.utils.clip_grad_norm_(model.parameters(), ctx.max_grad_norm)
     scale_before = scaler.get_scale()
     scaler.step(opt)
     scaler.update()
@@ -553,16 +526,22 @@ def _fmt_summary(r: dict) -> str:
     c = r["config"]
     L.append(f"profile_train: {c['name']} on {r['env']['device']} (torch {r['env']['torch']}, "
              f"cuda {r['env']['torch_cuda']}, {r['env']['capability']})")  # fmt: skip
+    negs = (
+        "1 uniform per row"
+        if c["loss_type"] == "bce"
+        else f"{c['n_in_batch']} in-batch + {c['n_uniform']} uniform + {c['n_hard']} hard"
+    )
     L.append(
         f"batch {c['batch_size']} x max_len {c['max_len']}, catalog {c['n_items']}, "
-        f"negatives {c['n_in_batch']} in-batch + {c['n_uniform']} uniform + {c['n_hard']} hard, "
-        f"logq {c['logq']}, input {c['input_filter']}, windows {c['window_sampling']}, "
+        f"loss {c['loss_type']} (chunk_rows {c['chunk_rows']}, max_rows {c['max_rows']}), "
+        f"negatives {negs}, logq {c['logq']}, input {c['input_filter']}, "
+        f"windows {c['window_sampling']}, amp {c['amp']}, "
         f"workers {c['num_workers']} pin {c['pin_memory']} prefetch {c['prefetch_factor']}"
     )
     s = r["shapes"]
     L.append(
-        f"M (valid rows) mean {s['M_mean']:.0f}  S {s['S_mean']:.0f}  logits fp32 "
-        f"{s['logits_gb_fp32']:.2f} GB per [M, S+1] tensor"
+        f"M (valid rows) mean {s['M_mean']:.0f}  S {s['S_mean']:.0f}  (full [M, S+1] fp32 "
+        f"logits would be {s['logits_gb_fp32']:.2f} GB; the loss never materialises them)"
     )
     if r["env"]["native_sass_for_device"] is False:
         L.append(f"WARNING: torch has no native SASS for {r['env']['capability']} "
@@ -685,9 +664,12 @@ def profile(args) -> dict:
             "n_items": ctx.n_items,
             "n_catalog": int(getattr(model, "n_catalog", ctx.n_items)),
             "n_params": int(sum(p.numel() for p in model.parameters())),
-            "n_in_batch": ctx.n_ib,
-            "n_uniform": ctx.n_uni,
-            "n_hard": ctx.n_hard,
+            "loss_type": ctx.spec.type,
+            "chunk_rows": ctx.spec.chunk_rows,
+            "max_rows": ctx.spec.max_rows,
+            "n_in_batch": ctx.spec.n_ib,
+            "n_uniform": ctx.spec.n_uni,
+            "n_hard": ctx.spec.n_hard,
             "logq": bool(lc.get("logq")),
             "amp": ctx.amp,
             "input_filter": input_filter_of(cfg),

@@ -692,7 +692,7 @@ def notebooks(repo_url: str, git_ref: str) -> dict[str, dict]:
                 ("THROUGHPUT_STEPS", 100, "unsynchronised steps (the real steps/s)"),
                 ("PROFILE_STEPS", 20, "torch.profiler steps"),
                 ("LOADER_WORKERS", "0,2,4", "num_workers values of the DataLoader-only sweep"),
-                ("OVERRIDES", [], 'applied to every config, e.g. ["train.num_workers=2"]'),
+                ("OVERRIDES", [], 'applied to every config, e.g. ["loss.chunk_rows=4096"]'),
                 ("REQUIRE_GPU", True, "fail fast if the GPU accelerator is not on"),
             ],
             [K4P_DISCOVER, K4P_WORK, K4P_SUMMARY],

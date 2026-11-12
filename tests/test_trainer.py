@@ -536,3 +536,149 @@ def test_session_gap_and_window_sampling_reach_the_datasets(
     cfg = tiny_cfg(**{"train.max_steps": 2, "data.session_gap_seconds": 7200})
     train(cfg, data, _fresh(cfg, data), "test", tmp_path / "b")
     assert seen["ds"] == (7200, "last")
+
+
+# ---- F3: eval cadence, loss.type, max_rows, chunk_rows -------------------------------------
+
+ALL_TRAIN_CONFIGS = [
+    ROOT / "configs" / "sasrec.yaml", ROOT / "configs" / "hookseq.yaml",
+    *sorted((ROOT / "configs" / "ablations").glob("*.yaml")),
+]  # fmt: skip
+
+
+def _spy(monkeypatch, mod, name, log):
+    real = getattr(mod, name)
+
+    def spy(*a, **kw):
+        log.append((a, kw))
+        return real(*a, **kw)
+
+    monkeypatch.setattr(mod, name, spy)
+
+
+def test_configs_eval_cadence_and_loss_defaults():
+    for p in ALL_TRAIN_CONFIGS:  # hookseq and a0..a6 inherit sasrec.yaml's cadence
+        cfg = load_config(p)
+        t, lc = cfg["train"], cfg["loss"]
+        assert (t["eval_every_steps"], t["patience"], t["ckpt_every_steps"]) == (500, 4, 1000), p
+        assert lc["type"] == "softmax" and lc["max_rows"] is None, p.name  # the knob stays off
+        assert lc["chunk_rows"] == 8192, p.name
+
+
+def test_sasrec_bce_config_is_the_official_recipe():
+    cfg = load_config(ROOT / "configs" / "sasrec_bce.yaml")
+    m, t, lc = cfg["model"], cfg["train"], cfg["loss"]
+    assert lc["type"] == "bce" and not lc["logq"] and not lc["dislike_hard_negatives"]
+    assert lc["max_rows"] is None
+    assert (m["name"], m["d_model"], m["n_layers"], m["n_heads"], m["max_len"]) == (
+        "sasrec", 64, 2, 2, 200
+    )
+    assert m["dropout"] == 0.0
+    assert (t["batch_size"], t["lr"], t["weight_decay"], t["warmup_steps"]) == (256, 1e-3, 0.0, 0)
+    assert t["lr_schedule"] == "constant" and t["max_grad_norm"] is None
+    # 100 epochs x 35 batches (9,207 Listen+ users // 256, K4P); one eval, at the end
+    assert t["max_steps"] == t["eval_every_steps"] == 3500
+    assert (cfg["data"]["input_filter"], cfg["data"]["window_sampling"]) == ("listen_plus", "last")
+
+
+def test_bce_loss_type_trains_with_one_uniform_negative_per_row(
+    processed_synth, tmp_path, monkeypatch
+):
+    import hookrec.train.trainer as trainer_mod
+
+    bce, softmax, negs = [], [], []
+    _spy(monkeypatch, trainer_mod, "bce_loss", bce)
+    _spy(monkeypatch, trainer_mod, "sampled_softmax_loss", softmax)
+    _spy(monkeypatch, trainer_mod, "sample_negatives", negs)
+    cfg = tiny_cfg(**{"loss.type": "bce", "train.max_steps": 3})
+    r = train(cfg, processed_synth, _fresh(cfg, processed_synth), "test", tmp_path / "ck")
+    assert r.steps == 3 and math.isfinite(r.final_loss) and r.final_loss > 0
+    assert len(bce) == 3 and softmax == []
+    assert len(negs) == 3  # no in-batch negatives
+    for (u, p, n), _ in bce:
+        assert u.shape == p.shape == n.shape and len(u) > 0
+    n_items = processed_synth.vocab.n_items
+    for ((n_cat, n, _gen), _), ((u, _p, _n), _) in zip(negs, bce, strict=True):
+        assert (n_cat, n) == (n_items, len(u))  # uniform over 1..N, one per position
+
+
+@pytest.mark.parametrize("over", [
+    {"loss.logq": True}, {"loss.dislike_hard_negatives": True}, {"loss.temperature": 0.5},
+])  # fmt: skip
+def test_bce_loss_type_rejects_softmax_only_options(processed_synth, tmp_path, over):
+    cfg = tiny_cfg(**{"loss.type": "bce", **over})
+    with pytest.raises(ValueError, match="bce"):
+        train(cfg, processed_synth, _fresh(cfg, processed_synth), "test", tmp_path / "ck")
+
+
+def test_unknown_loss_type_raises(processed_synth, tmp_path):
+    cfg = tiny_cfg(**{"loss.type": "hinge"})
+    with pytest.raises(ValueError, match="loss.type"):
+        train(cfg, processed_synth, _fresh(cfg, processed_synth), "test", tmp_path / "ck")
+
+
+def test_max_rows_subsamples_valid_rows_seeded(processed_synth, tmp_path, monkeypatch):
+    import hookrec.train.trainer as trainer_mod
+
+    data = processed_synth
+    base = {"train.max_steps": 4, "loss.dislike_hard_negatives": True, "loss.n_hard": 2}
+    off = _fresh(tiny_cfg(**base), data)
+    train(tiny_cfg(**base), data, off, "test", tmp_path / "off")
+    # max_rows above every batch's row count is a no-op: bit-identical to off
+    big = _fresh(tiny_cfg(**base), data)
+    train(tiny_cfg(**base, **{"loss.max_rows": 10**6}), data, big, "test", tmp_path / "big")
+    for a, b in zip(off.state_dict().values(), big.state_dict().values(), strict=True):
+        assert torch.equal(a, b)
+
+    calls = []
+    _spy(monkeypatch, trainer_mod, "sampled_softmax_loss", calls)
+    runs = []
+    for name in ("k1", "k2"):
+        cfg = tiny_cfg(**base, **{"loss.max_rows": 5})
+        model = _fresh(cfg, data)
+        train(cfg, data, model, "test", tmp_path / name)
+        runs.append(model.state_dict())
+    assert len(calls) == 8
+    for (u, pos, _pv, _n, _nv, *_), kw in calls:
+        assert len(u) == len(pos) == 5 and (pos != 0).all()
+        assert kw["hard_neg_items"].shape == (5, 2)
+    for a, b in zip(*(r.values() for r in runs), strict=True):  # seeded: reproducible
+        assert torch.equal(a, b)
+    assert any(not torch.equal(a, b) for a, b in zip(off.state_dict().values(), runs[0].values()))
+
+
+def test_chunk_rows_reaches_the_loss_and_is_not_hashed(processed_synth, tmp_path, monkeypatch):
+    import hookrec.train.trainer as trainer_mod
+    from hookrec.train.trainer import training_hash
+
+    assert training_hash(tiny_cfg()) == training_hash(tiny_cfg(**{"loss.chunk_rows": 7}))
+    assert training_hash(tiny_cfg()) != training_hash(tiny_cfg(**{"loss.max_rows": 7}))
+    calls = []
+    _spy(monkeypatch, trainer_mod, "sampled_softmax_loss", calls)
+    cfg = tiny_cfg(**{"loss.chunk_rows": 7, "train.max_steps": 1})
+    train(cfg, processed_synth, _fresh(cfg, processed_synth), "test", tmp_path / "ck")
+    assert calls[0][1]["chunk_rows"] == 7
+
+
+def test_lr_schedule_constant_and_no_grad_clipping(processed_synth, tmp_path, monkeypatch):
+    import hookrec.train.trainer as trainer_mod
+    from hookrec.train.trainer import lr_multiplier
+
+    f = lr_multiplier({"lr_schedule": "constant", "warmup_steps": 0}, 100)
+    assert [f(s) for s in (0, 50, 99, 10**6)] == [1.0] * 4
+    g = lr_multiplier({"warmup_steps": 10}, 100)  # default: warmup + cosine
+    assert g(0) == pytest.approx(0.1) and g(100) == pytest.approx(0.0)
+    with pytest.raises(ValueError, match="warmup"):
+        lr_multiplier({"lr_schedule": "constant", "warmup_steps": 5}, 100)
+    with pytest.raises(ValueError, match="lr_schedule"):
+        lr_multiplier({"lr_schedule": "step", "warmup_steps": 0}, 100)
+
+    clips = []
+    _spy(monkeypatch, trainer_mod.nn.utils, "clip_grad_norm_", clips)
+    cfg = tiny_cfg(**{"train.max_steps": 2})
+    train(cfg, processed_synth, _fresh(cfg, processed_synth), "test", tmp_path / "a")
+    assert len(clips) == 2
+    cfg = tiny_cfg(**{"train.max_steps": 2, "train.max_grad_norm": None,
+                      "train.lr_schedule": "constant", "train.warmup_steps": 0})  # fmt: skip
+    r = train(cfg, processed_synth, _fresh(cfg, processed_synth), "test", tmp_path / "b")
+    assert len(clips) == 2 and math.isfinite(r.final_loss)
