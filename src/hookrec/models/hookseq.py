@@ -3,7 +3,9 @@
 `item_repr` = ID embedding (randomly dropped in training, so audio/artist carry cold items)
 + audio MLP (a learned vector for items without audio) + artist embedding. `input_repr` adds
 per-event token / organic / ratio embeddings. A parameter exists only when its flag is on, so
-with every flag off the parameters equal `SASRec(n_items=n_id)`.
+with every flag off the parameters equal `SASRec(n_items=n_id)`. `use_time_gap` adds a
+bucketed seconds-since-previous-event embedding (batch key `gap_bucket`); `like_head` adds a
+bilinear like-prediction head (`like_logit`) for the trainer's auxiliary loss.
 """
 
 from __future__ import annotations
@@ -37,6 +39,9 @@ class HookSeq(SASRec):
         use_organic: bool = True,
         use_ratio: bool = True,
         id_dropout: float = 0.2,
+        like_head: bool = False,
+        use_time_gap: bool = False,
+        n_gap_buckets: int = 8,
     ):
         # NB: on HookSeq `self.n_items` is n_id (the ID table size, SASRec's constructor arg);
         # `self.n_catalog` is the catalog size N that item_repr / all_item_repr cover.
@@ -55,6 +60,7 @@ class HookSeq(SASRec):
         self.use_audio, self.use_artist = use_audio, use_artist
         self.use_event, self.use_organic, self.use_ratio = use_event, use_organic, use_ratio
         self.id_dropout = id_dropout
+        self.like_head, self.use_time_gap = like_head, use_time_gap
         d = d_model
         # Non-persistent (kept out of checkpoints; run_train rebuilds them from ProcessedData)
         # and only registered when used. With every flag off, an item without an ID
@@ -84,7 +90,13 @@ class HookSeq(SASRec):
         if use_ratio:
             self.ratio_emb = nn.Embedding(N_RATIO_BUCKETS, d, padding_idx=0)
         # SASRec's own parameters keep their base init (so the all-off model matches it exactly)
-        for name in ("audio_mlp", "artist_emb", "token_emb", "organic_emb", "ratio_emb"):
+        for name in (
+            "audio_mlp",
+            "artist_emb",
+            "token_emb",
+            "organic_emb",
+            "ratio_emb",
+        ):
             if hasattr(self, name):
                 getattr(self, name).apply(self._init_weights)
         with torch.no_grad():
@@ -93,6 +105,15 @@ class HookSeq(SASRec):
                     getattr(self, name).weight[0].zero_()
             if use_audio:
                 nn.init.normal_(self.missing_audio_vec, 0.0, 0.02)
+        # Created last, so enabling them leaves every other parameter's init draw unchanged.
+        if use_time_gap:  # bucket 0 = pad / first event (see datasets.gap_buckets)
+            self.gap_emb = nn.Embedding(n_gap_buckets, d, padding_idx=0)
+            self.gap_emb.apply(self._init_weights)
+            with torch.no_grad():
+                self.gap_emb.weight[0].zero_()
+        if like_head:  # bilinear "will be liked" score, see like_logit
+            self.like_W = nn.Linear(d, d, bias=False)
+            self.like_W.apply(self._init_weights)
 
     def item_repr(self, idx: torch.Tensor) -> torch.Tensor:
         out = self.item_emb(self.id_idx[idx])
@@ -117,6 +138,7 @@ class HookSeq(SASRec):
             (self.use_event, "token_emb", "tokens"),
             (self.use_organic, "organic_emb", "organic"),
             (self.use_ratio, "ratio_emb", "ratio"),
+            (self.use_time_gap, "gap_emb", "gap_bucket"),
         ):
             if flag:
                 e = getattr(self, emb)(batch[key])
@@ -124,3 +146,7 @@ class HookSeq(SASRec):
         if extra is not None:
             x = x + extra * (items != 0).unsqueeze(-1)
         return x
+
+    def like_logit(self, hidden: torch.Tensor, target_vecs: torch.Tensor) -> torch.Tensor:
+        """[B, L] bilinear logit that the target event is a like: <hidden, W target_vecs>."""
+        return (hidden * self.like_W(target_vecs)).sum(-1)

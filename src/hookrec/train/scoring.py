@@ -8,7 +8,7 @@ from torch import Tensor, nn
 
 from hookrec.data.sequences import PackedSequences
 from hookrec.models.popularity import MostPop, fill_cold
-from hookrec.train.datasets import _INPUT_FIELDS
+from hookrec.train.datasets import _INPUT_FIELDS, DEFAULT_SESSION_GAP, gap_buckets
 
 _TIE_ROWS = 64  # rows per full stable sort when a top-k cut falls inside a tie
 
@@ -84,7 +84,9 @@ class SeqRecommender:
         fallback: MostPop,
         batch_size: int = 1024,
         item_chunk: int = 500_000,
+        session_gap: float = DEFAULT_SESSION_GAP,
     ):
+        self.session_gap = session_gap
         self.model, self.seqs, self.max_len = model, seqs, max_len
         self.device = torch.device(device)
         self.fallback, self.batch_size, self.item_chunk = fallback, batch_size, item_chunk
@@ -102,6 +104,12 @@ class SeqRecommender:
         for f in _INPUT_FIELDS:
             a = np.where(valid, np.asarray(getattr(self.seqs, f))[src], 0).astype(np.int64)
             out[f] = torch.from_numpy(a).to(self.device, non_blocking=True)
+        # gap to the previous event of the same user, which may lie outside the window
+        ts = np.asarray(self.seqs.ts).astype(np.int64)
+        first = src == offsets[rows][:, None]
+        gap = ts[src] - ts[np.maximum(src - 1, 0)]
+        gb = np.where(valid & ~first, gap_buckets(gap, self.session_gap), 0)
+        out["gap_bucket"] = torch.from_numpy(gb.astype(np.int64)).to(self.device)
         return out
 
     @torch.no_grad()

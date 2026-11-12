@@ -24,6 +24,7 @@ from typing import Literal
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, Dataset, Sampler
@@ -43,7 +44,7 @@ from hookrec.train.checkpoint import (
     restore_rng_states,
     save_checkpoint,
 )
-from hookrec.train.datasets import SeqTrainDataset
+from hookrec.train.datasets import SeqTrainDataset, session_gap_from
 from hookrec.train.scoring import SeqRecommender
 from hookrec.utils.config import config_hash
 from hookrec.utils.seed import set_seed
@@ -198,6 +199,8 @@ def train(
     log_every = tc.get("log_every_steps", 100)
     n_ib, n_uni = lc.get("n_in_batch_negatives", 4096), lc["n_uniform_negatives"]
     n_hard = lc.get("n_hard", 4) if lc.get("dislike_hard_negatives") else 0
+    session_gap = session_gap_from(cfg)
+    like_weight = lc.get("like_weight", 0.0) if getattr(model, "like_head", False) else 0.0
 
     cfg_hash = training_hash(cfg)
     payload = load_latest([ckpt_dir, *resume_dirs])
@@ -270,7 +273,7 @@ def train(
         )  # fmt: skip
         del payload
 
-    ds = _EpochIndexed(SeqTrainDataset(seqs, max_len, tc["seed"]))
+    ds = _EpochIndexed(SeqTrainDataset(seqs, max_len, tc["seed"], session_gap))
     sampler = _ResumableSampler(len(seqs), tc["batch_size"], tc["seed"])
     if sampler.batches_per_epoch == 0:
         raise ValueError(f"{len(seqs)} sequences cannot fill one batch of {tc['batch_size']}")
@@ -290,6 +293,7 @@ def train(
     dirty = False  # early-stopping state changed since the last checkpoint
     seconds_before = st["train_seconds"]
     loss = torch.tensor(float("nan"))
+    parts = {"rank": float("nan"), "like": 0.0}  # components of the last step's loss
 
     def stop_reason() -> str | None:
         if split == "val" and st["bad_evals"] >= tc["patience"]:  # also on re-launch after it
@@ -303,8 +307,9 @@ def train(
     def run_eval() -> None:
         nonlocal dirty
         rec = SeqRecommender(
-            model, seqs, max_len, device, fallback, tc.get("eval_batch_size", 1024)
-        )
+            model, seqs, max_len, device, fallback, tc.get("eval_batch_size", 1024),
+            session_gap=session_gap,
+        )  # fmt: skip
         metric = evaluate(rec, eval_truth, n_items, ks=(10,)).metrics["ndcg@10"]
         st["last_eval_step"] = step
         dirty = True
@@ -345,6 +350,7 @@ def train(
                 )
             neg_items = torch.cat(neg)
             pos_vecs, neg_vecs = model.item_repr(pos_items), model.item_repr(neg_items)
+            like_y = batch["target_is_like"][valid]
             hard_items = hard_vecs = None
             if n_hard:
                 rows = valid.nonzero()[:, 0]
@@ -356,6 +362,13 @@ def train(
                 log_q, lc.get("temperature", 1.0), hard_neg_vecs=hard_vecs,
                 hard_neg_items=hard_items,
             )  # fmt: skip
+            parts["rank"] = out.detach()
+            if like_weight:  # multi-task: does the target event get a like? (positions with target)
+                like_loss = F.binary_cross_entropy_with_logits(
+                    model.like_logit(user_vecs.float(), pos_vecs.float()), like_y.float()
+                )
+                parts["like"] = like_loss.detach()
+                out = out + like_weight * like_loss
         opt.zero_grad(set_to_none=True)
         scaler.scale(out).backward()
         scaler.unscale_(opt)
@@ -378,8 +391,9 @@ def train(
             if step % log_every == 0:
                 sps = steps_session / max(time.monotonic() - t_session, 1e-9)
                 log.info(
-                    "step %d loss %.4f lr %.2e %.2f steps/s ETA %.2f h",
-                    step, float(loss), sched.get_last_lr()[0], sps, (max_steps - step) / sps / 3600,
+                    "step %d loss %.4f (rank %.4f like %.4f) lr %.2e %.2f steps/s ETA %.2f h",
+                    step, float(loss), float(parts["rank"]), float(parts["like"]), sched.get_last_lr()[0], sps,
+                    (max_steps - step) / sps / 3600,
                 )  # fmt: skip
             if split == "val" and step % eval_every == 0:
                 run_eval()

@@ -156,7 +156,7 @@ def test_ablation_ladder():
         flags = tuple(c["model"][f] for f in FLAGS)
         got[p.stem] = (flags, c["loss"]["logq"], c["loss"]["dislike_hard_negatives"])
     off, on = (False,) * 5, (True,) * 5
-    assert len(got) == 5
+    assert len(got) == 7
     assert got["a0_sasrec"] == (off, False, False)
     assert got["a1_audio"] == ((True, True, False, False, False), False, False)
     assert got["a2_audio_event_organic"] == (on, False, False)

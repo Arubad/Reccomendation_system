@@ -29,6 +29,7 @@ from hookrec.data.processed import load_processed
 from hookrec.models.base import build_model, evaluate_split, history_for
 from hookrec.models.popularity import MostPop
 from hookrec.train.checkpoint import load_latest
+from hookrec.train.datasets import session_gap_from
 from hookrec.train.scoring import SeqRecommender
 from hookrec.train.trainer import device_name, train, training_hash
 from hookrec.utils.config import load_config
@@ -136,7 +137,9 @@ def main(argv: list[str] | None = None) -> Path | None:
         )
     seqs, _ = history_for(data, args.split)
     fallback = MostPop().fit(seqs, data.vocab.n_items)
-    rec = SeqRecommender(model, seqs, cfg["model"]["max_len"], device, fallback)
+    rec = SeqRecommender(
+        model, seqs, cfg["model"]["max_len"], device, fallback, session_gap=session_gap_from(cfg)
+    )
     ev = evaluate_split(rec, data, args.split)
 
     gpu = device_name(device)

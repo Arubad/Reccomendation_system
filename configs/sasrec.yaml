@@ -26,3 +26,4 @@ loss:
   temperature: 1.0
   dislike_hard_negatives: false
   n_hard: 4
+  like_weight: 0.0  # multi-task like-head BCE weight; only used when model.like_head

@@ -1,0 +1,3 @@
+extends: a4_full_dislike.yaml
+model: {like_head: true}
+loss: {like_weight: 0.2}
