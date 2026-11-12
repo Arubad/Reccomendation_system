@@ -13,21 +13,10 @@ import numpy as np
 import polars as pl
 
 from hookrec.data.clean import clean_events, clean_report, scan_events
+from hookrec.data.split import global_temporal_split
 from hookrec.eda import plots, stats
 
-DAY = stats.DAY_UNITS
-GAP_UNITS = 1800 // stats.TS_UNIT_SECONDS
 KEEP_COLS = ["uid", "item_id", "timestamp", "is_organic", "event_type", "played_ratio_pct"]
-
-
-def _split(lf: pl.LazyFrame) -> tuple[pl.LazyFrame, pl.LazyFrame]:
-    # TODO(Task 5): use global_temporal_split
-    t0 = lf.select(pl.col("timestamp").min()).collect().item()
-    train_end = t0 + 300 * DAY
-    ts = pl.col("timestamp")
-    train = lf.filter(ts < train_end)
-    test = lf.filter((ts >= train_end + GAP_UNITS) & (ts < t0 + 301 * DAY))
-    return train, test
 
 
 def _jsonable(o):
@@ -117,8 +106,8 @@ def main(argv: list[str] | None = None) -> dict:
     out["like_rate_by_ratio"] = stats.like_rate_by_ratio(lf)
     plots.plot_like_rate(out["like_rate_by_ratio"], fig_dir / "like_rate.png")
 
-    train, test = _split(lf)
-    out["cold_items"] = stats.cold_item_share(train, test)
+    split = global_temporal_split(lf, ts_unit_seconds=stats.TS_UNIT_SECONDS)
+    out["cold_items"] = stats.cold_item_share(split.train, split.test)
     plots.plot_cold_share(out["cold_items"], fig_dir / "cold_items.png")
 
     out = _jsonable(out)
