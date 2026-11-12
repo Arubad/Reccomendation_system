@@ -298,3 +298,9 @@ def test_pipeline_end_to_end(kaggle_fs, tmp_path, capsys):
     md = (out / "reports" / "results.md").read_text()
     assert "a0_sasrec" in md and "mostpop" in md
     assert "# Results" in capsys.readouterr().out
+
+
+def test_k3_sets_single_thread_blas():
+    code = "\n".join(_code(_nb("k3_baselines")))
+    assert "OPENBLAS_NUM_THREADS" in code and "MKL_NUM_THREADS" in code
+    assert "env=BLAS_ENV" in code

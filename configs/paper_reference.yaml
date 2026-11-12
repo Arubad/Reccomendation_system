@@ -4,6 +4,9 @@
 # version (https://arxiv.org/html/2505.22238v2). Table 7 is the Likes setting (not used here).
 # SANSA at 500M is reported as "-" in the paper (computationally intractable); omitted here.
 # Keys: size -> model -> metric. Random is omitted.
+# NOTE: the paper's "Recall" values (the recall@10 / recall@100 keys below) correspond to our
+# `recall_paper@k` = hits@k / |T|, NOT the official min(|T|, k) `recall@k`. hookrec.eval.report
+# maps them to the recall_paper columns when loading (PAPER_RECALL_MAP); keys stay unrenamed.
 "50m":
   MostPop:  {ndcg@10: 0.0186, ndcg@100: 0.0249, recall@10: 0.0064, recall@100: 0.0321, coverage@10: 0.0000, coverage@100: 0.0002}
   DecayPop: {ndcg@10: 0.0260, ndcg@100: 0.0323, recall@10: 0.0122, recall@100: 0.0479, coverage@10: 0.0000, coverage@100: 0.0002}

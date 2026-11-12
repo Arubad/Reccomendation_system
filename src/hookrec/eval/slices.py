@@ -8,7 +8,7 @@ import polars as pl
 from hookrec.data.aggregates import PeriodAggregates
 from hookrec.data.features import ItemFeatures
 from hookrec.data.vocab import ItemVocab
-from hookrec.eval.metrics import coverage, ndcg_per_user, recall_per_user
+from hookrec.eval.metrics import coverage, ndcg_per_user, recall_full_per_user, recall_per_user
 from hookrec.eval.protocol import target_filter
 
 Truth = dict[int, np.ndarray]
@@ -111,6 +111,7 @@ def evaluate_slices(
             for k in ks:
                 m[f"ndcg@{k}"] = float(ndcg_per_user(rows, tl, k).mean())
                 m[f"recall@{k}"] = float(recall_per_user(rows, tl, k).mean())
+                m[f"recall_paper@{k}"] = float(recall_full_per_user(rows, tl, k).mean())
                 m[f"coverage@{k}"] = coverage(rows, n_items, k)
         out[name] = m
     return out

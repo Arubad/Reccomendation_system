@@ -14,7 +14,22 @@ import yaml
 log = logging.getLogger(__name__)
 
 PAPER_REFERENCE = Path(__file__).resolve().parents[3] / "configs" / "paper_reference.yaml"
-DEFAULT_METRICS = ("ndcg@10", "ndcg@100", "recall@10", "recall@100", "coverage@10")
+DEFAULT_METRICS = (
+    "ndcg@10", "ndcg@100", "recall@10", "recall@100",
+    "recall_paper@10", "recall_paper@100", "coverage@10",
+)  # fmt: skip
+# The paper's "Recall" column is hits/|T|, i.e. our recall_paper@k, not our official recall@k.
+PAPER_RECALL_MAP = {"recall@10": "recall_paper@10", "recall@100": "recall_paper@100"}
+RECALL_FOOTNOTE = (
+    "_Recall definitions._ `recall@k` is the official Yambda definition: hits@k / min(|T|, k) "
+    "(benchmarks/yambda/evaluation/metrics.py, after the bug-fix commit "
+    '"Fix yet another bug in metrics (#24)", whose leftover comment suggests the denominator '
+    "used to be |T|). `recall_paper@k` is hits@k / |T|. The paper's Recall column matches "
+    "hits/|T| (our NDCG agrees with the paper within 7% while min(|T|, k) recall is 2-3x "
+    "higher), so paper rows are shown under `recall_paper@k` and their `recall@k` is left as "
+    '"-"; compare paper Recall against `recall_paper@k` only. Older run records without '
+    '`recall_paper@k` show "-".'
+)
 NOT_RUN = "not yet run"
 
 
@@ -57,7 +72,11 @@ def paper_rows(size: str, path: Path = PAPER_REFERENCE) -> dict[str, dict]:
     if not Path(path).exists():
         return {}
     ref = yaml.safe_load(Path(path).read_text()) or {}
-    return {m: v for m, v in (ref.get(str(size).lower()) or {}).items()}
+    out = {}
+    for model, vals in (ref.get(str(size).lower()) or {}).items():
+        # the paper's recall is hits/|T|: file it under recall_paper@k, never under recall@k
+        out[model] = {PAPER_RECALL_MAP.get(m, m): v for m, v in (vals or {}).items()}
+    return out
 
 
 def results_table(
@@ -262,6 +281,8 @@ def write_readme_tables(results_dir, out_md) -> Path:
             f"## Headline ({size}, test split, Listen+ truth and warm users)",
             "",
             _section(lambda s=size: results_table(runs, size=s)),
+            "",
+            RECALL_FOOTNOTE,
             "",
         ]
     for size in sizes:

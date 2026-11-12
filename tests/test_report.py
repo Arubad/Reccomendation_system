@@ -243,3 +243,29 @@ def test_safe_load_runs_treats_null_extra_as_empty(tmp_path):
     )
     (run,) = _safe_load_runs(tmp_path)
     assert run["extra"] == {}
+
+
+def test_paper_rows_under_recall_paper_and_old_records_render():
+    from hookrec.eval.report import DEFAULT_METRICS, RECALL_FOOTNOTE, paper_rows
+
+    assert "recall_paper@10" in DEFAULT_METRICS and "recall_paper@100" in DEFAULT_METRICS
+    pr = paper_rows("50m")["SASRec"]
+    assert pr["recall_paper@10"] == 0.0325 and "recall@10" not in pr
+    old = _run("hookseq", 0.1, "2026-01-01")  # no recall_paper in its metrics
+    t = results_table([old], size="50m")
+    header = [c.strip() for c in t.splitlines()[0].strip("|").split("|")]
+    row = next(ln for ln in t.splitlines() if ln.startswith("| SASRec (paper)"))
+    cells = [c.strip() for c in row.strip("|").split("|")]
+    assert cells[header.index("recall_paper@10")] == "0.0325"
+    assert cells[header.index("recall@10")] == "-"
+    hs = next(ln for ln in t.splitlines() if ln.startswith("| hookseq"))
+    assert hs.split("|")[header.index("recall_paper@10") + 1].strip() == "-"  # old record: no crash
+    assert "min(|T|, k)" in RECALL_FOOTNOTE
+
+
+def test_readme_has_recall_footnote(tmp_path):
+    res = tmp_path / "res"
+    res.mkdir()
+    (res / "a.json").write_text(json.dumps(_run("hookseq", 0.1, "2026-01-01")))
+    md = write_readme_tables(res, tmp_path / "R.md").read_text()
+    assert "recall_paper@k" in md and "hits@k / |T|" in md

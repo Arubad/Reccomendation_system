@@ -314,6 +314,8 @@ K3_WORK = """\
 import sys
 from pathlib import Path
 
+BLAS_ENV = {"OPENBLAS_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
+
 RESULTS = Path(OUT, "results")
 for split in RUN_SPLITS:  # test refits each model's best val config, so val runs first
     cmd = [
@@ -323,7 +325,8 @@ for split in RUN_SPLITS:  # test refits each model's best val config, so val run
     ]
     if QUICK:
         cmd.append("--quick")
-    run_logged(cmd, cwd=REPO)
+    # single-threaded BLAS: iALS warns about OpenBLAS oversubscription otherwise
+    run_logged(cmd, env=BLAS_ENV, cwd=REPO)
 (RESULTS / "_HOOKREC_RESULTS_baselines").write_text("")"""
 
 RESULTS_SUMMARY = """\

@@ -86,7 +86,11 @@ def test_evaluate_batches_equal_unbatched():
     assert isinstance(a, EvalResult)
     assert fa.calls == [7, 7, 7, 7, 7, 5] and fb.calls == [40]
     assert a.metrics == pytest.approx(b.metrics)
-    assert set(a.metrics) == {"ndcg@5", "recall@5", "coverage@5", "ndcg@20", "recall@20", "coverage@20"}
+    assert set(a.metrics) == {
+        f"{m}@{k}" for m in ("ndcg", "recall", "recall_paper", "coverage") for k in (5, 20)
+    }
+    assert set(a.per_user) == {f"{m}@{k}" for m in ("ndcg", "recall", "recall_paper") for k in (5, 20)}
+    assert a.metrics["recall_paper@5"] <= a.metrics["recall@5"] + 1e-12
     for key in a.per_user:
         assert np.allclose(a.per_user[key], b.per_user[key])
     assert a.topk.shape == (n, 20)

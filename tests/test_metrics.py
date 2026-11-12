@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from hookrec.eval.bootstrap import bootstrap_ci
-from hookrec.eval.metrics import coverage, ndcg_per_user, recall_per_user
+from hookrec.eval.metrics import coverage, ndcg_per_user, recall_full_per_user, recall_per_user
 
 
 def _t(*xs):
@@ -61,3 +61,13 @@ def test_bootstrap_ci_contains_mean():
 def test_bootstrap_ci_empty():
     m, lo, hi = bootstrap_ci(np.array([]))
     assert np.isnan(m) and np.isnan(lo) and np.isnan(hi)
+
+
+def test_recall_paper_hand():
+    ranked = np.array([[1, 2, 3, 99, 98, 97, 96, 95, 94, 93], [9] * 10, [1] * 10])
+    truth = [_t(1, 2, 3, *range(100, 117)), _t(1), _t()]
+    assert len(truth[0]) == 20
+    got = recall_full_per_user(ranked, truth, k=10)
+    assert got == pytest.approx([3 / 20, 0.0, 0.0])  # hits / |T|, empty truth is 0
+    # official recall divides by min(|T|, k) = 10
+    assert recall_per_user(ranked, truth, k=10)[0] == pytest.approx(3 / 10)

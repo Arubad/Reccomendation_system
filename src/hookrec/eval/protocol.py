@@ -10,7 +10,7 @@ import polars as pl
 
 from hookrec.data.label import LIKE, LISTEN_FULL
 from hookrec.data.vocab import ItemVocab
-from hookrec.eval.metrics import coverage, ndcg_per_user, recall_per_user
+from hookrec.eval.metrics import coverage, ndcg_per_user, recall_full_per_user, recall_per_user
 
 
 class Recommender(Protocol):
@@ -22,7 +22,7 @@ class Recommender(Protocol):
 @dataclass
 class EvalResult:
     metrics: dict[str, float]
-    per_user: dict[str, np.ndarray]  # "ndcg@k" / "recall@k", aligned with `uids`
+    per_user: dict[str, np.ndarray]  # "ndcg@k" / "recall@k" / "recall_paper@k", aligned with `uids`
     uids: np.ndarray
     topk: np.ndarray  # (len(uids), max(ks))
 
@@ -117,7 +117,11 @@ def evaluate(
     for k in ks:
         per_user[f"ndcg@{k}"] = ndcg_per_user(topk, truth_list, k)
         per_user[f"recall@{k}"] = recall_per_user(topk, truth_list, k)
+        per_user[f"recall_paper@{k}"] = recall_full_per_user(topk, truth_list, k)
         metrics[f"ndcg@{k}"] = float(per_user[f"ndcg@{k}"].mean()) if len(uids) else 0.0
         metrics[f"recall@{k}"] = float(per_user[f"recall@{k}"].mean()) if len(uids) else 0.0
+        metrics[f"recall_paper@{k}"] = (
+            float(per_user[f"recall_paper@{k}"].mean()) if len(uids) else 0.0
+        )
         metrics[f"coverage@{k}"] = coverage(topk, n_items, k)
     return EvalResult(metrics=metrics, per_user=per_user, uids=uids, topk=topk)

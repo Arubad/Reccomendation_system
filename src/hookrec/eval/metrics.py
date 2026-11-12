@@ -12,6 +12,13 @@ Official definitions, with `target_mask[u, j] = 1` iff the item ranked j for use
                # IDCG == 0 -> ratio 0
     Coverage@k = |unique(ranked.item_ids[:, :k])| / num_item_ids
 
+Recall denominator, and the paper table: the official code divides by min(|T|, k), but the repo
+has a later commit "Fix yet another bug in metrics (#24)" and a leftover comment suggesting the
+denominator used to be |T|. The paper's Recall column matches hits@k / |T| (our NDCG agrees with
+the paper within 7% while min(|T|, k) recall is 2-3x higher). So `recall_per_user` is the official
+definition (`recall@k`) and `recall_full_per_user` is the paper-comparable one (`recall_paper@k`);
+both are always reported.
+
 Binary gains, IDCG over min(|truth|, k): identical to the brief's assumptions. One deliberate
 deviation: the official Coverage counts the padding id 0 if it appears in `ranked`; here 0 is
 padding and never counted as an item.
@@ -62,6 +69,16 @@ def ndcg_per_user(ranked: np.ndarray, truth: list[np.ndarray], k: int) -> np.nda
 def recall_per_user(ranked: np.ndarray, truth: list[np.ndarray], k: int) -> np.ndarray:
     hits = hit_matrix(ranked, truth, k).sum(axis=1).astype(np.float64)
     denom = np.minimum(_n_truth(truth), k).astype(np.float64)
+    return np.divide(hits, denom, out=np.zeros_like(hits), where=denom > 0)
+
+
+def recall_full_per_user(ranked: np.ndarray, truth: list[np.ndarray], k: int) -> np.ndarray:
+    """hits@k / |T| per user (0 for users with empty truth): the paper-table definition.
+
+    Differs from the official `recall_per_user` (denominator min(|T|, k)) when |T| > k.
+    """
+    hits = hit_matrix(ranked, truth, k).sum(axis=1).astype(np.float64)
+    denom = _n_truth(truth).astype(np.float64)
     return np.divide(hits, denom, out=np.zeros_like(hits), where=denom > 0)
 
 
