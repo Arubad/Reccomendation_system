@@ -1,0 +1,3796 @@
+{
+  "clean_report": {
+    "rows_before": 47790449,
+    "before_listen": 46467212,
+    "before_like": 881456,
+    "before_dislike": 107776,
+    "before_unlike": 312972,
+    "before_undislike": 21033,
+    "rows_after": 46771197,
+    "after_listen": 45879177,
+    "after_like": 790642,
+    "after_dislike": 101378
+  },
+  "popularity": {
+    "n_users": 9999,
+    "n_items": 886174,
+    "n_events": 46771197,
+    "by_event_type": {
+      "listen": 45879177,
+      "like": 790642,
+      "dislike": 101378
+    },
+    "item_gini": 0.9072816163169246,
+    "user_gini": 0.5858485413994043,
+    "top1pct_item_share": 0.4923645208396099,
+    "top10pct_item_share": 0.8793353097206386,
+    "powerlaw_alpha": 1.4881925492060961
+  },
+  "played_ratio_hist": [
+    {
+      "bin": 0.0,
+      "organic": false,
+      "count": 4213307
+    },
+    {
+      "bin": 0.0,
+      "organic": true,
+      "count": 6072192
+    },
+    {
+      "bin": 5.0,
+      "organic": false,
+      "count": 776749
+    },
+    {
+      "bin": 5.0,
+      "organic": true,
+      "count": 1028380
+    },
+    {
+      "bin": 10.0,
+      "organic": false,
+      "count": 462419
+    },
+    {
+      "bin": 10.0,
+      "organic": true,
+      "count": 558472
+    },
+    {
+      "bin": 15.0,
+      "organic": false,
+      "count": 347780
+    },
+    {
+      "bin": 15.0,
+      "organic": true,
+      "count": 395824
+    },
+    {
+      "bin": 20.0,
+      "organic": false,
+      "count": 292187
+    },
+    {
+      "bin": 20.0,
+      "organic": true,
+      "count": 323286
+    },
+    {
+      "bin": 25.0,
+      "organic": false,
+      "count": 257769
+    },
+    {
+      "bin": 25.0,
+      "organic": true,
+      "count": 288422
+    },
+    {
+      "bin": 30.0,
+      "organic": false,
+      "count": 226126
+    },
+    {
+      "bin": 30.0,
+      "organic": true,
+      "count": 264253
+    },
+    {
+      "bin": 35.0,
+      "organic": false,
+      "count": 196372
+    },
+    {
+      "bin": 35.0,
+      "organic": true,
+      "count": 240264
+    },
+    {
+      "bin": 40.0,
+      "organic": false,
+      "count": 173506
+    },
+    {
+      "bin": 40.0,
+      "organic": true,
+      "count": 219363
+    },
+    {
+      "bin": 45.0,
+      "organic": false,
+      "count": 155081
+    },
+    {
+      "bin": 45.0,
+      "organic": true,
+      "count": 201475
+    },
+    {
+      "bin": 50.0,
+      "organic": false,
+      "count": 142872
+    },
+    {
+      "bin": 50.0,
+      "organic": true,
+      "count": 190648
+    },
+    {
+      "bin": 55.0,
+      "organic": false,
+      "count": 134616
+    },
+    {
+      "bin": 55.0,
+      "organic": true,
+      "count": 183365
+    },
+    {
+      "bin": 60.0,
+      "organic": false,
+      "count": 128355
+    },
+    {
+      "bin": 60.0,
+      "organic": true,
+      "count": 177922
+    },
+    {
+      "bin": 65.0,
+      "organic": false,
+      "count": 122743
+    },
+    {
+      "bin": 65.0,
+      "organic": true,
+      "count": 174466
+    },
+    {
+      "bin": 70.0,
+      "organic": false,
+      "count": 119194
+    },
+    {
+      "bin": 70.0,
+      "organic": true,
+      "count": 172797
+    },
+    {
+      "bin": 75.0,
+      "organic": false,
+      "count": 118201
+    },
+    {
+      "bin": 75.0,
+      "organic": true,
+      "count": 173290
+    },
+    {
+      "bin": 80.0,
+      "organic": false,
+      "count": 117919
+    },
+    {
+      "bin": 80.0,
+      "organic": true,
+      "count": 178216
+    },
+    {
+      "bin": 85.0,
+      "organic": false,
+      "count": 116847
+    },
+    {
+      "bin": 85.0,
+      "organic": true,
+      "count": 188326
+    },
+    {
+      "bin": 90.0,
+      "organic": false,
+      "count": 113563
+    },
+    {
+      "bin": 90.0,
+      "organic": true,
+      "count": 202602
+    },
+    {
+      "bin": 95.0,
+      "organic": false,
+      "count": 14178338
+    },
+    {
+      "bin": 95.0,
+      "organic": true,
+      "count": 12251670
+    }
+  ],
+  "gap": {
+    "n_gaps": 38168813,
+    "suggested_session_gap_seconds": 15.891990107586109
+  },
+  "repeat": {
+    "relisten_share": 0.7107862462310516,
+    "consecutive_dup_share": 0.020322394586136248
+  },
+  "organic_share": {
+    "day": [
+      {
+        "day": 0,
+        "organic_share": 0.484020395817129,
+        "events": 115710
+      },
+      {
+        "day": 1,
+        "organic_share": 0.5316290108575806,
+        "events": 107022
+      },
+      {
+        "day": 2,
+        "organic_share": 0.5256073745879092,
+        "events": 95246
+      },
+      {
+        "day": 3,
+        "organic_share": 0.4754307476151741,
+        "events": 108184
+      },
+      {
+        "day": 4,
+        "organic_share": 0.46677127140368,
+        "events": 109619
+      },
+      {
+        "day": 5,
+        "organic_share": 0.46539607886029916,
+        "events": 109713
+      },
+      {
+        "day": 6,
+        "organic_share": 0.4606072842508142,
+        "events": 113917
+      },
+      {
+        "day": 7,
+        "organic_share": 0.47868633035983904,
+        "events": 122527
+      },
+      {
+        "day": 8,
+        "organic_share": 0.5144393084013058,
+        "events": 107519
+      },
+      {
+        "day": 9,
+        "organic_share": 0.49840415545403344,
+        "events": 95874
+      },
+      {
+        "day": 10,
+        "organic_share": 0.47151729936443937,
+        "events": 110611
+      },
+      {
+        "day": 11,
+        "organic_share": 0.47843325200418263,
+        "events": 114760
+      },
+      {
+        "day": 12,
+        "organic_share": 0.4737689418138144,
+        "events": 117399
+      },
+      {
+        "day": 13,
+        "organic_share": 0.48583408603130673,
+        "events": 120677
+      },
+      {
+        "day": 14,
+        "organic_share": 0.49472072474401096,
+        "events": 125396
+      },
+      {
+        "day": 15,
+        "organic_share": 0.5220429825022332,
+        "events": 114186
+      },
+      {
+        "day": 16,
+        "organic_share": 0.5081664348867662,
+        "events": 98513
+      },
+      {
+        "day": 17,
+        "organic_share": 0.48052394857852515,
+        "events": 119172
+      },
+      {
+        "day": 18,
+        "organic_share": 0.4754561855438773,
+        "events": 111413
+      },
+      {
+        "day": 19,
+        "organic_share": 0.5012655024044546,
+        "events": 118530
+      },
+      {
+        "day": 20,
+        "organic_share": 0.4790658001624695,
+        "events": 123100
+      },
+      {
+        "day": 21,
+        "organic_share": 0.47625134092620913,
+        "events": 131439
+      },
+      {
+        "day": 22,
+        "organic_share": 0.514030420603286,
+        "events": 113147
+      },
+      {
+        "day": 23,
+        "organic_share": 0.5049654017189463,
+        "events": 100294
+      },
+      {
+        "day": 24,
+        "organic_share": 0.47765772975857007,
+        "events": 112455
+      },
+      {
+        "day": 25,
+        "organic_share": 0.47889260109974247,
+        "events": 114936
+      },
+      {
+        "day": 26,
+        "organic_share": 0.45492182300624895,
+        "events": 115699
+      },
+      {
+        "day": 27,
+        "organic_share": 0.4561090070805203,
+        "events": 121460
+      },
+      {
+        "day": 28,
+        "organic_share": 0.4893399578629603,
+        "events": 127204
+      },
+      {
+        "day": 29,
+        "organic_share": 0.5088743897431218,
+        "events": 109585
+      },
+      {
+        "day": 30,
+        "organic_share": 0.5181085320572643,
+        "events": 100726
+      },
+      {
+        "day": 31,
+        "organic_share": 0.4725653449805501,
+        "events": 117224
+      },
+      {
+        "day": 32,
+        "organic_share": 0.47296439005800905,
+        "events": 118085
+      },
+      {
+        "day": 33,
+        "organic_share": 0.462390710035633,
+        "events": 118149
+      },
+      {
+        "day": 34,
+        "organic_share": 0.46087180367255876,
+        "events": 116540
+      },
+      {
+        "day": 35,
+        "organic_share": 0.4859912210564104,
+        "events": 122566
+      },
+      {
+        "day": 36,
+        "organic_share": 0.5205074862574787,
+        "events": 131708
+      },
+      {
+        "day": 37,
+        "organic_share": 0.5187030668818865,
+        "events": 113992
+      },
+      {
+        "day": 38,
+        "organic_share": 0.5264981404813698,
+        "events": 114008
+      },
+      {
+        "day": 39,
+        "organic_share": 0.5044671021836905,
+        "events": 98274
+      },
+      {
+        "day": 40,
+        "organic_share": 0.48903020383339146,
+        "events": 111807
+      },
+      {
+        "day": 41,
+        "organic_share": 0.47402030712427623,
+        "events": 119170
+      },
+      {
+        "day": 42,
+        "organic_share": 0.4841227208545644,
+        "events": 130312
+      },
+      {
+        "day": 43,
+        "organic_share": 0.5145265654404372,
+        "events": 116373
+      },
+      {
+        "day": 44,
+        "organic_share": 0.49650715699710674,
+        "events": 105072
+      },
+      {
+        "day": 45,
+        "organic_share": 0.466470036627688,
+        "events": 124769
+      },
+      {
+        "day": 46,
+        "organic_share": 0.47012051486135564,
+        "events": 124383
+      },
+      {
+        "day": 47,
+        "organic_share": 0.4758467783741536,
+        "events": 125387
+      },
+      {
+        "day": 48,
+        "organic_share": 0.4903262432821134,
+        "events": 132110
+      },
+      {
+        "day": 49,
+        "organic_share": 0.49835437086332235,
+        "events": 138245
+      },
+      {
+        "day": 50,
+        "organic_share": 0.535353933159524,
+        "events": 126959
+      },
+      {
+        "day": 51,
+        "organic_share": 0.522673362817249,
+        "events": 115091
+      },
+      {
+        "day": 52,
+        "organic_share": 0.5014739016983266,
+        "events": 112287
+      },
+      {
+        "day": 53,
+        "organic_share": 0.4727415108800693,
+        "events": 120036
+      },
+      {
+        "day": 54,
+        "organic_share": 0.46127679516495235,
+        "events": 123763
+      },
+      {
+        "day": 55,
+        "organic_share": 0.4718064726826665,
+        "events": 125543
+      },
+      {
+        "day": 56,
+        "organic_share": 0.48410777552597434,
+        "events": 137174
+      },
+      {
+        "day": 57,
+        "organic_share": 0.5069161601604111,
+        "events": 127672
+      },
+      {
+        "day": 58,
+        "organic_share": 0.5111759693997788,
+        "events": 110326
+      },
+      {
+        "day": 59,
+        "organic_share": 0.4769049319223024,
+        "events": 124637
+      },
+      {
+        "day": 60,
+        "organic_share": 0.47339854557549554,
+        "events": 132286
+      },
+      {
+        "day": 61,
+        "organic_share": 0.4950314598584306,
+        "events": 132232
+      },
+      {
+        "day": 62,
+        "organic_share": 0.4815404414226097,
+        "events": 134429
+      },
+      {
+        "day": 63,
+        "organic_share": 0.4960523145758045,
+        "events": 145275
+      },
+      {
+        "day": 64,
+        "organic_share": 0.5040320760678231,
+        "events": 132934
+      },
+      {
+        "day": 65,
+        "organic_share": 0.5133365685798739,
+        "events": 113335
+      },
+      {
+        "day": 66,
+        "organic_share": 0.49365971107544143,
+        "events": 124600
+      },
+      {
+        "day": 67,
+        "organic_share": 0.479554275505175,
+        "events": 129856
+      },
+      {
+        "day": 68,
+        "organic_share": 0.4756280464941882,
+        "events": 128016
+      },
+      {
+        "day": 69,
+        "organic_share": 0.46806619357323814,
+        "events": 134998
+      },
+      {
+        "day": 70,
+        "organic_share": 0.5078332177389744,
+        "events": 147066
+      },
+      {
+        "day": 71,
+        "organic_share": 0.5308109516003003,
+        "events": 130538
+      },
+      {
+        "day": 72,
+        "organic_share": 0.5178257822840878,
+        "events": 115591
+      },
+      {
+        "day": 73,
+        "organic_share": 0.5096892548317085,
+        "events": 116108
+      },
+      {
+        "day": 74,
+        "organic_share": 0.477511518672571,
+        "events": 133913
+      },
+      {
+        "day": 75,
+        "organic_share": 0.4803454708139341,
+        "events": 131878
+      },
+      {
+        "day": 76,
+        "organic_share": 0.48968135922885503,
+        "events": 139844
+      },
+      {
+        "day": 77,
+        "organic_share": 0.5040823405419107,
+        "events": 149914
+      },
+      {
+        "day": 78,
+        "organic_share": 0.5295149250981865,
+        "events": 135711
+      },
+      {
+        "day": 79,
+        "organic_share": 0.5278122451873648,
+        "events": 112828
+      },
+      {
+        "day": 80,
+        "organic_share": 0.48576590508620754,
+        "events": 134501
+      },
+      {
+        "day": 81,
+        "organic_share": 0.4774189778462752,
+        "events": 136907
+      },
+      {
+        "day": 82,
+        "organic_share": 0.4890651482263388,
+        "events": 134524
+      },
+      {
+        "day": 83,
+        "organic_share": 0.4921056151144211,
+        "events": 142063
+      },
+      {
+        "day": 84,
+        "organic_share": 0.5034045236533182,
+        "events": 156997
+      },
+      {
+        "day": 85,
+        "organic_share": 0.5218649175678072,
+        "events": 141025
+      },
+      {
+        "day": 86,
+        "organic_share": 0.5304919645265178,
+        "events": 126066
+      },
+      {
+        "day": 87,
+        "organic_share": 0.4845224708912184,
+        "events": 137845
+      },
+      {
+        "day": 88,
+        "organic_share": 0.4892038922071731,
+        "events": 142644
+      },
+      {
+        "day": 89,
+        "organic_share": 0.4901878854244712,
+        "events": 138808
+      },
+      {
+        "day": 90,
+        "organic_share": 0.4962629646914595,
+        "events": 143563
+      },
+      {
+        "day": 91,
+        "organic_share": 0.4968703766928417,
+        "events": 158166
+      },
+      {
+        "day": 92,
+        "organic_share": 0.5414938803084641,
+        "events": 139141
+      },
+      {
+        "day": 93,
+        "organic_share": 0.522249740999741,
+        "events": 123552
+      },
+      {
+        "day": 94,
+        "organic_share": 0.49525442944143255,
+        "events": 137602
+      },
+      {
+        "day": 95,
+        "organic_share": 0.5058565955117679,
+        "events": 137025
+      },
+      {
+        "day": 96,
+        "organic_share": 0.49126379788678354,
+        "events": 135528
+      },
+      {
+        "day": 97,
+        "organic_share": 0.498872608171005,
+        "events": 145025
+      },
+      {
+        "day": 98,
+        "organic_share": 0.5091208006654746,
+        "events": 152673
+      },
+      {
+        "day": 99,
+        "organic_share": 0.5397271812296117,
+        "events": 140093
+      },
+      {
+        "day": 100,
+        "organic_share": 0.5300878800217155,
+        "events": 117888
+      },
+      {
+        "day": 101,
+        "organic_share": 0.5089869749827863,
+        "events": 139424
+      },
+      {
+        "day": 102,
+        "organic_share": 0.5005404476767908,
+        "events": 139699
+      },
+      {
+        "day": 103,
+        "organic_share": 0.5077169461018438,
+        "events": 141118
+      },
+      {
+        "day": 104,
+        "organic_share": 0.5064991987289238,
+        "events": 146018
+      },
+      {
+        "day": 105,
+        "organic_share": 0.5116798577999832,
+        "events": 166526
+      },
+      {
+        "day": 106,
+        "organic_share": 0.5339571233957123,
+        "events": 139470
+      },
+      {
+        "day": 107,
+        "organic_share": 0.5919257785342699,
+        "events": 125139
+      },
+      {
+        "day": 108,
+        "organic_share": 0.5445106487940616,
+        "events": 129733
+      },
+      {
+        "day": 109,
+        "organic_share": 0.5248600568015767,
+        "events": 133447
+      },
+      {
+        "day": 110,
+        "organic_share": 0.5173355837171382,
+        "events": 139828
+      },
+      {
+        "day": 111,
+        "organic_share": 0.5219675546956393,
+        "events": 134380
+      },
+      {
+        "day": 112,
+        "organic_share": 0.519469599396726,
+        "events": 149849
+      },
+      {
+        "day": 113,
+        "organic_share": 0.537641847838348,
+        "events": 132977
+      },
+      {
+        "day": 114,
+        "organic_share": 0.5627567282675077,
+        "events": 119533
+      },
+      {
+        "day": 115,
+        "organic_share": 0.5310441802768642,
+        "events": 123743
+      },
+      {
+        "day": 116,
+        "organic_share": 0.5036634266160015,
+        "events": 142899
+      },
+      {
+        "day": 117,
+        "organic_share": 0.4936246495579038,
+        "events": 148384
+      },
+      {
+        "day": 118,
+        "organic_share": 0.47699109025368974,
+        "events": 147030
+      },
+      {
+        "day": 119,
+        "organic_share": 0.5096619419341468,
+        "events": 159233
+      },
+      {
+        "day": 120,
+        "organic_share": 0.5313129237723444,
+        "events": 146010
+      },
+      {
+        "day": 121,
+        "organic_share": 0.5215119357289196,
+        "events": 130323
+      },
+      {
+        "day": 122,
+        "organic_share": 0.49787507281681936,
+        "events": 151064
+      },
+      {
+        "day": 123,
+        "organic_share": 0.4996398742330014,
+        "events": 144394
+      },
+      {
+        "day": 124,
+        "organic_share": 0.491069245605933,
+        "events": 147244
+      },
+      {
+        "day": 125,
+        "organic_share": 0.4980149802821375,
+        "events": 151132
+      },
+      {
+        "day": 126,
+        "organic_share": 0.5115622946807004,
+        "events": 155246
+      },
+      {
+        "day": 127,
+        "organic_share": 0.544840268872511,
+        "events": 141926
+      },
+      {
+        "day": 128,
+        "organic_share": 0.5354333224180756,
+        "events": 125207
+      },
+      {
+        "day": 129,
+        "organic_share": 0.5060653291328138,
+        "events": 150775
+      },
+      {
+        "day": 130,
+        "organic_share": 0.5077797191648918,
+        "events": 156818
+      },
+      {
+        "day": 131,
+        "organic_share": 0.5008533696745514,
+        "events": 154095
+      },
+      {
+        "day": 132,
+        "organic_share": 0.49995243742350354,
+        "events": 157687
+      },
+      {
+        "day": 133,
+        "organic_share": 0.5417475844541946,
+        "events": 166836
+      },
+      {
+        "day": 134,
+        "organic_share": 0.5473752412073749,
+        "events": 141994
+      },
+      {
+        "day": 135,
+        "organic_share": 0.5467059524085717,
+        "events": 129309
+      },
+      {
+        "day": 136,
+        "organic_share": 0.5166506371723972,
+        "events": 149724
+      },
+      {
+        "day": 137,
+        "organic_share": 0.49721206550463304,
+        "events": 147959
+      },
+      {
+        "day": 138,
+        "organic_share": 0.5025625958933176,
+        "events": 153165
+      },
+      {
+        "day": 139,
+        "organic_share": 0.5033532763900913,
+        "events": 154774
+      },
+      {
+        "day": 140,
+        "organic_share": 0.5049660867000885,
+        "events": 169550
+      },
+      {
+        "day": 141,
+        "organic_share": 0.5403902636863761,
+        "events": 152871
+      },
+      {
+        "day": 142,
+        "organic_share": 0.5335374382245983,
+        "events": 128692
+      },
+      {
+        "day": 143,
+        "organic_share": 0.5058484511993242,
+        "events": 146791
+      },
+      {
+        "day": 144,
+        "organic_share": 0.4843511127591613,
+        "events": 153717
+      },
+      {
+        "day": 145,
+        "organic_share": 0.48788429151669255,
+        "events": 151415
+      },
+      {
+        "day": 146,
+        "organic_share": 0.48728583260003105,
+        "events": 154552
+      },
+      {
+        "day": 147,
+        "organic_share": 0.5091942173527367,
+        "events": 166844
+      },
+      {
+        "day": 148,
+        "organic_share": 0.5381326749398999,
+        "events": 153910
+      },
+      {
+        "day": 149,
+        "organic_share": 0.5375509733569648,
+        "events": 138798
+      },
+      {
+        "day": 150,
+        "organic_share": 0.5158856730782565,
+        "events": 144218
+      },
+      {
+        "day": 151,
+        "organic_share": 0.4961946282706133,
+        "events": 147029
+      },
+      {
+        "day": 152,
+        "organic_share": 0.5079831016085206,
+        "events": 151257
+      },
+      {
+        "day": 153,
+        "organic_share": 0.4872948579503793,
+        "events": 150018
+      },
+      {
+        "day": 154,
+        "organic_share": 0.5027332155582125,
+        "events": 168117
+      },
+      {
+        "day": 155,
+        "organic_share": 0.5404483759875751,
+        "events": 148090
+      },
+      {
+        "day": 156,
+        "organic_share": 0.5571396523582242,
+        "events": 129271
+      },
+      {
+        "day": 157,
+        "organic_share": 0.5205591478331982,
+        "events": 144291
+      },
+      {
+        "day": 158,
+        "organic_share": 0.4964875908294922,
+        "events": 149043
+      },
+      {
+        "day": 159,
+        "organic_share": 0.5127125855906574,
+        "events": 152762
+      },
+      {
+        "day": 160,
+        "organic_share": 0.506802319479429,
+        "events": 152448
+      },
+      {
+        "day": 161,
+        "organic_share": 0.5044893554276966,
+        "events": 159377
+      },
+      {
+        "day": 162,
+        "organic_share": 0.5510628266340835,
+        "events": 150589
+      },
+      {
+        "day": 163,
+        "organic_share": 0.554972141334006,
+        "events": 130839
+      },
+      {
+        "day": 164,
+        "organic_share": 0.5318402207209949,
+        "events": 147879
+      },
+      {
+        "day": 165,
+        "organic_share": 0.49981150226197285,
+        "events": 153848
+      },
+      {
+        "day": 166,
+        "organic_share": 0.5029931413761497,
+        "events": 158195
+      },
+      {
+        "day": 167,
+        "organic_share": 0.5169999425569802,
+        "events": 156677
+      },
+      {
+        "day": 168,
+        "organic_share": 0.5166481101670085,
+        "events": 170650
+      },
+      {
+        "day": 169,
+        "organic_share": 0.5665587778353185,
+        "events": 154480
+      },
+      {
+        "day": 170,
+        "organic_share": 0.5541741458964776,
+        "events": 135932
+      },
+      {
+        "day": 171,
+        "organic_share": 0.5222959037151137,
+        "events": 153212
+      },
+      {
+        "day": 172,
+        "organic_share": 0.5077354342006497,
+        "events": 150541
+      },
+      {
+        "day": 173,
+        "organic_share": 0.5165205576096471,
+        "events": 153082
+      },
+      {
+        "day": 174,
+        "organic_share": 0.5017559347999663,
+        "events": 154049
+      },
+      {
+        "day": 175,
+        "organic_share": 0.5274702189708863,
+        "events": 161848
+      },
+      {
+        "day": 176,
+        "organic_share": 0.5503243646346856,
+        "events": 151527
+      },
+      {
+        "day": 177,
+        "organic_share": 0.5476269358465562,
+        "events": 141863
+      },
+      {
+        "day": 178,
+        "organic_share": 0.5108440383455463,
+        "events": 155846
+      },
+      {
+        "day": 179,
+        "organic_share": 0.5150844642241514,
+        "events": 159535
+      },
+      {
+        "day": 180,
+        "organic_share": 0.5150868422739217,
+        "events": 156030
+      },
+      {
+        "day": 181,
+        "organic_share": 0.5159187386294725,
+        "events": 158304
+      },
+      {
+        "day": 182,
+        "organic_share": 0.5254422647582135,
+        "events": 176478
+      },
+      {
+        "day": 183,
+        "organic_share": 0.557040612304675,
+        "events": 157046
+      },
+      {
+        "day": 184,
+        "organic_share": 0.5619961612284069,
+        "events": 140670
+      },
+      {
+        "day": 185,
+        "organic_share": 0.5152184145799771,
+        "events": 150837
+      },
+      {
+        "day": 186,
+        "organic_share": 0.5041485310119695,
+        "events": 147040
+      },
+      {
+        "day": 187,
+        "organic_share": 0.5020847562363808,
+        "events": 153735
+      },
+      {
+        "day": 188,
+        "organic_share": 0.4931951988680648,
+        "events": 166794
+      },
+      {
+        "day": 189,
+        "organic_share": 0.5144554894670177,
+        "events": 171319
+      },
+      {
+        "day": 190,
+        "organic_share": 0.5434672383140681,
+        "events": 155807
+      },
+      {
+        "day": 191,
+        "organic_share": 0.5640352102836383,
+        "events": 143140
+      },
+      {
+        "day": 192,
+        "organic_share": 0.5224945016332426,
+        "events": 153682
+      },
+      {
+        "day": 193,
+        "organic_share": 0.5094687373327929,
+        "events": 157888
+      },
+      {
+        "day": 194,
+        "organic_share": 0.5025105642555306,
+        "events": 160920
+      },
+      {
+        "day": 195,
+        "organic_share": 0.4986083261006195,
+        "events": 167065
+      },
+      {
+        "day": 196,
+        "organic_share": 0.5130281628330183,
+        "events": 170899
+      },
+      {
+        "day": 197,
+        "organic_share": 0.5260097408021384,
+        "events": 155634
+      },
+      {
+        "day": 198,
+        "organic_share": 0.5636898784583954,
+        "events": 144395
+      },
+      {
+        "day": 199,
+        "organic_share": 0.5237894471887486,
+        "events": 158915
+      },
+      {
+        "day": 200,
+        "organic_share": 0.5364230178805601,
+        "events": 160901
+      },
+      {
+        "day": 201,
+        "organic_share": 0.5302469322829875,
+        "events": 165025
+      },
+      {
+        "day": 202,
+        "organic_share": 0.5237278340481187,
+        "events": 164385
+      },
+      {
+        "day": 203,
+        "organic_share": 0.5236119411480121,
+        "events": 175695
+      },
+      {
+        "day": 204,
+        "organic_share": 0.5573043308892366,
+        "events": 159159
+      },
+      {
+        "day": 205,
+        "organic_share": 0.5673151374370886,
+        "events": 144648
+      },
+      {
+        "day": 206,
+        "organic_share": 0.49298830435250135,
+        "events": 158093
+      },
+      {
+        "day": 207,
+        "organic_share": 0.5080954447886503,
+        "events": 168181
+      },
+      {
+        "day": 208,
+        "organic_share": 0.5061780735224543,
+        "events": 162753
+      },
+      {
+        "day": 209,
+        "organic_share": 0.5107932810273572,
+        "events": 169133
+      },
+      {
+        "day": 210,
+        "organic_share": 0.5242153586210927,
+        "events": 188207
+      },
+      {
+        "day": 211,
+        "organic_share": 0.5386830721682071,
+        "events": 170837
+      },
+      {
+        "day": 212,
+        "organic_share": 0.5532171145207971,
+        "events": 162739
+      },
+      {
+        "day": 213,
+        "organic_share": 0.5199109440985741,
+        "events": 169781
+      },
+      {
+        "day": 214,
+        "organic_share": 0.5068693673832912,
+        "events": 170103
+      },
+      {
+        "day": 215,
+        "organic_share": 0.4957450243306197,
+        "events": 173444
+      },
+      {
+        "day": 216,
+        "organic_share": 0.503469724178171,
+        "events": 176527
+      },
+      {
+        "day": 217,
+        "organic_share": 0.5235483100124791,
+        "events": 188315
+      },
+      {
+        "day": 218,
+        "organic_share": 0.5320096923582096,
+        "events": 176634
+      },
+      {
+        "day": 219,
+        "organic_share": 0.5554771786845701,
+        "events": 158777
+      },
+      {
+        "day": 220,
+        "organic_share": 0.5055626090636612,
+        "events": 172491
+      },
+      {
+        "day": 221,
+        "organic_share": 0.5126122321374703,
+        "events": 182323
+      },
+      {
+        "day": 222,
+        "organic_share": 0.5103147330572118,
+        "events": 175768
+      },
+      {
+        "day": 223,
+        "organic_share": 0.49748994038954353,
+        "events": 180673
+      },
+      {
+        "day": 224,
+        "organic_share": 0.5080815534373136,
+        "events": 197858
+      },
+      {
+        "day": 225,
+        "organic_share": 0.5191930083423189,
+        "events": 176210
+      },
+      {
+        "day": 226,
+        "organic_share": 0.5478994872044727,
+        "events": 164198
+      },
+      {
+        "day": 227,
+        "organic_share": 0.5081605621782189,
+        "events": 180441
+      },
+      {
+        "day": 228,
+        "organic_share": 0.5108328696976735,
+        "events": 185131
+      },
+      {
+        "day": 229,
+        "organic_share": 0.5296326277535696,
+        "events": 174183
+      },
+      {
+        "day": 230,
+        "organic_share": 0.5275735603843843,
+        "events": 178051
+      },
+      {
+        "day": 231,
+        "organic_share": 0.5282590200703817,
+        "events": 206872
+      },
+      {
+        "day": 232,
+        "organic_share": 0.5674923635786622,
+        "events": 176457
+      },
+      {
+        "day": 233,
+        "organic_share": 0.5574352352614605,
+        "events": 160311
+      },
+      {
+        "day": 234,
+        "organic_share": 0.5348984700349096,
+        "events": 178174
+      },
+      {
+        "day": 235,
+        "organic_share": 0.5155441941724679,
+        "events": 186597
+      },
+      {
+        "day": 236,
+        "organic_share": 0.5175731578200552,
+        "events": 183234
+      },
+      {
+        "day": 237,
+        "organic_share": 0.530087385360789,
+        "events": 184928
+      },
+      {
+        "day": 238,
+        "organic_share": 0.5369233571432088,
+        "events": 203137
+      },
+      {
+        "day": 239,
+        "organic_share": 0.5710176195613089,
+        "events": 197451
+      },
+      {
+        "day": 240,
+        "organic_share": 0.5487640636918383,
+        "events": 167808
+      },
+      {
+        "day": 241,
+        "organic_share": 0.5224981094025712,
+        "events": 190416
+      },
+      {
+        "day": 242,
+        "organic_share": 0.5084618336864574,
+        "events": 190207
+      },
+      {
+        "day": 243,
+        "organic_share": 0.5140025962339093,
+        "events": 193357
+      },
+      {
+        "day": 244,
+        "organic_share": 0.5091722390621113,
+        "events": 196953
+      },
+      {
+        "day": 245,
+        "organic_share": 0.5243303739372508,
+        "events": 212656
+      },
+      {
+        "day": 246,
+        "organic_share": 0.5459727831384609,
+        "events": 188927
+      },
+      {
+        "day": 247,
+        "organic_share": 0.5518514953923149,
+        "events": 166244
+      },
+      {
+        "day": 248,
+        "organic_share": 0.5015228861910686,
+        "events": 186488
+      },
+      {
+        "day": 249,
+        "organic_share": 0.49799759711653985,
+        "events": 189772
+      },
+      {
+        "day": 250,
+        "organic_share": 0.5061765482806665,
+        "events": 193069
+      },
+      {
+        "day": 251,
+        "organic_share": 0.510863636814391,
+        "events": 201682
+      },
+      {
+        "day": 252,
+        "organic_share": 0.516049696217294,
+        "events": 212652
+      },
+      {
+        "day": 253,
+        "organic_share": 0.5636663524976437,
+        "events": 190980
+      },
+      {
+        "day": 254,
+        "organic_share": 0.5443349460187326,
+        "events": 167836
+      },
+      {
+        "day": 255,
+        "organic_share": 0.5256270391517129,
+        "events": 196160
+      },
+      {
+        "day": 256,
+        "organic_share": 0.5120986650826899,
+        "events": 191922
+      },
+      {
+        "day": 257,
+        "organic_share": 0.5102427399520325,
+        "events": 196383
+      },
+      {
+        "day": 258,
+        "organic_share": 0.5035214659845146,
+        "events": 197219
+      },
+      {
+        "day": 259,
+        "organic_share": 0.5257859089432884,
+        "events": 212461
+      },
+      {
+        "day": 260,
+        "organic_share": 0.543290967732434,
+        "events": 203703
+      },
+      {
+        "day": 261,
+        "organic_share": 0.5256066945606694,
+        "events": 179250
+      },
+      {
+        "day": 262,
+        "organic_share": 0.5170967839836519,
+        "events": 197698
+      },
+      {
+        "day": 263,
+        "organic_share": 0.5154604061565193,
+        "events": 202582
+      },
+      {
+        "day": 264,
+        "organic_share": 0.5240165128703254,
+        "events": 205900
+      },
+      {
+        "day": 265,
+        "organic_share": 0.5109555498220727,
+        "events": 205421
+      },
+      {
+        "day": 266,
+        "organic_share": 0.5169489577827316,
+        "events": 217565
+      },
+      {
+        "day": 267,
+        "organic_share": 0.5454611260441751,
+        "events": 207221
+      },
+      {
+        "day": 268,
+        "organic_share": 0.5346323000239891,
+        "events": 187585
+      },
+      {
+        "day": 269,
+        "organic_share": 0.49369356708709555,
+        "events": 199241
+      },
+      {
+        "day": 270,
+        "organic_share": 0.4971857501215737,
+        "events": 207693
+      },
+      {
+        "day": 271,
+        "organic_share": 0.5008111194428516,
+        "events": 204039
+      },
+      {
+        "day": 272,
+        "organic_share": 0.5047903758528411,
+        "events": 207395
+      },
+      {
+        "day": 273,
+        "organic_share": 0.5071763497521546,
+        "events": 223930
+      },
+      {
+        "day": 274,
+        "organic_share": 0.5395306317759145,
+        "events": 210027
+      },
+      {
+        "day": 275,
+        "organic_share": 0.5406191780821917,
+        "events": 182500
+      },
+      {
+        "day": 276,
+        "organic_share": 0.5043371066913213,
+        "events": 199557
+      },
+      {
+        "day": 277,
+        "organic_share": 0.4999058712221777,
+        "events": 207163
+      },
+      {
+        "day": 278,
+        "organic_share": 0.5116929520127692,
+        "events": 204867
+      },
+      {
+        "day": 279,
+        "organic_share": 0.5099972144715286,
+        "events": 211809
+      },
+      {
+        "day": 280,
+        "organic_share": 0.5327010316501147,
+        "events": 228372
+      },
+      {
+        "day": 281,
+        "organic_share": 0.530003713501098,
+        "events": 218123
+      },
+      {
+        "day": 282,
+        "organic_share": 0.5449869970611244,
+        "events": 189188
+      },
+      {
+        "day": 283,
+        "organic_share": 0.5112042827364033,
+        "events": 211080
+      },
+      {
+        "day": 284,
+        "organic_share": 0.5005595984114016,
+        "events": 211759
+      },
+      {
+        "day": 285,
+        "organic_share": 0.5134386020080411,
+        "events": 222605
+      },
+      {
+        "day": 286,
+        "organic_share": 0.5003309481216458,
+        "events": 223600
+      },
+      {
+        "day": 287,
+        "organic_share": 0.5165513027612009,
+        "events": 238954
+      },
+      {
+        "day": 288,
+        "organic_share": 0.5302233574854022,
+        "events": 220409
+      },
+      {
+        "day": 289,
+        "organic_share": 0.5539333066708516,
+        "events": 197531
+      },
+      {
+        "day": 290,
+        "organic_share": 0.48299464105693213,
+        "events": 207317
+      },
+      {
+        "day": 291,
+        "organic_share": 0.4980933977757087,
+        "events": 213731
+      },
+      {
+        "day": 292,
+        "organic_share": 0.5026852515691458,
+        "events": 227353
+      },
+      {
+        "day": 293,
+        "organic_share": 0.5185523157052407,
+        "events": 213693
+      },
+      {
+        "day": 294,
+        "organic_share": 0.5196131494986327,
+        "events": 210624
+      },
+      {
+        "day": 295,
+        "organic_share": 0.5248993901686295,
+        "events": 202515
+      },
+      {
+        "day": 296,
+        "organic_share": 0.5375513317859404,
+        "events": 184827
+      },
+      {
+        "day": 297,
+        "organic_share": 0.4796817580139034,
+        "events": 216062
+      },
+      {
+        "day": 298,
+        "organic_share": 0.4765628583222492,
+        "events": 218030
+      },
+      {
+        "day": 299,
+        "organic_share": 0.48805321872713975,
+        "events": 218720
+      },
+      {
+        "day": 300,
+        "organic_share": 0.4780946193647184,
+        "events": 215495
+      }
+    ],
+    "user_activity_decile": [
+      {
+        "decile": 1,
+        "organic_share": 0.8169355282717613,
+        "events": 54489
+      },
+      {
+        "decile": 2,
+        "organic_share": 0.6690258915037283,
+        "events": 261244
+      },
+      {
+        "decile": 3,
+        "organic_share": 0.5646824207388619,
+        "events": 663913
+      },
+      {
+        "decile": 4,
+        "organic_share": 0.5319747684301148,
+        "events": 1235912
+      },
+      {
+        "decile": 5,
+        "organic_share": 0.5263503437001352,
+        "events": 2069973
+      },
+      {
+        "decile": 6,
+        "organic_share": 0.5100722840184889,
+        "events": 3207763
+      },
+      {
+        "decile": 7,
+        "organic_share": 0.5259036887113201,
+        "events": 4729809
+      },
+      {
+        "decile": 8,
+        "organic_share": 0.522077032751195,
+        "events": 6761280
+      },
+      {
+        "decile": 9,
+        "organic_share": 0.5095703807022735,
+        "events": 10123265
+      },
+      {
+        "decile": 10,
+        "organic_share": 0.49958929544679836,
+        "events": 17663549
+      }
+    ],
+    "item_pop_decile": [
+      {
+        "decile": 1,
+        "organic_share": 0.7328420862578708,
+        "events": 88618
+      },
+      {
+        "decile": 2,
+        "organic_share": 0.7309545572519945,
+        "events": 88617
+      },
+      {
+        "decile": 3,
+        "organic_share": 0.7317475005077975,
+        "events": 88618
+      },
+      {
+        "decile": 4,
+        "organic_share": 0.6851755382963945,
+        "events": 126696
+      },
+      {
+        "decile": 5,
+        "organic_share": 0.6423434276584854,
+        "events": 193409
+      },
+      {
+        "decile": 6,
+        "organic_share": 0.5935275539343676,
+        "events": 310609
+      },
+      {
+        "decile": 7,
+        "organic_share": 0.5658141871428906,
+        "events": 556377
+      },
+      {
+        "decile": 8,
+        "organic_share": 0.5635229313980786,
+        "events": 1139006
+      },
+      {
+        "decile": 9,
+        "organic_share": 0.5644382359726111,
+        "events": 3051744
+      },
+      {
+        "decile": 10,
+        "organic_share": 0.5035222293947678,
+        "events": 41127503
+      }
+    ]
+  },
+  "daily": [
+    {
+      "day": 0,
+      "events": 115710,
+      "new_items": 45713,
+      "churn": null
+    },
+    {
+      "day": 1,
+      "events": 107022,
+      "new_items": 20302,
+      "churn": 0.49624060150375937
+    },
+    {
+      "day": 2,
+      "events": 95246,
+      "new_items": 14021,
+      "churn": 0.49624060150375937
+    },
+    {
+      "day": 3,
+      "events": 108184,
+      "new_items": 13138,
+      "churn": 0.5294117647058824
+    },
+    {
+      "day": 4,
+      "events": 109619,
+      "new_items": 11408,
+      "churn": 0.5611510791366907
+    },
+    {
+      "day": 5,
+      "events": 109713,
+      "new_items": 9814,
+      "churn": 0.5185185185185186
+    },
+    {
+      "day": 6,
+      "events": 113917,
+      "new_items": 8960,
+      "churn": 0.5074626865671642
+    },
+    {
+      "day": 7,
+      "events": 122527,
+      "new_items": 8989,
+      "churn": 0.5401459854014599
+    },
+    {
+      "day": 8,
+      "events": 107519,
+      "new_items": 7225,
+      "churn": 0.4
+    },
+    {
+      "day": 9,
+      "events": 95874,
+      "new_items": 6190,
+      "churn": 0.5074626865671642
+    },
+    {
+      "day": 10,
+      "events": 110611,
+      "new_items": 7080,
+      "churn": 0.5401459854014599
+    },
+    {
+      "day": 11,
+      "events": 114760,
+      "new_items": 6249,
+      "churn": 0.4732824427480916
+    },
+    {
+      "day": 12,
+      "events": 117399,
+      "new_items": 6129,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 13,
+      "events": 120677,
+      "new_items": 6413,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 14,
+      "events": 125396,
+      "new_items": 6194,
+      "churn": 0.5074626865671642
+    },
+    {
+      "day": 15,
+      "events": 114186,
+      "new_items": 4803,
+      "churn": 0.4375
+    },
+    {
+      "day": 16,
+      "events": 98513,
+      "new_items": 3910,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 17,
+      "events": 119172,
+      "new_items": 5831,
+      "churn": 0.4
+    },
+    {
+      "day": 18,
+      "events": 111413,
+      "new_items": 4468,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 19,
+      "events": 118530,
+      "new_items": 4510,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 20,
+      "events": 123100,
+      "new_items": 4764,
+      "churn": 0.5185185185185186
+    },
+    {
+      "day": 21,
+      "events": 131439,
+      "new_items": 4863,
+      "churn": 0.5714285714285714
+    },
+    {
+      "day": 22,
+      "events": 113147,
+      "new_items": 3921,
+      "churn": 0.46153846153846156
+    },
+    {
+      "day": 23,
+      "events": 100294,
+      "new_items": 3543,
+      "churn": 0.4732824427480916
+    },
+    {
+      "day": 24,
+      "events": 112455,
+      "new_items": 4041,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 25,
+      "events": 114936,
+      "new_items": 4017,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 26,
+      "events": 115699,
+      "new_items": 3555,
+      "churn": 0.49624060150375937
+    },
+    {
+      "day": 27,
+      "events": 121460,
+      "new_items": 3951,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 28,
+      "events": 127204,
+      "new_items": 4863,
+      "churn": 0.49624060150375937
+    },
+    {
+      "day": 29,
+      "events": 109585,
+      "new_items": 3077,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 30,
+      "events": 100726,
+      "new_items": 3226,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 31,
+      "events": 117224,
+      "new_items": 3472,
+      "churn": 0.5074626865671642
+    },
+    {
+      "day": 32,
+      "events": 118085,
+      "new_items": 3553,
+      "churn": 0.5185185185185186
+    },
+    {
+      "day": 33,
+      "events": 118149,
+      "new_items": 3402,
+      "churn": 0.49624060150375937
+    },
+    {
+      "day": 34,
+      "events": 116540,
+      "new_items": 3359,
+      "churn": 0.49624060150375937
+    },
+    {
+      "day": 35,
+      "events": 122566,
+      "new_items": 3581,
+      "churn": 0.5611510791366907
+    },
+    {
+      "day": 36,
+      "events": 131708,
+      "new_items": 4013,
+      "churn": 0.4732824427480916
+    },
+    {
+      "day": 37,
+      "events": 113992,
+      "new_items": 3385,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 38,
+      "events": 114008,
+      "new_items": 2901,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 39,
+      "events": 98274,
+      "new_items": 2779,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 40,
+      "events": 111807,
+      "new_items": 2730,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 41,
+      "events": 119170,
+      "new_items": 3098,
+      "churn": 0.5401459854014599
+    },
+    {
+      "day": 42,
+      "events": 130312,
+      "new_items": 3396,
+      "churn": 0.4732824427480916
+    },
+    {
+      "day": 43,
+      "events": 116373,
+      "new_items": 2711,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 44,
+      "events": 105072,
+      "new_items": 2786,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 45,
+      "events": 124769,
+      "new_items": 3056,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 46,
+      "events": 124383,
+      "new_items": 3060,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 47,
+      "events": 125387,
+      "new_items": 2526,
+      "churn": 0.5074626865671642
+    },
+    {
+      "day": 48,
+      "events": 132110,
+      "new_items": 3087,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 49,
+      "events": 138245,
+      "new_items": 3282,
+      "churn": 0.4251968503937008
+    },
+    {
+      "day": 50,
+      "events": 126959,
+      "new_items": 3188,
+      "churn": 0.4
+    },
+    {
+      "day": 51,
+      "events": 115091,
+      "new_items": 2877,
+      "churn": 0.4
+    },
+    {
+      "day": 52,
+      "events": 112287,
+      "new_items": 2517,
+      "churn": 0.4
+    },
+    {
+      "day": 53,
+      "events": 120036,
+      "new_items": 2658,
+      "churn": 0.49624060150375937
+    },
+    {
+      "day": 54,
+      "events": 123763,
+      "new_items": 2538,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 55,
+      "events": 125543,
+      "new_items": 2948,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 56,
+      "events": 137174,
+      "new_items": 3935,
+      "churn": 0.5401459854014599
+    },
+    {
+      "day": 57,
+      "events": 127672,
+      "new_items": 4024,
+      "churn": 0.4732824427480916
+    },
+    {
+      "day": 58,
+      "events": 110326,
+      "new_items": 3030,
+      "churn": 0.4375
+    },
+    {
+      "day": 59,
+      "events": 124637,
+      "new_items": 3462,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 60,
+      "events": 132286,
+      "new_items": 4112,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 61,
+      "events": 132232,
+      "new_items": 3978,
+      "churn": 0.4375
+    },
+    {
+      "day": 62,
+      "events": 134429,
+      "new_items": 4601,
+      "churn": 0.4375
+    },
+    {
+      "day": 63,
+      "events": 145275,
+      "new_items": 3897,
+      "churn": 0.4375
+    },
+    {
+      "day": 64,
+      "events": 132934,
+      "new_items": 3458,
+      "churn": 0.4251968503937008
+    },
+    {
+      "day": 65,
+      "events": 113335,
+      "new_items": 2960,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 66,
+      "events": 124600,
+      "new_items": 3089,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 67,
+      "events": 129856,
+      "new_items": 2979,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 68,
+      "events": 128016,
+      "new_items": 2851,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 69,
+      "events": 134998,
+      "new_items": 3067,
+      "churn": 0.4
+    },
+    {
+      "day": 70,
+      "events": 147066,
+      "new_items": 3554,
+      "churn": 0.4
+    },
+    {
+      "day": 71,
+      "events": 130538,
+      "new_items": 2722,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 72,
+      "events": 115591,
+      "new_items": 2607,
+      "churn": 0.4
+    },
+    {
+      "day": 73,
+      "events": 116108,
+      "new_items": 2595,
+      "churn": 0.4
+    },
+    {
+      "day": 74,
+      "events": 133913,
+      "new_items": 2988,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 75,
+      "events": 131878,
+      "new_items": 3105,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 76,
+      "events": 139844,
+      "new_items": 2993,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 77,
+      "events": 149914,
+      "new_items": 3405,
+      "churn": 0.4
+    },
+    {
+      "day": 78,
+      "events": 135711,
+      "new_items": 2840,
+      "churn": 0.4
+    },
+    {
+      "day": 79,
+      "events": 112828,
+      "new_items": 2590,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 80,
+      "events": 134501,
+      "new_items": 2429,
+      "churn": 0.4732824427480916
+    },
+    {
+      "day": 81,
+      "events": 136907,
+      "new_items": 2916,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 82,
+      "events": 134524,
+      "new_items": 2659,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 83,
+      "events": 142063,
+      "new_items": 3008,
+      "churn": 0.46153846153846156
+    },
+    {
+      "day": 84,
+      "events": 156997,
+      "new_items": 3229,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 85,
+      "events": 141025,
+      "new_items": 2662,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 86,
+      "events": 126066,
+      "new_items": 2467,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 87,
+      "events": 137845,
+      "new_items": 2527,
+      "churn": 0.3471074380165289
+    },
+    {
+      "day": 88,
+      "events": 142644,
+      "new_items": 2513,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 89,
+      "events": 138808,
+      "new_items": 2568,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 90,
+      "events": 143563,
+      "new_items": 2639,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 91,
+      "events": 158166,
+      "new_items": 3476,
+      "churn": 0.4375
+    },
+    {
+      "day": 92,
+      "events": 139141,
+      "new_items": 2708,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 93,
+      "events": 123552,
+      "new_items": 2396,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 94,
+      "events": 137602,
+      "new_items": 2418,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 95,
+      "events": 137025,
+      "new_items": 2856,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 96,
+      "events": 135528,
+      "new_items": 2569,
+      "churn": 0.4251968503937008
+    },
+    {
+      "day": 97,
+      "events": 145025,
+      "new_items": 2744,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 98,
+      "events": 152673,
+      "new_items": 2909,
+      "churn": 0.4
+    },
+    {
+      "day": 99,
+      "events": 140093,
+      "new_items": 2509,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 100,
+      "events": 117888,
+      "new_items": 2421,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 101,
+      "events": 139424,
+      "new_items": 2058,
+      "churn": 0.4251968503937008
+    },
+    {
+      "day": 102,
+      "events": 139699,
+      "new_items": 2232,
+      "churn": 0.4375
+    },
+    {
+      "day": 103,
+      "events": 141118,
+      "new_items": 2579,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 104,
+      "events": 146018,
+      "new_items": 2363,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 105,
+      "events": 166526,
+      "new_items": 2815,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 106,
+      "events": 139470,
+      "new_items": 2180,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 107,
+      "events": 125139,
+      "new_items": 2488,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 108,
+      "events": 129733,
+      "new_items": 2088,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 109,
+      "events": 133447,
+      "new_items": 2143,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 110,
+      "events": 139828,
+      "new_items": 2246,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 111,
+      "events": 134380,
+      "new_items": 2485,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 112,
+      "events": 149849,
+      "new_items": 2648,
+      "churn": 0.46153846153846156
+    },
+    {
+      "day": 113,
+      "events": 132977,
+      "new_items": 1936,
+      "churn": 0.4375
+    },
+    {
+      "day": 114,
+      "events": 119533,
+      "new_items": 2121,
+      "churn": 0.5714285714285714
+    },
+    {
+      "day": 115,
+      "events": 123743,
+      "new_items": 2274,
+      "churn": 0.5714285714285714
+    },
+    {
+      "day": 116,
+      "events": 142899,
+      "new_items": 1955,
+      "churn": 0.46153846153846156
+    },
+    {
+      "day": 117,
+      "events": 148384,
+      "new_items": 2219,
+      "churn": 0.46153846153846156
+    },
+    {
+      "day": 118,
+      "events": 147030,
+      "new_items": 2107,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 119,
+      "events": 159233,
+      "new_items": 2876,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 120,
+      "events": 146010,
+      "new_items": 2043,
+      "churn": 0.4
+    },
+    {
+      "day": 121,
+      "events": 130323,
+      "new_items": 2029,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 122,
+      "events": 151064,
+      "new_items": 2100,
+      "churn": 0.4375
+    },
+    {
+      "day": 123,
+      "events": 144394,
+      "new_items": 2189,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 124,
+      "events": 147244,
+      "new_items": 2214,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 125,
+      "events": 151132,
+      "new_items": 2040,
+      "churn": 0.4
+    },
+    {
+      "day": 126,
+      "events": 155246,
+      "new_items": 2521,
+      "churn": 0.5815602836879432
+    },
+    {
+      "day": 127,
+      "events": 141926,
+      "new_items": 1998,
+      "churn": 0.4732824427480916
+    },
+    {
+      "day": 128,
+      "events": 125207,
+      "new_items": 2050,
+      "churn": 0.4
+    },
+    {
+      "day": 129,
+      "events": 150775,
+      "new_items": 2619,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 130,
+      "events": 156818,
+      "new_items": 2261,
+      "churn": 0.4251968503937008
+    },
+    {
+      "day": 131,
+      "events": 154095,
+      "new_items": 2424,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 132,
+      "events": 157687,
+      "new_items": 2467,
+      "churn": 0.4375
+    },
+    {
+      "day": 133,
+      "events": 166836,
+      "new_items": 2531,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 134,
+      "events": 141994,
+      "new_items": 1922,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 135,
+      "events": 129309,
+      "new_items": 1975,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 136,
+      "events": 149724,
+      "new_items": 2032,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 137,
+      "events": 147959,
+      "new_items": 1969,
+      "churn": 0.4251968503937008
+    },
+    {
+      "day": 138,
+      "events": 153165,
+      "new_items": 2208,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 139,
+      "events": 154774,
+      "new_items": 2015,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 140,
+      "events": 169550,
+      "new_items": 2875,
+      "churn": 0.4375
+    },
+    {
+      "day": 141,
+      "events": 152871,
+      "new_items": 2117,
+      "churn": 0.4375
+    },
+    {
+      "day": 142,
+      "events": 128692,
+      "new_items": 1677,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 143,
+      "events": 146791,
+      "new_items": 1708,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 144,
+      "events": 153717,
+      "new_items": 1873,
+      "churn": 0.4
+    },
+    {
+      "day": 145,
+      "events": 151415,
+      "new_items": 1885,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 146,
+      "events": 154552,
+      "new_items": 2060,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 147,
+      "events": 166844,
+      "new_items": 2478,
+      "churn": 0.4
+    },
+    {
+      "day": 148,
+      "events": 153910,
+      "new_items": 2074,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 149,
+      "events": 138798,
+      "new_items": 1793,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 150,
+      "events": 144218,
+      "new_items": 1678,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 151,
+      "events": 147029,
+      "new_items": 1639,
+      "churn": 0.4
+    },
+    {
+      "day": 152,
+      "events": 151257,
+      "new_items": 1865,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 153,
+      "events": 150018,
+      "new_items": 1866,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 154,
+      "events": 168117,
+      "new_items": 2626,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 155,
+      "events": 148090,
+      "new_items": 1746,
+      "churn": 0.4
+    },
+    {
+      "day": 156,
+      "events": 129271,
+      "new_items": 1771,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 157,
+      "events": 144291,
+      "new_items": 1656,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 158,
+      "events": 149043,
+      "new_items": 1911,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 159,
+      "events": 152762,
+      "new_items": 1952,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 160,
+      "events": 152448,
+      "new_items": 1848,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 161,
+      "events": 159377,
+      "new_items": 2106,
+      "churn": 0.4375
+    },
+    {
+      "day": 162,
+      "events": 150589,
+      "new_items": 2077,
+      "churn": 0.3471074380165289
+    },
+    {
+      "day": 163,
+      "events": 130839,
+      "new_items": 1865,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 164,
+      "events": 147879,
+      "new_items": 2183,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 165,
+      "events": 153848,
+      "new_items": 1903,
+      "churn": 0.27586206896551724
+    },
+    {
+      "day": 166,
+      "events": 158195,
+      "new_items": 1819,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 167,
+      "events": 156677,
+      "new_items": 2165,
+      "churn": 0.3471074380165289
+    },
+    {
+      "day": 168,
+      "events": 170650,
+      "new_items": 2606,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 169,
+      "events": 154480,
+      "new_items": 1888,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 170,
+      "events": 135932,
+      "new_items": 1984,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 171,
+      "events": 153212,
+      "new_items": 1974,
+      "churn": 0.3471074380165289
+    },
+    {
+      "day": 172,
+      "events": 150541,
+      "new_items": 2013,
+      "churn": 0.3471074380165289
+    },
+    {
+      "day": 173,
+      "events": 153082,
+      "new_items": 1973,
+      "churn": 0.24561403508771928
+    },
+    {
+      "day": 174,
+      "events": 154049,
+      "new_items": 1741,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 175,
+      "events": 161848,
+      "new_items": 2346,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 176,
+      "events": 151527,
+      "new_items": 1689,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 177,
+      "events": 141863,
+      "new_items": 1770,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 178,
+      "events": 155846,
+      "new_items": 1744,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 179,
+      "events": 159535,
+      "new_items": 1964,
+      "churn": 0.27586206896551724
+    },
+    {
+      "day": 180,
+      "events": 156030,
+      "new_items": 1794,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 181,
+      "events": 158304,
+      "new_items": 1805,
+      "churn": 0.26086956521739135
+    },
+    {
+      "day": 182,
+      "events": 176478,
+      "new_items": 2500,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 183,
+      "events": 157046,
+      "new_items": 1864,
+      "churn": 0.27586206896551724
+    },
+    {
+      "day": 184,
+      "events": 140670,
+      "new_items": 1652,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 185,
+      "events": 150837,
+      "new_items": 1757,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 186,
+      "events": 147040,
+      "new_items": 2015,
+      "churn": 0.26086956521739135
+    },
+    {
+      "day": 187,
+      "events": 153735,
+      "new_items": 1527,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 188,
+      "events": 166794,
+      "new_items": 1976,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 189,
+      "events": 171319,
+      "new_items": 2378,
+      "churn": 0.46153846153846156
+    },
+    {
+      "day": 190,
+      "events": 155807,
+      "new_items": 2052,
+      "churn": 0.4
+    },
+    {
+      "day": 191,
+      "events": 143140,
+      "new_items": 1843,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 192,
+      "events": 153682,
+      "new_items": 1860,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 193,
+      "events": 157888,
+      "new_items": 1940,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 194,
+      "events": 160920,
+      "new_items": 2071,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 195,
+      "events": 167065,
+      "new_items": 1692,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 196,
+      "events": 170899,
+      "new_items": 2373,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 197,
+      "events": 155634,
+      "new_items": 1848,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 198,
+      "events": 144395,
+      "new_items": 1871,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 199,
+      "events": 158915,
+      "new_items": 1978,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 200,
+      "events": 160901,
+      "new_items": 1618,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 201,
+      "events": 165025,
+      "new_items": 1722,
+      "churn": 0.4
+    },
+    {
+      "day": 202,
+      "events": 164385,
+      "new_items": 1910,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 203,
+      "events": 175695,
+      "new_items": 2500,
+      "churn": 0.5185185185185186
+    },
+    {
+      "day": 204,
+      "events": 159159,
+      "new_items": 1853,
+      "churn": 0.4251968503937008
+    },
+    {
+      "day": 205,
+      "events": 144648,
+      "new_items": 1687,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 206,
+      "events": 158093,
+      "new_items": 1637,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 207,
+      "events": 168181,
+      "new_items": 1891,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 208,
+      "events": 162753,
+      "new_items": 1693,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 209,
+      "events": 169133,
+      "new_items": 1834,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 210,
+      "events": 188207,
+      "new_items": 2287,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 211,
+      "events": 170837,
+      "new_items": 1948,
+      "churn": 0.4
+    },
+    {
+      "day": 212,
+      "events": 162739,
+      "new_items": 1750,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 213,
+      "events": 169781,
+      "new_items": 2028,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 214,
+      "events": 170103,
+      "new_items": 1824,
+      "churn": 0.27586206896551724
+    },
+    {
+      "day": 215,
+      "events": 173444,
+      "new_items": 2097,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 216,
+      "events": 176527,
+      "new_items": 2077,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 217,
+      "events": 188315,
+      "new_items": 2648,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 218,
+      "events": 176634,
+      "new_items": 2159,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 219,
+      "events": 158777,
+      "new_items": 1812,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 220,
+      "events": 172491,
+      "new_items": 2108,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 221,
+      "events": 182323,
+      "new_items": 2231,
+      "churn": 0.26086956521739135
+    },
+    {
+      "day": 222,
+      "events": 175768,
+      "new_items": 1840,
+      "churn": 0.27586206896551724
+    },
+    {
+      "day": 223,
+      "events": 180673,
+      "new_items": 2023,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 224,
+      "events": 197858,
+      "new_items": 2551,
+      "churn": 0.4
+    },
+    {
+      "day": 225,
+      "events": 176210,
+      "new_items": 2150,
+      "churn": 0.3471074380165289
+    },
+    {
+      "day": 226,
+      "events": 164198,
+      "new_items": 1804,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 227,
+      "events": 180441,
+      "new_items": 1850,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 228,
+      "events": 185131,
+      "new_items": 1825,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 229,
+      "events": 174183,
+      "new_items": 1933,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 230,
+      "events": 178051,
+      "new_items": 1962,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 231,
+      "events": 206872,
+      "new_items": 3085,
+      "churn": 0.4375
+    },
+    {
+      "day": 232,
+      "events": 176457,
+      "new_items": 2114,
+      "churn": 0.4126984126984127
+    },
+    {
+      "day": 233,
+      "events": 160311,
+      "new_items": 2087,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 234,
+      "events": 178174,
+      "new_items": 1890,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 235,
+      "events": 186597,
+      "new_items": 2099,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 236,
+      "events": 183234,
+      "new_items": 2039,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 237,
+      "events": 184928,
+      "new_items": 2412,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 238,
+      "events": 203137,
+      "new_items": 2846,
+      "churn": 0.4375
+    },
+    {
+      "day": 239,
+      "events": 197451,
+      "new_items": 2894,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 240,
+      "events": 167808,
+      "new_items": 2315,
+      "churn": 0.26086956521739135
+    },
+    {
+      "day": 241,
+      "events": 190416,
+      "new_items": 2360,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 242,
+      "events": 190207,
+      "new_items": 2240,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 243,
+      "events": 193357,
+      "new_items": 2276,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 244,
+      "events": 196953,
+      "new_items": 2423,
+      "churn": 0.4
+    },
+    {
+      "day": 245,
+      "events": 212656,
+      "new_items": 2840,
+      "churn": 0.4375
+    },
+    {
+      "day": 246,
+      "events": 188927,
+      "new_items": 2367,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 247,
+      "events": 166244,
+      "new_items": 2044,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 248,
+      "events": 186488,
+      "new_items": 2126,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 249,
+      "events": 189772,
+      "new_items": 2171,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 250,
+      "events": 193069,
+      "new_items": 2331,
+      "churn": 0.4375
+    },
+    {
+      "day": 251,
+      "events": 201682,
+      "new_items": 2794,
+      "churn": 0.4251968503937008
+    },
+    {
+      "day": 252,
+      "events": 212652,
+      "new_items": 3149,
+      "churn": 0.46153846153846156
+    },
+    {
+      "day": 253,
+      "events": 190980,
+      "new_items": 2345,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 254,
+      "events": 167836,
+      "new_items": 1957,
+      "churn": 0.24561403508771928
+    },
+    {
+      "day": 255,
+      "events": 196160,
+      "new_items": 2358,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 256,
+      "events": 191922,
+      "new_items": 2260,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 257,
+      "events": 196383,
+      "new_items": 2166,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 258,
+      "events": 197219,
+      "new_items": 2714,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 259,
+      "events": 212461,
+      "new_items": 3136,
+      "churn": 0.46153846153846156
+    },
+    {
+      "day": 260,
+      "events": 203703,
+      "new_items": 2552,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 261,
+      "events": 179250,
+      "new_items": 2073,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 262,
+      "events": 197698,
+      "new_items": 2280,
+      "churn": 0.3471074380165289
+    },
+    {
+      "day": 263,
+      "events": 202582,
+      "new_items": 2537,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 264,
+      "events": 205900,
+      "new_items": 2172,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 265,
+      "events": 205421,
+      "new_items": 2290,
+      "churn": 0.3471074380165289
+    },
+    {
+      "day": 266,
+      "events": 217565,
+      "new_items": 2765,
+      "churn": 0.4732824427480916
+    },
+    {
+      "day": 267,
+      "events": 207221,
+      "new_items": 2484,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 268,
+      "events": 187585,
+      "new_items": 1802,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 269,
+      "events": 199241,
+      "new_items": 2066,
+      "churn": 0.4251968503937008
+    },
+    {
+      "day": 270,
+      "events": 207693,
+      "new_items": 2038,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 271,
+      "events": 204039,
+      "new_items": 2085,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 272,
+      "events": 207395,
+      "new_items": 2057,
+      "churn": 0.26086956521739135
+    },
+    {
+      "day": 273,
+      "events": 223930,
+      "new_items": 2462,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 274,
+      "events": 210027,
+      "new_items": 2330,
+      "churn": 0.29059829059829057
+    },
+    {
+      "day": 275,
+      "events": 182500,
+      "new_items": 2168,
+      "churn": 0.27586206896551724
+    },
+    {
+      "day": 276,
+      "events": 199557,
+      "new_items": 1923,
+      "churn": 0.3471074380165289
+    },
+    {
+      "day": 277,
+      "events": 207163,
+      "new_items": 1920,
+      "churn": 0.31932773109243695
+    },
+    {
+      "day": 278,
+      "events": 204867,
+      "new_items": 2013,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 279,
+      "events": 211809,
+      "new_items": 2036,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 280,
+      "events": 228372,
+      "new_items": 2508,
+      "churn": 0.5714285714285714
+    },
+    {
+      "day": 281,
+      "events": 218123,
+      "new_items": 2441,
+      "churn": 0.4251968503937008
+    },
+    {
+      "day": 282,
+      "events": 189188,
+      "new_items": 2196,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 283,
+      "events": 211080,
+      "new_items": 2191,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 284,
+      "events": 211759,
+      "new_items": 2044,
+      "churn": 0.3471074380165289
+    },
+    {
+      "day": 285,
+      "events": 222605,
+      "new_items": 2428,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 286,
+      "events": 223600,
+      "new_items": 2388,
+      "churn": 0.24561403508771928
+    },
+    {
+      "day": 287,
+      "events": 238954,
+      "new_items": 2985,
+      "churn": 0.48484848484848486
+    },
+    {
+      "day": 288,
+      "events": 220409,
+      "new_items": 2317,
+      "churn": 0.3870967741935484
+    },
+    {
+      "day": 289,
+      "events": 197531,
+      "new_items": 2075,
+      "churn": 0.4375
+    },
+    {
+      "day": 290,
+      "events": 207317,
+      "new_items": 2374,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 291,
+      "events": 213731,
+      "new_items": 2375,
+      "churn": 0.4
+    },
+    {
+      "day": 292,
+      "events": 227353,
+      "new_items": 2936,
+      "churn": 0.3739837398373984
+    },
+    {
+      "day": 293,
+      "events": 213693,
+      "new_items": 2090,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 294,
+      "events": 210624,
+      "new_items": 2708,
+      "churn": 0.4496124031007752
+    },
+    {
+      "day": 295,
+      "events": 202515,
+      "new_items": 2075,
+      "churn": 0.46153846153846156
+    },
+    {
+      "day": 296,
+      "events": 184827,
+      "new_items": 1891,
+      "churn": 0.30508474576271183
+    },
+    {
+      "day": 297,
+      "events": 216062,
+      "new_items": 2013,
+      "churn": 0.360655737704918
+    },
+    {
+      "day": 298,
+      "events": 218030,
+      "new_items": 2114,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 299,
+      "events": 218720,
+      "new_items": 2164,
+      "churn": 0.33333333333333337
+    },
+    {
+      "day": 300,
+      "events": 215495,
+      "new_items": 2058,
+      "churn": 0.4
+    }
+  ],
+  "seq_length": {
+    "q50": 2594.0,
+    "q90": 12632.0,
+    "q95": 16776.700000000004,
+    "q99": 23751.680000000015,
+    "mean": 4677.587458745875,
+    "max": 27647
+  },
+  "embedding_coverage": [
+    {
+      "decile": 1,
+      "n_items": 88618,
+      "coverage": 0.9038908573878895,
+      "event_coverage": 0.9038908573878895
+    },
+    {
+      "decile": 2,
+      "n_items": 88617,
+      "coverage": 0.9022422334315087,
+      "event_coverage": 0.9022422334315087
+    },
+    {
+      "decile": 3,
+      "n_items": 88618,
+      "coverage": 0.9062718635040286,
+      "event_coverage": 0.9062718635040286
+    },
+    {
+      "decile": 4,
+      "n_items": 88617,
+      "coverage": 0.9136621641445772,
+      "event_coverage": 0.9175348866578266
+    },
+    {
+      "decile": 5,
+      "n_items": 88617,
+      "coverage": 0.9277452407551599,
+      "event_coverage": 0.9283280509180027
+    },
+    {
+      "decile": 6,
+      "n_items": 88618,
+      "coverage": 0.9388273262768286,
+      "event_coverage": 0.9392322823871813
+    },
+    {
+      "decile": 7,
+      "n_items": 88617,
+      "coverage": 0.9453716555514179,
+      "event_coverage": 0.9455926467125708
+    },
+    {
+      "decile": 8,
+      "n_items": 88618,
+      "coverage": 0.9491412579837053,
+      "event_coverage": 0.949672784866805
+    },
+    {
+      "decile": 9,
+      "n_items": 88617,
+      "coverage": 0.9567238791653971,
+      "event_coverage": 0.957692060670882
+    },
+    {
+      "decile": 10,
+      "n_items": 88617,
+      "coverage": 0.9652549736506539,
+      "event_coverage": 0.9719581322503338
+    }
+  ],
+  "like_rate_by_ratio": [
+    {
+      "bin": 0.0,
+      "listens": 12090628,
+      "like_rate": 0.18963696509395542,
+      "dislike_rate": 0.010289705381722107
+    },
+    {
+      "bin": 10.0,
+      "listens": 1764495,
+      "like_rate": 0.17443007772762179,
+      "dislike_rate": 0.012663679976423849
+    },
+    {
+      "bin": 20.0,
+      "listens": 1161664,
+      "like_rate": 0.19311952509503608,
+      "dislike_rate": 0.012476068811635722
+    },
+    {
+      "bin": 30.0,
+      "listens": 927015,
+      "like_rate": 0.21599111125494194,
+      "dislike_rate": 0.012053742388202995
+    },
+    {
+      "bin": 40.0,
+      "listens": 749425,
+      "like_rate": 0.2304046435600627,
+      "dislike_rate": 0.011797044400707208
+    },
+    {
+      "bin": 50.0,
+      "listens": 651501,
+      "like_rate": 0.2439919508949334,
+      "dislike_rate": 0.012105890858187477
+    },
+    {
+      "bin": 60.0,
+      "listens": 603486,
+      "like_rate": 0.2531127482659084,
+      "dislike_rate": 0.011547906662292082
+    },
+    {
+      "bin": 70.0,
+      "listens": 583482,
+      "like_rate": 0.26132768448726784,
+      "dislike_rate": 0.011645603463345913
+    },
+    {
+      "bin": 80.0,
+      "listens": 601308,
+      "like_rate": 0.2758419977781769,
+      "dislike_rate": 0.011390169430641202
+    },
+    {
+      "bin": 90.0,
+      "listens": 26746173,
+      "like_rate": 0.19030846020475528,
+      "dislike_rate": 0.005756524494177167
+    }
+  ],
+  "cold_items": {
+    "share_test_items_unseen": 0.030155724500466326,
+    "share_test_events_unseen": 0.012012718284569356
+  }
+}

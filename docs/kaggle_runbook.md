@@ -119,12 +119,14 @@ What each notebook does, and the defaults its parameter cell ships with:
     ("built by pipeline version 1 ... re-run preprocessing"). Every K3/K4/K5 result made on an
     old bundle must be re-run on the new one.
   - Output size: besides the vocab, features, truth and val/test events, a bundle holds four
-    packed sequence sets (all events and Listen+ only, for `train` and `val_train`, each at most
-    `max_len_store` = 512 events per user, 11 bytes per event) and per-period aggregates
-    (`ui_*.npz`: 8 bytes per distinct (user, item) Listen+ pair; `item_day_*.npz`: 10 bytes per
-    distinct (item, day) pair; `pop_*_*.npy`: 8 bytes per item). Expect roughly twice the
-    pre-F1 size: about 0.5 GB at 50M and a few GB (well under 10 GB) at 500M. `meta.json`
-    records the event counts and peak RSS.
+    packed sequence sets (all events and Listen+ only, for `train` and `val_train`, 11 bytes per
+    event) and per-period aggregates (`ui_*.npz`: 8 bytes per distinct (user, item) Listen+
+    pair; `item_day_*.npz`: 10 bytes per distinct (item, day) pair; `pop_*_*.npy`: 8 bytes per
+    item). At 50M `max_len_store: null` stores full histories (EDA §7): about 47M events per
+    all-event set and about 30M per Listen+ set, so roughly 1.7 GB of sequences and about 2 GB
+    in all. At 500M `max_len_store: 1024` caps each set at 1024 events per user (about 1.1 GB
+    per set at 100k users), so expect about 5-8 GB in all. These are format-based estimates;
+    `meta.json` records the event counts and peak RSS.
 - **K3** runs `scripts/run_baselines.py ... --split val`, then `--split test`. The test run
   refits each model's best val config.
 - **K4** runs `scripts/run_train.py --processed <K2> --config CONFIG --split S --ckpt

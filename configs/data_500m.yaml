@@ -1,3 +1,4 @@
 extends: data_50m.yaml
 size: 500m
 n_shards: 16
+max_len_store: 1024  # EDA §7: full history does not fit at 500M; 1024 > model.max_len 200

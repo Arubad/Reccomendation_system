@@ -305,7 +305,8 @@ def custom(synth, tmp_path_factory):
     )
     data = {**synth, "multi_event": pl.concat([me, heavy]).sort("uid", "timestamp")}
     root = write_yambda_layout(data, tmp_path_factory.mktemp("yambda_custom"))
-    d = preprocess(root, _cfg(), tmp_path_factory.mktemp("processed_custom"))
+    # a capped history (as at 500M) is what makes truncation matter
+    d = preprocess(root, _cfg(max_len_store=512), tmp_path_factory.mktemp("processed_custom"))
     return load_processed(d), nolp
 
 

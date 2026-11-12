@@ -1,8 +1,9 @@
 size: 50m
-full_threshold: 50            # EDA: played_ratio_pct at/above which a listen counts as LISTEN_FULL
-min_count: 5                  # EDA: min positive train events for an ID embedding
-max_len_store: 512            # EDA: stored history per user (revisit against seq_length quantiles)
-collapse_consecutive_dups: false  # EDA: collapse runs of identical (item, token) if repeats are heavy
+full_threshold: 50            # EDA §2: played_ratio_pct at/above which a listen is LISTEN_FULL (Listen+)
+min_count: 5                  # EDA §1: min positive train events for an ID embedding
+max_len_store: null           # EDA §7: full history (q99 = 23.8k events/user at 50M; null = no cap)
+collapse_consecutive_dups: false  # EDA §4: consecutive duplicates are only 2.0% of events
+session_gap_seconds: 1800     # EDA §3: session edge of the gap buckets (must lie in (600, 21600))
 pca_dim: 128
 n_shards: 1
 split:
