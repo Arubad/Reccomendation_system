@@ -24,6 +24,7 @@ class SASRec(nn.Module):
     ):
         super().__init__()
         self.n_items, self.d_model, self.max_len, self.n_heads = n_items, d_model, max_len, n_heads
+        self.n_catalog = n_items  # items scored by all_item_repr (HookSeq: catalog > ID table)
         # Item embeddings are shared between the input and output (scoring) sides.
         self.item_emb = nn.Embedding(n_items + 1, d_model, padding_idx=0)
         self.pos_emb = nn.Embedding(max_len, d_model)
@@ -101,7 +102,7 @@ class SASRec(nn.Module):
         """[N+1, d] representation of every item (row 0 = pad), computed chunk by chunk."""
         dev = self.item_emb.weight.device
         parts = [
-            self.item_repr(torch.arange(s, min(s + chunk, self.n_items + 1), device=dev))
-            for s in range(0, self.n_items + 1, chunk)
+            self.item_repr(torch.arange(s, min(s + chunk, self.n_catalog + 1), device=dev))
+            for s in range(0, self.n_catalog + 1, chunk)
         ]
         return torch.cat(parts, dim=0)

@@ -62,6 +62,16 @@ def build_model(cfg: dict, data: ProcessedData):
         from hookrec.models.sasrec import SASRec
 
         return SASRec(n_items=data.vocab.n_items, **m)  # R4: an ID row per catalog item
+    if name == "hookseq":
+        from hookrec.models.hookseq import HookSeq
+
+        return HookSeq(
+            n_items=data.vocab.n_items,
+            features=data.features,
+            n_id=data.vocab.n_id,
+            id_idx=data.vocab.id_idx,
+            **m,
+        )
     raise KeyError(f"unknown neural model {name!r}")
 
 

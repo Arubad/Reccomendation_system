@@ -1,0 +1,12 @@
+extends: sasrec.yaml
+model:
+  name: hookseq
+  use_audio: true
+  use_artist: true
+  use_event: true
+  use_organic: true
+  use_ratio: true
+  id_dropout: 0.2
+loss:
+  logq: true
+  dislike_hard_negatives: true

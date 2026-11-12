@@ -1,0 +1,3 @@
+extends: ../hookseq.yaml
+model: {use_audio: true, use_artist: true, use_event: false, use_organic: false, use_ratio: false}
+loss: {logq: false, dislike_hard_negatives: false}
