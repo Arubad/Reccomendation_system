@@ -2,6 +2,7 @@ import numpy as np
 import polars as pl
 import pytest
 
+from hookrec.data.label import LIKE, LISTEN_FULL, LISTEN_SKIP
 from hookrec.data.vocab import build_vocab
 from hookrec.eval.protocol import EvalResult, build_ground_truth, count_oov, evaluate
 
@@ -11,24 +12,42 @@ def _vocab():
     return build_vocab(lf, lf, min_count=1)  # N=3, indices 1..3
 
 
-def _test_lf():
+def _test_lf(with_likes: bool = False):
+    F, S, L = LISTEN_FULL, LISTEN_SKIP, LIKE
+    uid = [1, 1, 1, 2, 3, 3, 4, 4]
+    item = [10, 10, 20, 999, 30, 5, 20, 10]
+    tok = [F, F, F, F, F, F, S, S]
+    if with_likes:  # uid 4 likes 30; uid 1 likes 30 (a like-only item); uid 5 only likes
+        uid, item, tok = uid + [4, 1, 5], item + [30, 30, 10], tok + [L, L, L]
     return pl.LazyFrame(
         {
-            "uid": pl.Series([1, 1, 1, 2, 3, 3, 4, 4], dtype=pl.UInt32),
-            "item_id": pl.Series([10, 10, 20, 999, 30, 5, 20, 10], dtype=pl.UInt32),
-            "is_positive": [True, True, True, True, True, True, False, False],
+            "uid": pl.Series(uid, dtype=pl.UInt32),
+            "item_id": pl.Series(item, dtype=pl.UInt32),
+            "token": pl.Series(tok, dtype=pl.UInt8),
+            "is_positive": [t in (F, L) for t in tok],
         }
     )
 
 
 def test_build_ground_truth():
     truth = build_ground_truth(_test_lf(), _vocab())
-    assert sorted(truth) == [1, 2, 3]  # uid 4 has no positives
+    assert sorted(truth) == [1, 2, 3]  # uid 4 has no Listen+
     assert sorted(truth[1]) == [1, 2]  # unique
     # OOV raw ids {5, 999} -> N+1=4, N+2=5 by ascending raw id
     assert list(truth[2]) == [5]  # 999 -> 5
     assert sorted(truth[3]) == [3, 4]  # 30 -> 3, 5 -> 4
     assert count_oov(truth, 3) == 2
+
+
+def test_ground_truth_listen_plus_excludes_likes():
+    lp = build_ground_truth(_test_lf(with_likes=True), _vocab())
+    assert sorted(lp) == [1, 2, 3]  # like-only users 4 and 5 have no Listen+ truth
+    assert sorted(lp[1]) == [1, 2]  # the like-only item 30 (idx 3) is not a target
+    pos = build_ground_truth(_test_lf(with_likes=True), _vocab(), target="positive")
+    assert sorted(pos) == [1, 2, 3, 4, 5]
+    assert sorted(pos[1]) == [1, 2, 3] and pos[4].tolist() == [3] and pos[5].tolist() == [1]
+    with pytest.raises(ValueError, match="eval.target"):
+        build_ground_truth(_test_lf(), _vocab(), target="likes")
 
 
 class Fixed:

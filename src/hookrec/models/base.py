@@ -8,7 +8,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Literal
 
-from hookrec.data.processed import ProcessedData
+from hookrec.data.aggregates import PeriodAggregates
+from hookrec.data.processed import ProcessedData, check_input_filter
 from hookrec.data.sequences import PackedSequences
 from hookrec.eval.protocol import Recommender, evaluate
 
@@ -30,17 +31,42 @@ def register(name: str) -> Callable[[Builder], Builder]:
     return deco
 
 
-def history_for(data: ProcessedData, split: Split) -> tuple[PackedSequences, float]:
-    """Fit-time history and its end time: val tunes on `seqs_val_train`, test on `seqs_train`."""
+def period_of(split: Split) -> str:
+    """The training period a split fits on: val tunes on `val_train`, test on `train`."""
     if split == "val":
-        return data.seqs_val_train, data.meta["t_val_train_end"]
+        return "val_train"
     if split == "test":
-        return data.seqs_train, data.meta["t_train_end"]
+        return "train"
     raise ValueError(f"split must be 'val' or 'test', got {split!r}")
 
 
+def input_filter_of(cfg: dict) -> str:
+    """`cfg["data"]["input_filter"]`: "all" (default) or "listen_plus" (R19)."""
+    return check_input_filter((cfg.get("data") or {}).get("input_filter", "all"))
+
+
+def history_for(
+    data: ProcessedData, split: Split, input_filter: str = "all"
+) -> tuple[PackedSequences, float]:
+    """Sequence-model history and its end time for `split`, from the `input_filter` set.
+
+    Sequences are truncated to `max_len_store`; baselines use `aggregates_for` instead.
+    """
+    period = period_of(split)
+    return data.seqs(period, input_filter), data.meta[f"t_{period}_end"]
+
+
+def aggregates_for(data: ProcessedData, split: Split) -> PeriodAggregates:
+    """Full, untruncated training-period aggregates for `split` (baselines, fallback, logQ)."""
+    return data.agg(period_of(split))
+
+
 def evaluate_split(rec: Recommender, data: ProcessedData, split: Split) -> dict:
-    """Metrics on the split's warm truth plus the cold-user slice (served by `rec`'s fallback)."""
+    """Metrics on the split's warm truth plus the cold-user slice.
+
+    Cold users have no Listen+ event in the training period; `rec` serves them as it would
+    any user (its MostPop fallback when it has no input history for them).
+    """
     n = data.vocab.n_items
     warm_truth = data.truth_val if split == "val" else data.truth_test
     cold_truth = data.truth_val_cold if split == "val" else data.truth_test_cold

@@ -8,6 +8,7 @@ from typing import Protocol
 import numpy as np
 import polars as pl
 
+from hookrec.data.label import LIKE, LISTEN_FULL
 from hookrec.data.vocab import ItemVocab
 from hookrec.eval.metrics import coverage, ndcg_per_user, recall_per_user
 
@@ -26,14 +27,32 @@ class EvalResult:
     topk: np.ndarray  # (len(uids), max(ks))
 
 
-def build_ground_truth(test_lf_labeled: pl.LazyFrame, vocab: ItemVocab) -> dict[int, np.ndarray]:
-    """uid -> unique positive item indices. Users without positives are absent.
+TARGETS = ("listen_plus", "positive")
+
+
+def target_filter(target: str = "listen_plus") -> pl.Expr:
+    """Which labeled events are ground truth (`eval.target`).
+
+    "listen_plus" (default, the Yambda paper's Listen+): token == LISTEN_FULL, i.e. listens with
+    played_ratio_pct >= full_threshold; likes are not targets. "positive": LISTEN_FULL or LIKE.
+    """
+    if target == "listen_plus":
+        return pl.col("token") == LISTEN_FULL
+    if target == "positive":
+        return pl.col("token").is_in([LISTEN_FULL, LIKE])
+    raise ValueError(f"eval.target must be one of {TARGETS}, got {target!r}")
+
+
+def build_ground_truth(
+    test_lf_labeled: pl.LazyFrame, vocab: ItemVocab, target: str = "listen_plus"
+) -> dict[int, np.ndarray]:
+    """uid -> unique target item indices (see `target_filter`). Users without targets are absent.
 
     Raw ids outside the vocabulary get reserved indices N+1, N+2, ... (ascending raw id), so they
     can never be recommended and always count as misses (ruling R3).
     """
     pos = (
-        test_lf_labeled.filter(pl.col("is_positive"))
+        test_lf_labeled.filter(target_filter(target))
         .select("uid", "item_id")
         .unique()
         .sort("uid", "item_id")
@@ -56,7 +75,11 @@ def build_ground_truth(test_lf_labeled: pl.LazyFrame, vocab: ItemVocab) -> dict[
 def split_by_history(
     truth: dict[int, np.ndarray], history_uids: np.ndarray
 ) -> tuple[dict[int, np.ndarray], dict[int, np.ndarray]]:
-    """Split truth into (warm, cold): warm users appear in `history_uids` (official protocol)."""
+    """Split truth into (warm, cold): warm users appear in `history_uids`.
+
+    Preprocessing passes the users with >= 1 Listen+ event in the training period, as in the
+    official protocol (its train set is the Listen+-filtered interactions).
+    """
     hist = set(np.unique(np.asarray(history_uids)).tolist())
     warm: dict[int, np.ndarray] = {}
     cold: dict[int, np.ndarray] = {}

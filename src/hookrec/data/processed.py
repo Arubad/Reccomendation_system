@@ -2,6 +2,17 @@
 
 Stage A cleans and labels events once per uid shard into `_work/events_{s}.parquet`; every later
 stage scans those files lazily, so peak memory stays bounded. `_work/` is deleted at the end.
+
+Protocol (the Yambda paper's "Listen+" setting; see `hookrec.data.aggregates`):
+- ground truth = Listen+ val/test events (`eval.target: listen_plus`, the default) or positives
+  (`eval.target: positive` = LISTEN_FULL or LIKE);
+- warm users = users with >= 1 Listen+ event in the corresponding training period (the rows of
+  `ui_{period}`); every other user with truth is cold;
+- the baselines fit on full-period aggregates, never on the truncated sequences;
+- two sequence sets per period: all events (`seqs_{period}`) and Listen+ only
+  (`seqs_{period}_lp`, built from the full period and only then truncated to `max_len_store`).
+
+`PIPELINE_VERSION` is part of the hashed config, so bundles from older code get another name.
 """
 
 from __future__ import annotations
@@ -19,9 +30,10 @@ import numpy as np
 import polars as pl
 import yaml
 
+from hookrec.data.aggregates import PERIODS, PeriodAggregates, build_period_aggregates
 from hookrec.data.clean import clean_events, scan_events
 from hookrec.data.features import ItemFeatures, build_item_features
-from hookrec.data.label import label_events
+from hookrec.data.label import LISTEN_FULL, label_events
 from hookrec.data.sequences import PackedSequences, build_sequences, build_sequences_sharded
 from hookrec.data.split import global_temporal_split
 from hookrec.data.vocab import ItemVocab, build_vocab
@@ -30,6 +42,10 @@ from hookrec.utils.config import config_hash
 
 log = logging.getLogger(__name__)
 
+# Bump whenever the bundle's contents or definitions change; it is hashed into the bundle name.
+# 2: Listen+ truth and warm users, full-period aggregates, Listen+ sequences (fix wave F1).
+PIPELINE_VERSION = 2
+INPUT_FILTERS = ("all", "listen_plus")
 EVENT_COLS = ["uid", "item_idx", "is_organic", "is_positive", "token", "ts"]
 # Columns every downstream stage reads from the cleaned+labeled work files.
 WORK_COLS = ["uid", "item_id", "timestamp", "is_organic", "token", "ratio_bucket", "is_positive"]
@@ -40,8 +56,12 @@ class ProcessedData:
     cfg: dict
     vocab: ItemVocab
     features: ItemFeatures
-    seqs_train: PackedSequences  # train period (test-time history)
-    seqs_val_train: PackedSequences  # val_train period (history while tuning)
+    seqs_train: PackedSequences  # train period, all events (test-time history)
+    seqs_val_train: PackedSequences  # val_train period, all events (history while tuning)
+    seqs_train_lp: PackedSequences  # train period, Listen+ events only
+    seqs_val_train_lp: PackedSequences  # val_train period, Listen+ events only
+    agg_train: PeriodAggregates  # full-period counts (baselines, fallbacks, logQ)
+    agg_val_train: PeriodAggregates
     truth_val: dict[int, np.ndarray]
     truth_test: dict[int, np.ndarray]
     truth_val_cold: dict[int, np.ndarray]
@@ -54,6 +74,32 @@ class ProcessedData:
 
     def test_events(self) -> pl.LazyFrame:
         return pl.scan_parquet(self.path / "test_events.parquet")
+
+    def seqs(self, period: str, input_filter: str = "all") -> PackedSequences:
+        """Packed sequences of `period` ("train" / "val_train") for `data.input_filter`."""
+        check_input_filter(input_filter)
+        _check_period(period)
+        return getattr(self, f"seqs_{period}" + ("_lp" if input_filter == "listen_plus" else ""))
+
+    def agg(self, period: str) -> PeriodAggregates:
+        _check_period(period)
+        return getattr(self, f"agg_{period}")
+
+
+def _check_period(period: str) -> None:
+    if period not in PERIODS:
+        raise ValueError(f"period must be one of {PERIODS}, got {period!r}")
+
+
+def check_input_filter(input_filter: str) -> str:
+    if input_filter not in INPUT_FILTERS:
+        raise ValueError(f"data.input_filter must be one of {INPUT_FILTERS}, got {input_filter!r}")
+    return input_filter
+
+
+def hashed_config(cfg: dict) -> dict:
+    """The config as hashed and saved: `cfg` plus `pipeline_version` (R21)."""
+    return {**cfg, "pipeline_version": PIPELINE_VERSION}
 
 
 def peak_rss_mb() -> float:
@@ -183,28 +229,45 @@ def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
         "collapse_consecutive_dups": cfg["collapse_consecutive_dups"],
     }
 
-    def seqs(lf: pl.LazyFrame, ts_end: int) -> PackedSequences:
-        if n_shards > 1:  # shard files already hold one uid shard: only the time bound is left
-            return build_sequences_sharded(
-                None, vocab, n_shards,
-                shard_factory=lambda s: pl.scan_parquet(work / f"events_{s}.parquet").filter(
-                    pl.col("timestamp") < ts_end
-                ),
-                **kw,
-            )  # fmt: skip
-        return build_sequences(lf, vocab, **kw)
+    def shard(s: int, ts_end: int) -> pl.LazyFrame:
+        # shard files already hold one uid shard: only the time bound is left
+        return pl.scan_parquet(work / f"events_{s}.parquet").filter(pl.col("timestamp") < ts_end)
 
-    seqs_train = seqs(split.train, split.t_train_end)
-    seqs_train.save(out / "seqs_train")
-    seqs_val_train = seqs(split.val_train, split.t_val_train_end)
-    seqs_val_train.save(out / "seqs_val_train")
+    def seqs(lf: pl.LazyFrame, ts_end: int, listen_plus: bool) -> PackedSequences:
+        # Listen+ filter first, on the full period, then truncation to max_len_store (R19)
+        def lp(x: pl.LazyFrame) -> pl.LazyFrame:
+            return x.filter(pl.col("token") == LISTEN_FULL) if listen_plus else x
+
+        if n_shards > 1:
+            return build_sequences_sharded(
+                None, vocab, n_shards, shard_factory=lambda s: lp(shard(s, ts_end)), **kw
+            )
+        return build_sequences(lp(lf), vocab, **kw)
+
+    periods = {
+        "train": (split.train, split.t_train_end),
+        "val_train": (split.val_train, split.t_val_train_end),
+    }
+    built: dict[str, PackedSequences] = {}
+    for period, (lf, ts_end) in periods.items():
+        for suffix, listen_plus in (("", False), ("_lp", True)):
+            built[period + suffix] = s_ = seqs(lf, ts_end, listen_plus)
+            s_.save(out / f"seqs_{period}{suffix}")
     st.done("sequences")
 
-    # Ground truth (R10): warm users in the main dicts, cold users separately.
-    truth_test_all = build_ground_truth(split.test, vocab)
-    truth_val_all = build_ground_truth(split.val, vocab)
-    truth_test, truth_test_cold = split_by_history(truth_test_all, seqs_train.uids)
-    truth_val, truth_val_cold = split_by_history(truth_val_all, seqs_val_train.uids)
+    # Full-period aggregates for the baselines / fallbacks / logQ (R18).
+    aggs: dict[str, PeriodAggregates] = {}
+    for period, (lf, ts_end) in periods.items():
+        aggs[period] = build_period_aggregates(lf, vocab, ts_end)
+        aggs[period].save(out, period)
+    st.done("aggregates")
+
+    # Ground truth (R10, R17): Listen+ targets; warm = >= 1 Listen+ event in the train period.
+    target = (cfg.get("eval") or {}).get("target", "listen_plus")
+    truth_test_all = build_ground_truth(split.test, vocab, target)
+    truth_val_all = build_ground_truth(split.val, vocab, target)
+    truth_test, truth_test_cold = split_by_history(truth_test_all, aggs["train"].uids)
+    truth_val, truth_val_cold = split_by_history(truth_val_all, aggs["val_train"].uids)
     for name, t in (
         ("truth_test", truth_test),
         ("truth_test_cold", truth_test_cold),
@@ -241,6 +304,8 @@ def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
     ):
         n_users[name], n_events[name] = _counts(lf)
     meta = {
+        "pipeline_version": PIPELINE_VERSION,
+        "eval_target": target,
         "t_val_train_end": split.t_val_train_end,
         "t_val_start": split.t_val_start,
         "t_train_end": split.t_train_end,
@@ -254,21 +319,25 @@ def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
         "n_cold_val_users": len(truth_val_cold),
         "share_unknown_test_items": share_unknown,
         "n_oov_test_items": count_oov(truth_test_all, vocab.n_items),
-        "n_dropped_oov": {
-            "train": seqs_train.n_dropped_oov,
-            "val_train": seqs_val_train.n_dropped_oov,
-        },
+        "n_dropped_oov": {k: s_.n_dropped_oov for k, s_ in built.items()},
+        "n_listen_plus_events": {k: int(a.pop_lp.sum()) for k, a in aggs.items()},
+        "n_warm_users": {k: len(a.uids) for k, a in aggs.items()},
         "stage_seconds": st.timings,
         "peak_rss_mb": round(peak_rss_mb(), 1),
         "wall_seconds": round(time.perf_counter() - st.t0, 2),
-        "config_hash": config_hash(cfg),
+        "config_hash": config_hash(hashed_config(cfg)),
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     shutil.rmtree(work)
 
 
 def preprocess(raw_dir: Path, cfg: dict, out_root: Path) -> Path:
-    """Build (or reuse) the processed bundle for `cfg`; returns its directory."""
+    """Build (or reuse) the processed bundle for `cfg`; returns its directory.
+
+    The directory is `{size}-{hash}` of `hashed_config(cfg)`, so it also changes with
+    `PIPELINE_VERSION`: a bundle from older code is never reused.
+    """
+    cfg = hashed_config(cfg)
     out = Path(out_root) / f"{cfg['size']}-{config_hash(cfg)}"
     if (out / "_DONE").exists():
         log.info("cache hit: %s", out)
@@ -287,16 +356,26 @@ def load_processed(path: Path) -> ProcessedData:
     d = Path(path)
     if not (d / "_DONE").exists():
         raise FileNotFoundError(f"{d} has no _DONE marker: preprocessing incomplete or missing")
+    meta = json.loads((d / "meta.json").read_text())
+    if meta.get("pipeline_version") != PIPELINE_VERSION:
+        raise ValueError(
+            f"{d} was built by pipeline version {meta.get('pipeline_version', 1)}, this code is "
+            f"version {PIPELINE_VERSION}: re-run preprocessing (K2)"
+        )
     return ProcessedData(
         cfg=yaml.safe_load((d / "config.yaml").read_text()),
         vocab=ItemVocab.load(d / "vocab.npz"),
         features=ItemFeatures.load(d / "features.npz"),
         seqs_train=PackedSequences.load(d / "seqs_train"),
         seqs_val_train=PackedSequences.load(d / "seqs_val_train"),
+        seqs_train_lp=PackedSequences.load(d / "seqs_train_lp"),
+        seqs_val_train_lp=PackedSequences.load(d / "seqs_val_train_lp"),
+        agg_train=PeriodAggregates.load(d, "train"),
+        agg_val_train=PeriodAggregates.load(d, "val_train"),
         truth_val=load_truth(d / "truth_val.npz"),
         truth_test=load_truth(d / "truth_test.npz"),
         truth_val_cold=load_truth(d / "truth_val_cold.npz"),
         truth_test_cold=load_truth(d / "truth_test_cold.npz"),
-        meta=json.loads((d / "meta.json").read_text()),
+        meta=meta,
         path=d,
     )

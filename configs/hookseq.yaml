@@ -1,4 +1,5 @@
 extends: sasrec.yaml
+data: {input_filter: all}  # every event type is input; the ablations a0..a6 inherit this
 model:
   name: hookseq
   use_audio: true

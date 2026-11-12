@@ -5,17 +5,20 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
+from hookrec.data.aggregates import PeriodAggregates
 from hookrec.data.features import ItemFeatures
-from hookrec.data.sequences import PackedSequences
 from hookrec.data.vocab import ItemVocab
 from hookrec.eval.metrics import coverage, ndcg_per_user, recall_per_user
+from hookrec.eval.protocol import target_filter
 
 Truth = dict[int, np.ndarray]
 
 
-def _positive_items_by_user(events: pl.LazyFrame, organic: bool) -> Truth:
+def _target_items_by_user(events: pl.LazyFrame, organic: bool, target: str) -> Truth:
     df = (
-        events.filter(pl.col("is_positive").cast(pl.Boolean) & (pl.col("is_organic").cast(pl.Boolean) == organic))
+        events.filter(
+            target_filter(target) & (pl.col("is_organic").cast(pl.Boolean) == organic)
+        )
         .select("uid", "item_idx")
         .unique()
         .sort("uid", "item_idx")
@@ -46,19 +49,21 @@ def slice_truth(
     test_events_lf: pl.LazyFrame,
     vocab: ItemVocab,
     features: ItemFeatures,
-    seqs_train: PackedSequences,
+    history: PeriodAggregates,
+    target: str = "listen_plus",
 ) -> dict[str, Truth]:
     """Named sub-truths; users whose slice is empty are dropped from that slice.
 
-    organic / served: truth items with >= 1 positive organic / non-organic test event (an item
-    may be in both). cold_items: OOV (idx > N) or no ID embedding; warm_items: the rest.
-    users_low/mid/high: terciles of train event count over the users in `truth` (ties by uid).
+    organic / served: truth items with >= 1 organic / non-organic test event of the truth's
+    `target` kind (`eval.target`; an item may be in both). cold_items: OOV (idx > N) or no ID
+    embedding; warm_items: the rest. users_low/mid/high: terciles of the users' Listen+ event
+    count over the full training period (`history`, untruncated; ties by uid).
     `features` is part of the interface but unused (cold is defined by the vocab's id_idx).
     """
     n = vocab.n_items
     out: dict[str, Truth] = {"all": {u: t for u, t in truth.items() if len(t)}}
-    out["organic"] = _restrict(truth, _positive_items_by_user(test_events_lf, True))
-    out["served"] = _restrict(truth, _positive_items_by_user(test_events_lf, False))
+    out["organic"] = _restrict(truth, _target_items_by_user(test_events_lf, True, target))
+    out["served"] = _restrict(truth, _target_items_by_user(test_events_lf, False, target))
 
     def is_cold(items: np.ndarray) -> np.ndarray:
         return (items > n) | (vocab.id_idx[np.minimum(items, n)] == 0)
@@ -72,9 +77,7 @@ def slice_truth(
         out[name] = sl
 
     uids = np.array(sorted(truth), dtype=np.int64)
-    rows = seqs_train.index_of(uids)
-    lens = np.diff(seqs_train.offsets)
-    counts = np.where(rows >= 0, lens[np.maximum(rows, 0)] if len(lens) else 0, 0)
+    counts = history.user_counts(uids)
     order = np.lexsort((uids, counts))  # by activity, ties by uid
     for name, part in zip(("users_low", "users_mid", "users_high"), np.array_split(order, 3)):
         sl = {}

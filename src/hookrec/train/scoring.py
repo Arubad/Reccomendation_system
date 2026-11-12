@@ -76,7 +76,8 @@ class SeqRecommender:
     """`Recommender` over a sequence model: encode each user's last window, score the catalog.
 
     Users absent from `seqs` get the fallback's top-k. Item representations are computed once
-    per instance, so build a new recommender after the weights change.
+    per instance, so build a new recommender after the weights change. User states use fp16
+    autocast on CUDA unless `amp` is False (`train.amp`); on CPU they are always fp32.
     """
 
     def __init__(
@@ -89,8 +90,9 @@ class SeqRecommender:
         batch_size: int = 1024,
         item_chunk: int = 500_000,
         session_gap: float = DEFAULT_SESSION_GAP,
+        amp: bool = True,
     ):
-        self.session_gap = session_gap
+        self.session_gap, self.amp = session_gap, bool(amp)
         self.model, self.seqs, self.max_len = model, seqs, max_len
         self.device = torch.device(device)
         self.fallback, self.batch_size, self.item_chunk = fallback, batch_size, item_chunk
@@ -126,7 +128,7 @@ class SeqRecommender:
         try:
             if self._item_vecs is None:
                 self._item_vecs = self.model.all_item_repr().float()
-            amp = self.device.type == "cuda"
+            amp = self.device.type == "cuda" and self.amp
             known_pos = np.flatnonzero(known)
             for s in range(0, len(known_pos), self.batch_size):
                 at = known_pos[s : s + self.batch_size]

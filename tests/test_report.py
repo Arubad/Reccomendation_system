@@ -132,6 +132,7 @@ def test_write_readme_tables(tmp_path):
     for h in ("Headline", "Ablations", "Slices", "Fairness", "Paired difference"):
         assert h in first
     assert "HookSeq vs SASRec: not yet run" in first
+    assert "## Headline (50m, test split, Listen+ truth and warm users)" in first
     assert "SASRec (paper)" in first
 
     _write(res, _eval_rec("a0_sasrec", 0.2, "2026-01-06"), 9)
@@ -159,6 +160,40 @@ def test_paired_section_per_size_and_processed_dir(tmp_path):
     p500, p50 = paired.split("### 500m")[1].split("### 50m")
     assert "+0.1000" in p50
     assert "processed_dir mismatch" in p500
+
+
+def test_paired_section_prefers_sasrec_and_renders_both(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    _write(res, _eval_rec("hookseq", 0.3, "2026-01-05"), 1)
+    _write(res, _eval_rec("a0_sasrec", 0.2, "2026-01-05"), 2)
+    _peruser(res, "hookseq", "50m", 0.1)
+    _peruser(res, "a0_sasrec", "50m", 0.05)
+    only_a0 = write_readme_tables(res, tmp_path / "o.md").read_text().split("## Paired")[1]
+    assert "a0 control" in only_a0 and "+0.0500" in only_a0 and "| sasrec (" not in only_a0
+
+    _write(res, _eval_rec("sasrec", 0.25, "2026-01-05"), 3)
+    _peruser(res, "sasrec", "50m", 0.0)
+    paired = write_readme_tables(res, tmp_path / "o.md").read_text().split("## Paired")[1]
+    i_sas = paired.index("| sasrec (SASRec, Listen+ input (paper setting))")
+    i_a0 = paired.index("| a0_sasrec (a0 control")
+    assert i_sas < i_a0  # the paper-comparable baseline comes first
+    assert "ndcg@10 (HookSeq - sasrec) | +0.1000" in paired
+    assert "ndcg@10 (HookSeq - a0_sasrec) | +0.0500" in paired
+    assert "recall@100 (HookSeq - sasrec)" in paired
+
+
+def test_quick_records_excluded_from_tables():
+    runs = [
+        _run("mostpop", 0.2, "2026-01-01"),
+        _run("mostpop", 0.7, "2026-01-02", extra={"quick": True}),
+        _run("a0_sasrec", 0.1, "2026-01-01"),
+        _run("a1_audio", 0.6, "2026-01-03", extra={"quick": True}),
+    ]
+    t = results_table(runs, size="50m")
+    assert "0.2000" in t and "0.7000" not in t
+    a = ablation_table(runs, size="50m")
+    assert "a0_sasrec" in a and "a1_audio" not in a
 
 
 def test_ablation_table_test_suffix_and_mixed_sizes():

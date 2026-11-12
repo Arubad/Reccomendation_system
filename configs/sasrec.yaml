@@ -1,3 +1,5 @@
+# The paper-comparable `sasrec` row: Listen+ input only, as in the official SASRec benchmark.
+data: {input_filter: listen_plus}  # all | listen_plus (sequence set the model reads)
 model: {name: sasrec, d_model: 64, n_layers: 2, n_heads: 2, max_len: 200, dropout: 0.2}
 train:
   batch_size: 256

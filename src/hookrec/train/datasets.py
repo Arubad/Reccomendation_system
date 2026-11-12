@@ -63,6 +63,11 @@ def _left_pad(a: np.ndarray, length: int) -> torch.Tensor:
 
 
 class SeqTrainDataset(Dataset):
+    """Random windows of `max_len + 1` events; the target at position t is event t+1's item if
+    that event is positive (LISTEN_FULL or LIKE), else 0 (ignored). On Listen+ sequences
+    (`data.input_filter: listen_plus`) every event is LISTEN_FULL, so the target is simply the
+    next item, as in the official SASRec benchmark."""
+
     def __init__(
         self,
         seqs: PackedSequences,

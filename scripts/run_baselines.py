@@ -3,9 +3,10 @@
 python scripts/run_baselines.py --processed DIR --config configs/baselines.yaml \
     --split {val,test} --out results/ [--models mostpop,decaypop,ials] [--quick]
 
-`--split val` fits every grid point on the val-train history and scores it on the val day.
+`--split val` fits every grid point on the full val_train period (Listen+ aggregates, never the
+truncated sequences) and scores it on the val day (Listen+ truth, warm users).
 `--split test` takes, per model, the val run with the best NDCG@10 for the same processed dir,
-refits on the full train history and scores the test day (warm users, plus the cold slice).
+refits on the full train period and scores the test day (warm users, plus the cold slice).
 """
 
 from __future__ import annotations

@@ -47,6 +47,21 @@ def test_ials_handles_unseen_users(processed_synth):
     assert (out[0] > 0).any()
 
 
+def test_ials_registry_fits_listen_plus_aggregates(processed_synth):
+    data = processed_synth
+    agg = data.agg_val_train
+    model = fit_recommender("ials", data, {**CFG, "iterations": 2}, "val")
+    np.testing.assert_array_equal(model._uids, agg.uids)
+    assert (model._user_items != 0).nnz == agg.ui.nnz
+    np.testing.assert_allclose(model._user_items.data, 1.0 + 10 * agg.ui.data)
+    pop = MostPop().fit_counts(agg.pop_lp)
+    # users without Listen+ in val_train (cold) get MostPop over Listen+ counts
+    cold = np.setdiff1d(np.asarray(data.seqs_val_train.uids), agg.uids)[:1]
+    if len(cold) == 0:
+        cold = np.array([int(agg.uids.max()) + 1])
+    np.testing.assert_array_equal(model.recommend(cold, 10)[0], pop.top_items(10))
+
+
 def _load_runner():
     path = ROOT / "scripts" / "run_baselines.py"
     spec = importlib.util.spec_from_file_location("run_baselines", path)

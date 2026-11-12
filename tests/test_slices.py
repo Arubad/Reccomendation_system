@@ -1,13 +1,14 @@
 import numpy as np
 import polars as pl
 
+from hookrec.data.label import LISTEN_FULL
 from hookrec.eval.protocol import evaluate
 from hookrec.eval.slices import evaluate_slices, slice_truth
 from hookrec.models.popularity import MostPop
 
 
 def _slices(d):
-    return slice_truth(d.truth_test, d.test_events(), d.vocab, d.features, d.seqs_train)
+    return slice_truth(d.truth_test, d.test_events(), d.vocab, d.features, d.agg_train)
 
 
 def test_slices_partition_organic_served(processed_synth):
@@ -24,7 +25,7 @@ def test_slices_partition_organic_served(processed_synth):
 def test_organic_served_come_from_labeled_events(processed_synth):
     d = processed_synth
     sl = _slices(d)
-    ev = d.test_events().filter(pl.col("is_positive").cast(pl.Boolean)).collect()
+    ev = d.test_events().filter(pl.col("token") == LISTEN_FULL).collect()  # Listen+ truth
     org = {
         (int(u), int(i))
         for u, i in ev.filter(pl.col("is_organic").cast(pl.Boolean))
@@ -57,16 +58,18 @@ def test_activity_terciles_balanced(processed_synth):
     assert sum(sizes) == len(d.truth_test)
     assert max(sizes) - min(sizes) <= 1
     uids = sorted(d.truth_test)
-    rows = d.seqs_train.index_of(np.array(uids))
-    lens = np.diff(d.seqs_train.offsets)
-    act = {u: lens[r] for u, r in zip(uids, rows)}
+    # full-period Listen+ counts (brute force from the CSR rows), not truncated sequences
+    dense = d.agg_train.ui.toarray()
+    rows = d.agg_train.index_of(np.array(uids))
+    act = {u: int(dense[r].sum()) for u, r in zip(uids, rows)}
+    assert all(r >= 0 for r in rows)  # every warm user has a Listen+ row
     assert max(act[u] for u in sl["users_low"]) <= min(act[u] for u in sl["users_mid"])
     assert max(act[u] for u in sl["users_mid"]) <= min(act[u] for u in sl["users_high"])
 
 
 def test_evaluate_slices_matches_evaluate(processed_synth):
     d = processed_synth
-    rec = MostPop().fit(d.seqs_train, d.vocab.n_items)
+    rec = MostPop().fit_counts(d.agg_train.pop_lp)
     res = evaluate(rec, d.truth_test, d.vocab.n_items)
     m = evaluate_slices(res.topk, res.uids, _slices(d), d.vocab.n_items)
     assert abs(m["all"]["ndcg@10"] - res.metrics["ndcg@10"]) < 1e-12

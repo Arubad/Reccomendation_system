@@ -1,3 +1,4 @@
+import dataclasses
 import importlib.util
 import json
 from pathlib import Path
@@ -7,9 +8,9 @@ import pytest
 import torch
 
 from hookrec.eval.protocol import evaluate
-from hookrec.models.base import build_model
+from hookrec.models.base import build_model, history_for, input_filter_of
 from hookrec.models.hookseq import HookSeq
-from hookrec.models.popularity import MostPop
+from hookrec.models.popularity import mostpop_fallback
 from hookrec.models.sasrec import SASRec
 from hookrec.train.scoring import SeqRecommender
 from hookrec.train.trainer import train
@@ -180,10 +181,11 @@ def test_run_train_smoke_on_a2(processed_synth, tmp_path):
     assert rec["config"]["model"]["name"] == "hookseq" and "ndcg@10" in rec["metrics"]
 
 
-def _cold_ndcg(model, data):
+def _cold_ndcg(model, data, cfg):
     # synth's cold items (no ID row) only appear in the test window's ground truth
-    seqs, n = data.seqs_train, data.vocab.n_items
-    rec = SeqRecommender(model, seqs, 20, torch.device("cpu"), MostPop().fit(seqs, n))
+    seqs, _ = history_for(data, "test", input_filter_of(cfg))  # the set the model trained on
+    n = data.vocab.n_items
+    rec = SeqRecommender(model, seqs, 20, torch.device("cpu"), mostpop_fallback(data, "test"))
     cold = data.vocab.id_idx == 0
     truth = {u: t[cold[t]] for u, t in data.truth_test.items()}
     truth = {u: t for u, t in truth.items() if len(t)}
@@ -194,28 +196,37 @@ def _cold_ndcg(model, data):
 def test_audio_path_beats_untrained_idonly_and_sasrec_on_cold_items(processed_synth, tmp_path):
     """Cold items (no ID row) are reachable only via audio/artist. Isolate the audio path
     (artist off): trained audio-only must clearly beat the same net untrained, an ID-only
-    HookSeq and SASRec; the full model must beat SASRec."""
+    HookSeq, SASRec and the same net trained on audio rows permuted across items (so the
+    signal is the audio content, not merely having an audio row); the full model must beat
+    SASRec."""
     data = processed_synth
+    # shuffled-audio control: permute the audio rows among the items that have audio
+    f = data.features
+    have = np.flatnonzero(f.has_audio)
+    audio = np.array(f.audio, copy=True)
+    audio[have] = audio[np.random.default_rng(0).permutation(have)]
+    shuffled = dataclasses.replace(data, features=dataclasses.replace(f, audio=audio))
     over = {**TINY, "train.batch_size": 16, "train.lr": 5e-3, "train.warmup_steps": 20,
             "train.max_steps": 300, "train.eval_every_steps": 1000, "train.ckpt_every_steps": 1000,
             "train.patience": 100, "loss.logq": False, "loss.dislike_hard_negatives": False}  # fmt: skip
     audio_only = {"model.use_artist": False}
-    runs = {  # name: (base config, overrides, trained?)
-        "sasrec": ("sasrec", {}, True),
-        "full": ("hookseq", {}, True),
-        "audio_only": ("hookseq", audio_only, True),
-        "audio_only_untrained": ("hookseq", audio_only, False),
-        "id_only": ("hookseq", {"model.use_artist": False, "model.use_audio": False}, True),
+    runs = {  # name: (base config, overrides, trained?, data)
+        "sasrec": ("sasrec", {}, True, data),
+        "full": ("hookseq", {}, True, data),
+        "audio_only": ("hookseq", audio_only, True, data),
+        "audio_only_untrained": ("hookseq", audio_only, False, data),
+        "audio_only_shuffled": ("hookseq", audio_only, True, shuffled),
+        "id_only": ("hookseq", {"model.use_artist": False, "model.use_audio": False}, True, data),
     }
     scores = {}
-    for name, (base, extra, trained) in runs.items():
+    for name, (base, extra, trained, d) in runs.items():
         cfg = load_config(ROOT / "configs" / f"{base}.yaml", {**over, **extra})
         torch.manual_seed(0)
-        model = build_model(cfg, data)
+        model = build_model(cfg, d)
         if trained:
-            train(cfg, data, model, "test", tmp_path / name)
-        scores[name] = _cold_ndcg(model.eval(), data)
+            train(cfg, d, model, "test", tmp_path / name)
+        scores[name] = _cold_ndcg(model.eval(), d, cfg)
     margin = 0.03  # audio-only scored 0.055-0.064 over seeds 0-2; the others score 0.0
-    for other in ("audio_only_untrained", "id_only", "sasrec"):
+    for other in ("audio_only_untrained", "audio_only_shuffled", "id_only", "sasrec"):
         assert scores["audio_only"] > scores[other] + margin, scores
     assert scores["full"] > scores["sasrec"] + margin, scores

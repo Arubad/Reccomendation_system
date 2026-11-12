@@ -12,4 +12,7 @@ split:
   test_timestamp: 25913600    # official YAMBDA_TEST_TIMESTAMP = 26_000_000 - 86_400; null = max-anchored
 embeddings_file: embeddings_{size}.parquet  # K0's filtered file; embeddings.parquet = full HF file
 emb_column: embed                           # `normalized_embed` for the full HF file
+eval:
+  # ground truth: listen_plus (LISTEN_FULL = the paper's Listen+) | positive (FULL or LIKE)
+  target: listen_plus
 include_embedding_only_items: false   # embedding-only items never appear in events

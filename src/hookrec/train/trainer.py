@@ -1,9 +1,12 @@
 """Resumable sampled-softmax trainer for sequence models (fp16 AMP on CUDA unless
 `train.amp: false`; fp32 on CPU).
 
-split="val": train on `seqs_val_train`, evaluate warm NDCG@10 on `truth_val` every
+split="val": train on the val_train sequences, evaluate warm NDCG@10 on `truth_val` every
 `eval_every_steps`, early-stop after `patience` evals without improvement, keep `best.pt`.
-split="test": train on `seqs_train` for exactly `max_steps` steps, no evaluation.
+split="test": train on the train sequences for exactly `max_steps` steps, no evaluation.
+`data.input_filter` picks the sequence set: "all" events (default) or "listen_plus" (Listen+
+events only, the official SASRec input). With logQ, the sampler's popularity is the full
+training period's counts of that same period: positives for "all", Listen+ for "listen_plus".
 
 Every `ckpt_every_steps`, and whenever training stops, an atomic `ckpt-{step:08d}.pt` is written
 to `ckpt_dir` (2 newest kept). A run resumes from the newest good checkpoint in
@@ -33,9 +36,9 @@ from torch.utils.data import DataLoader, Dataset, Sampler
 from hookrec.data.label import DISLIKE
 from hookrec.data.processed import ProcessedData
 from hookrec.eval.protocol import evaluate
-from hookrec.models.base import history_for
+from hookrec.models.base import aggregates_for, history_for, input_filter_of
 from hookrec.models.losses import make_log_q, sample_negatives, sampled_softmax_loss
-from hookrec.models.popularity import MostPop
+from hookrec.models.popularity import mostpop_fallback
 from hookrec.train.checkpoint import (
     atomic_save,
     capture_rng_states,
@@ -213,7 +216,8 @@ def train(
     log.info("training %s on %s (split=%s)", cfg["model"]["name"], device_name(device), split)
 
     set_seed(tc["seed"])
-    seqs, _ = history_for(data, split)
+    input_filter = input_filter_of(cfg)
+    seqs, _ = history_for(data, split, input_filter)
     n_items = data.vocab.n_items
     eval_every, ckpt_every = tc["eval_every_steps"], tc["ckpt_every_steps"]
     log_every = tc.get("log_every_steps", 100)
@@ -247,11 +251,12 @@ def train(
     sched = LambdaLR(opt, warmup_cosine(tc["warmup_steps"], schedule_steps))
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
     gen = torch.Generator().manual_seed(tc["seed"])  # negative sampling
-    fallback = MostPop().fit(seqs, n_items)
+    fallback = mostpop_fallback(data, split)
     log_q = None
     if lc.get("logq"):
-        # popularity of the training period actually used: val recounts its own history
-        pop = fallback.scores if split == "val" else data.features.pop_train
+        # R20: the full period the run trains on, counted like its targets
+        agg = aggregates_for(data, split)
+        pop = agg.pop_lp if input_filter == "listen_plus" else agg.pop_pos
         log_q = make_log_q(pop, lc.get("mix_uniform", 0.0), n_ib, n_uni).to(device)
     eval_truth = _eval_truth(data.truth_val, tc.get("eval_max_users"), tc["seed"])
 
@@ -329,7 +334,7 @@ def train(
         nonlocal dirty
         rec = SeqRecommender(
             model, seqs, max_len, device, fallback, tc.get("eval_batch_size", 1024),
-            session_gap=session_gap,
+            session_gap=session_gap, amp=bool(tc.get("amp", True)),
         )  # fmt: skip
         metric = evaluate(rec, eval_truth, n_items, ks=(10,)).metrics["ndcg@10"]
         st["last_eval_step"] = step

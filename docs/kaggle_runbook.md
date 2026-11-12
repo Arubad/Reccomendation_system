@@ -92,7 +92,7 @@ with a disk check that warns above 18 GB.
 | K2 | `k2_preprocess` | None (CPU) | K0 (same size) | `processed/<size>-<hash>/` | `_DONE` | 50m < 0.5 h, 500m 2-4 h |
 | K3 | `k3_baselines` | None (CPU) | K2 | `results/*.json` (MostPop, DecayPop, iALS: val grid + test refit) | `results/_HOOKREC_RESULTS_baselines` | 50m < 0.5 h, 500m 1-3 h |
 | K4 | `k4_train` | **GPU T4 x2** | K2 (+ earlier K4 outputs of the same config, to resume) | `results/<name>-{val,test}-*.json`, `ckpt/<name>/{val,test}/` | `results/_HOOKREC_RESULTS_<name>`, `ckpt/<name>/_HOOKREC_CKPT` | see section 6 |
-| K5 | `k5_eval_report` | None at 50m, **GPU at 500m** | K2 + K3 + K4 output(s) | `results/*-eval-*.json`, `*-peruser.npz`, `reports/results.md` | - | < 1 h |
+| K5 | `k5_eval_report` | None at 50m, **GPU at 500m** (fails fast without it) | K2 + K3 + K4 output(s) | `results/*-eval-*.json`, `*-peruser.npz`, `reports/results.md` | - | < 1 h |
 
 What each notebook does, and the defaults its parameter cell ships with:
 
@@ -111,6 +111,20 @@ What each notebook does, and the defaults its parameter cell ships with:
   - `CONFIG = None` means `configs/data_{SIZE}.yaml`.
   - `OVERRIDES` becomes `--override key=value` flags.
   - The configs read K0's `embeddings_{size}.parquet` with column `embed`.
+  - **Rebuild every K2 output made before pipeline version 2.** Version 2 (fix wave F1) changed
+    the protocol to the paper's Listen+ setting: ground truth is Listen+ only (no likes), warm
+    users have >= 1 Listen+ train event, the baselines fit on full-period aggregates, and Listen+
+    sequences exist for the `sasrec` row. `PIPELINE_VERSION` is hashed into the bundle name
+    (`<size>-<hash>`), so a new K2 run never reuses an old bundle, and K3-K5 refuse to load one
+    ("built by pipeline version 1 ... re-run preprocessing"). Every K3/K4/K5 result made on an
+    old bundle must be re-run on the new one.
+  - Output size: besides the vocab, features, truth and val/test events, a bundle holds four
+    packed sequence sets (all events and Listen+ only, for `train` and `val_train`, each at most
+    `max_len_store` = 512 events per user, 11 bytes per event) and per-period aggregates
+    (`ui_*.npz`: 8 bytes per distinct (user, item) Listen+ pair; `item_day_*.npz`: 10 bytes per
+    distinct (item, day) pair; `pop_*_*.npy`: 8 bytes per item). Expect roughly twice the
+    pre-F1 size: about 0.5 GB at 50M and a few GB (well under 10 GB) at 500M. `meta.json`
+    records the event counts and peak RSS.
 - **K3** runs `scripts/run_baselines.py ... --split val`, then `--split test`. The test run
   refits each model's best val config.
 - **K4** runs `scripts/run_train.py --processed <K2> --config CONFIG --split S --ckpt
@@ -206,7 +220,9 @@ record. If a 500M run exceeds a session, it chains through the resume procedure 
     `OVERRIDES = ["train.amp=false", "train.lr=3e-4"]`.
 - **Single GPU.** The trainer uses one T4 by default. The second T4 stays idle.
 - **Reproducibility.** Each record stores the config, the git SHA, the dataset size and the wall
-  time. Pin `GIT_REF` to a tag for paper-grade runs.
+  time. Pin `GIT_REF` to a tag for paper-grade runs: **the reported runs (every number in
+  `reports/results.md`) must use a tag**, not a moving branch. Regenerate the notebooks with
+  `--git-ref <tag>` once the tag exists (the maintainer creates it).
 
 ## 8. Troubleshooting
 
@@ -214,6 +230,7 @@ record. If a 500M run exceeds a session, it chains through the resume procedure 
 |---|---|
 | `no attached input contains '_HOOKREC_RAW_50m' under /kaggle/input ...` (or `_DONE`, `_HOOKREC_RESULTS_*`) | The previous stage's output is not attached, is an older version that has no marker, or is for another `SIZE`. The error lists what *is* under `/kaggle/input`. Attach the right output (section 2) and save again. |
 | `no finished processed bundle '50m-*/_DONE'` | Attach the K2 output. A K2 version that failed has no `_DONE`; re-run K2. |
+| `... was built by pipeline version 1, this code is version 2: re-run preprocessing (K2)` | The attached K2 output predates fix wave F1 (section 3, K2). Re-run K2 with the current code, then re-run K3-K5 on the new bundle. |
 | `N processed bundles for 50m` | Two K2 outputs, with different configs, are attached. Attach only the one you want. |
 | `N attached inputs contain '_HOOKREC_RAW_50m'` | Two K0 outputs (for example a notebook output and a Dataset made from it) are attached. The error lists both; remove one. |
 | `polars X is installed but hookrec needs polars>=2.1` | pip did not upgrade the image's polars. The pip log above it says why, usually a conflicting pin. Save again; if it persists, report the pip log. |

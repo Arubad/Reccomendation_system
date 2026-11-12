@@ -37,6 +37,20 @@ def test_train_dataset_targets_shifted():
         assert x[k].dtype == torch.long
 
 
+def test_listen_plus_sequences_target_every_next_item(processed_synth):
+    """Under `input_filter: listen_plus` every input is a positive, so the target is simply
+    the next item at every non-pad position (the official SASRec target)."""
+    seqs = processed_synth.seqs_train_lp
+    ds = SeqTrainDataset(seqs, 20, seed=0)
+    for i in range(len(seqs)):
+        x = ds[i]
+        real = x["items"] != 0
+        nxt = torch.cat([x["items"][1:], x["target"][-1:]])  # target t = input t+1, last = held out
+        assert (x["target"][real] != 0).all()
+        assert torch.equal(x["target"][real][:-1], nxt[real][:-1])
+        assert not x["target_is_like"].any()
+
+
 def test_left_padding():
     ds = SeqTrainDataset(_seqs({1: [(A, LISTEN_FULL), (B, LISTEN_FULL)]}), 5, seed=0)
     x = ds[0]

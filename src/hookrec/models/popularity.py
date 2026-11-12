@@ -1,4 +1,10 @@
-"""Popularity baselines and the cold-user fallback helper."""
+"""Popularity baselines and the cold-user fallback helper.
+
+The registered builders fit on the full, untruncated training period's Listen+ aggregates
+(`hookrec.data.aggregates`, ruling R18), as the official Yambda popularity baselines do on the
+Listen+ interactions. The `fit(seqs, ...)` methods count positives (LISTEN_FULL or LIKE) of a
+`PackedSequences` and are kept for direct use on small, untruncated histories.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +13,7 @@ import numpy as np
 from hookrec.data.label import LIKE, LISTEN_FULL
 from hookrec.data.processed import ProcessedData
 from hookrec.data.sequences import PackedSequences
-from hookrec.models.base import Split, history_for, register
+from hookrec.models.base import Split, aggregates_for, register
 
 SECONDS_PER_DAY = 86400
 
@@ -46,6 +52,10 @@ class MostPop(_ScoredPop):
         items, _ = _positive_events(seqs)
         return self._rank(np.bincount(items, minlength=n_items + 1).astype(np.float64))
 
+    def fit_counts(self, counts: np.ndarray) -> MostPop:
+        """Rank by per-item counts [N+1] (e.g. a period's `pop_lp`)."""
+        return self._rank(np.asarray(counts, dtype=np.float64).copy())
+
 
 class DecayPop(_ScoredPop):
     def __init__(self, half_life_days: float):
@@ -59,6 +69,20 @@ class DecayPop(_ScoredPop):
         age = t_end - np.asarray(seqs.ts)[pos].astype(np.float64)  # seconds (R11)
         w = 0.5 ** (age / (self.half_life_days * SECONDS_PER_DAY))
         return self._rank(np.bincount(items, weights=w, minlength=n_items + 1))
+
+    def fit_days(
+        self, item_idx: np.ndarray, day: np.ndarray, count: np.ndarray, n_items: int
+    ) -> DecayPop:
+        """Fit from per-day counts, day = (t_end - ts) // 86400 (an `item_day_*` aggregate).
+
+        Every event of day d gets the weight of age (d + 0.5) days, the middle of its day, so
+        its age differs from the exact per-event age by at most half a day (< 1 day).
+        """
+        age_days = np.asarray(day, dtype=np.float64) + 0.5
+        w = np.asarray(count, dtype=np.float64) * 0.5 ** (age_days / self.half_life_days)
+        return self._rank(
+            np.bincount(np.asarray(item_idx, dtype=np.int64), weights=w, minlength=n_items + 1)
+        )
 
 
 def fill_cold(
@@ -76,15 +100,21 @@ def fill_cold(
     return out
 
 
+def mostpop_fallback(data: ProcessedData, split: Split) -> MostPop:
+    """MostPop over the full training period's Listen+ counts: the cold-user fallback."""
+    return MostPop().fit_counts(aggregates_for(data, split).pop_lp)
+
+
 @register("mostpop")
 def _build_mostpop(data: ProcessedData, cfg: dict, split: Split) -> MostPop:
-    seqs, _ = history_for(data, split)
-    return MostPop().fit(seqs, data.vocab.n_items)
+    return mostpop_fallback(data, split)
 
 
 @register("decaypop")
 def _build_decaypop(data: ProcessedData, cfg: dict, split: Split) -> DecayPop:
-    seqs, t_end = history_for(data, split)
     if cfg.get("half_life_days") is None:
         raise ValueError("decaypop needs cfg['half_life_days'] (> 0), but it is missing")
-    return DecayPop(cfg["half_life_days"]).fit(seqs, data.vocab.n_items, t_end)
+    a = aggregates_for(data, split)
+    return DecayPop(cfg["half_life_days"]).fit_days(
+        a.day_items, a.day_index, a.day_counts, data.vocab.n_items
+    )

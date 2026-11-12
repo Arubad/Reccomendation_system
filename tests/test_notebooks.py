@@ -233,6 +233,14 @@ def _runs(results: Path, prefix: str) -> list[dict]:
     return [json.loads(p.read_text()) for p in sorted(results.glob(f"{prefix}*.json"))]
 
 
+def test_k5_500m_without_gpu_fails_fast(kaggle_fs, monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(RuntimeError, match="SIZE='500m' needs the GPU"):
+        kaggle_fs("k5_eval_report", SIZE="500m")
+
+
 def test_pipeline_end_to_end(kaggle_fs, tmp_path, capsys):
     over_data = ["min_count=2", "split.test_timestamp=null"]
     _, out = kaggle_fs("k0_download", attach_as="k0")

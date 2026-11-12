@@ -9,8 +9,8 @@ import pytest
 import torch
 
 from hookrec.eval.protocol import evaluate
-from hookrec.models.base import build_model
-from hookrec.models.popularity import MostPop
+from hookrec.models.base import build_model, history_for, input_filter_of
+from hookrec.models.popularity import mostpop_fallback
 from hookrec.train.scoring import SeqRecommender
 from hookrec.train.trainer import TrainResult, hard_negatives, train
 from hookrec.utils.config import load_config
@@ -175,9 +175,9 @@ def test_train_overfits_synth(processed_synth, tmp_path):
     model = _fresh(cfg, data)
     r = train(cfg, data, model, "val", tmp_path)
     assert r.steps == 300
-    seqs = data.seqs_val_train
+    seqs, _ = history_for(data, "val", input_filter_of(cfg))  # sasrec: Listen+ input
     n = data.vocab.n_items
-    pop = MostPop().fit(seqs, n)
+    pop = mostpop_fallback(data, "val")
     rec = SeqRecommender(model, seqs, 20, torch.device("cpu"), pop)
     ours = evaluate(rec, data.truth_val, n).metrics["ndcg@10"]
     base = evaluate(pop, data.truth_val, n).metrics["ndcg@10"]
@@ -361,3 +361,129 @@ def test_amp_false_trains_on_cpu_unchanged(processed_synth, tmp_path):
     assert ra.final_loss == rb.final_loss
     for (k, va), vb in zip(a.state_dict().items(), b.state_dict().values()):
         assert torch.equal(va, vb), k
+
+
+# ---- F1: Listen+ input, logQ source, SeqRecommender amp ----------------------------------
+
+
+def test_configs_input_filter():
+    assert tiny_cfg()["data"]["input_filter"] == "listen_plus"  # the paper-comparable sasrec
+    cfgs = [ROOT / "configs" / "hookseq.yaml", *sorted((ROOT / "configs" / "ablations").glob("*"))]
+    assert len(cfgs) == 8
+    for p in cfgs:  # hookseq and a0..a6 read every event type (a0 = same-code-path control)
+        assert input_filter_of(load_config(p)) == "all", p.name
+
+
+@pytest.mark.parametrize("input_filter", ["listen_plus", "all"])
+def test_train_and_infer_read_the_input_filter_set(
+    processed_synth, tmp_path, monkeypatch, input_filter
+):
+    import hookrec.train.trainer as trainer_mod
+    from hookrec.data.label import LISTEN_FULL
+
+    data = processed_synth
+    seen = {}
+    real_ds, real_rec = trainer_mod.SeqTrainDataset, trainer_mod.SeqRecommender
+
+    def ds(seqs, *a, **kw):
+        seen["train"] = seqs
+        return real_ds(seqs, *a, **kw)
+
+    def rec(model, seqs, *a, **kw):
+        seen["infer"] = seqs
+        return real_rec(model, seqs, *a, **kw)
+
+    monkeypatch.setattr(trainer_mod, "SeqTrainDataset", ds)
+    monkeypatch.setattr(trainer_mod, "SeqRecommender", rec)
+    cfg = tiny_cfg(**{"data.input_filter": input_filter})
+    train(cfg, data, _fresh(cfg, data), "val", tmp_path)
+    want = data.seqs_val_train_lp if input_filter == "listen_plus" else data.seqs_val_train
+    assert seen["train"] is want and seen["infer"] is want
+    if input_filter == "listen_plus":
+        assert (np.asarray(want.tokens) == LISTEN_FULL).all()
+
+
+@pytest.mark.parametrize("input_filter", ["all", "listen_plus"])
+@pytest.mark.parametrize("split", ["val", "test"])
+def test_logq_popularity_is_the_full_training_period(
+    processed_synth, tmp_path, monkeypatch, split, input_filter
+):
+    import hookrec.train.trainer as trainer_mod
+
+    data = processed_synth
+    got = []
+    real = trainer_mod.make_log_q
+
+    def spy(pop, *a):
+        got.append(pop)
+        return real(pop, *a)
+
+    monkeypatch.setattr(trainer_mod, "make_log_q", spy)
+    cfg = tiny_cfg(**{"loss.logq": True, "data.input_filter": input_filter, "train.max_steps": 2})
+    train(cfg, data, _fresh(cfg, data), split, tmp_path)
+    agg = data.agg_val_train if split == "val" else data.agg_train
+    want = agg.pop_lp if input_filter == "listen_plus" else agg.pop_pos
+    assert len(got) == 1 and np.array_equal(got[0], want)
+    if split == "test" and input_filter == "all":
+        assert np.array_equal(got[0], data.features.pop_train)  # same source as before for test
+
+
+def test_seqrecommender_amp_false_same_on_cpu(processed_synth):
+    data = processed_synth
+    model = _fresh(tiny_cfg(), data)
+    seqs, fb = data.seqs_val_train_lp, mostpop_fallback(data, "val")
+    uids = np.asarray(seqs.uids)[:12].astype(np.int64)
+    a = SeqRecommender(model, seqs, 20, torch.device("cpu"), fb).recommend(uids, 10)
+    b = SeqRecommender(model, seqs, 20, torch.device("cpu"), fb, amp=False).recommend(uids, 10)
+    np.testing.assert_array_equal(a, b)
+
+
+@pytest.mark.parametrize("amp", [True, False])
+def test_seqrecommender_amp_flag_gates_cuda_autocast(processed_synth, monkeypatch, amp):
+    import hookrec.train.scoring as scoring_mod
+
+    data = processed_synth
+    model = _fresh(tiny_cfg(), data)
+    seqs, fb = data.seqs_val_train_lp, mostpop_fallback(data, "val")
+    cpu_rec = SeqRecommender(model, seqs, 20, torch.device("cpu"), fb)
+    rec = SeqRecommender(model, seqs, 20, torch.device("cpu"), fb, amp=amp)
+    rec.device = torch.device("cuda")  # pretend CUDA; the windows themselves stay on the CPU
+    monkeypatch.setattr(rec, "_windows", cpu_rec._windows)
+    enabled = []
+    real = torch.autocast
+
+    def spy(device_type, *a, **kw):
+        enabled.append(kw.get("enabled"))
+        return real("cpu", enabled=False)
+
+    monkeypatch.setattr(scoring_mod.torch, "autocast", spy)
+    rec.recommend(np.asarray(seqs.uids)[:2].astype(np.int64), 5)
+    assert enabled == [amp]
+
+
+def test_run_train_smoke_on_sasrec_listen_plus(processed_synth, tmp_path, monkeypatch):
+    import hookrec.train.scoring as scoring_mod
+    from hookrec.data.label import LISTEN_FULL
+
+    mod = _load_runner()
+    seen = []
+    real_init = scoring_mod.SeqRecommender.__init__
+
+    def init(self, model, seqs, *a, **kw):
+        seen.append((seqs, kw.get("amp")))
+        real_init(self, model, seqs, *a, **kw)
+
+    monkeypatch.setattr(scoring_mod.SeqRecommender, "__init__", init)
+    args = _runner_args(processed_synth, tmp_path / "r", "--split", "val")
+    path = mod.main([*args, "--ckpt", str(tmp_path / "c")])
+    rec = json.loads(Path(path).read_text())
+    assert rec["config"]["data"]["input_filter"] == "listen_plus"
+    assert rec["extra"]["n_eval_users"] == len(processed_synth.truth_val)
+    assert "ndcg@10" in rec["metrics"]
+    lp = processed_synth.seqs_val_train_lp  # run_train loads its own copy: compare contents
+    assert len(seen) >= 2  # periodic eval(s) in the trainer + the final eval in run_train
+    for s, amp in seen:
+        assert amp is True
+        for f in ("uids", "offsets", "items", "tokens"):
+            assert np.array_equal(getattr(s, f), getattr(lp, f)), f
+    assert (np.asarray(lp.tokens) == LISTEN_FULL).all()

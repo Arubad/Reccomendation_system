@@ -435,6 +435,13 @@ print(BANNER if RESUME_NEEDED else f"{NAME}: {', '.join(RUN_SPLITS)} done")"""
 K5_DISCOVER = (
     DISCOVER_HEAD
     + """
+import torch
+
+if SIZE == "500m" and not torch.cuda.is_available():
+    raise RuntimeError(
+        "SIZE='500m' needs the GPU to re-score the neural runs over the full catalog: set "
+        "Accelerator = GPU T4 x2 in the notebook sidebar (Settings), then Save Version again"
+    )
 PROCESSED = find_processed(SIZE, INPUT_ROOT)
 RESULT_INPUTS = find_inputs("_HOOKREC_RESULTS_*", INPUT_ROOT)
 CKPT_INPUTS = find_inputs("_HOOKREC_CKPT", INPUT_ROOT)

@@ -7,17 +7,18 @@ import logging
 import numpy as np
 from scipy.sparse import csr_matrix
 
+from hookrec.data.aggregates import index_of
 from hookrec.data.label import LIKE, LISTEN_FULL
 from hookrec.data.processed import ProcessedData
 from hookrec.data.sequences import PackedSequences
-from hookrec.models.base import Split, history_for, register
+from hookrec.models.base import Split, aggregates_for, register
 from hookrec.models.popularity import MostPop, fill_cold
 
 log = logging.getLogger(__name__)
 
 
 class IALS:
-    """Implicit-feedback ALS over positive counts.
+    """Implicit-feedback ALS over interaction counts (the registry fits full-period Listen+).
 
     Confidence is applied exactly once, here: the matrix handed to `implicit` holds
     `1 + alpha * count` on non-zeros, and `implicit`'s own `alpha` is left at 1.0
@@ -40,25 +41,29 @@ class IALS:
         self.use_gpu = use_gpu
         self.seed = int(seed)
 
-    def _confidence_matrix(self, seqs: PackedSequences, n_items: int) -> csr_matrix:
+    def fit(self, seqs: PackedSequences, n_items: int) -> IALS:
+        """Fit on the positive (LISTEN_FULL or LIKE) counts of a packed history."""
         pos = (seqs.tokens == LISTEN_FULL) | (seqs.tokens == LIKE)
         rows = np.repeat(np.arange(len(seqs.uids), dtype=np.int64), np.diff(seqs.offsets))[pos]
         cols = np.asarray(seqs.items)[pos].astype(np.int64)
-        mat = csr_matrix(
+        counts = csr_matrix(
             (np.ones(len(rows), dtype=np.float32), (rows, cols)),
             shape=(len(seqs.uids), n_items + 1),
         )  # duplicate (row, col) entries are summed, giving positive counts
-        mat.data = 1.0 + self.alpha * mat.data
-        return mat
+        return self.fit_counts(counts, np.asarray(seqs.uids))
 
-    def fit(self, seqs: PackedSequences, n_items: int) -> IALS:
+    def fit_counts(self, counts: csr_matrix, uids: np.ndarray) -> IALS:
+        """Fit on a users x (N+1) count matrix whose row r is uid `uids[r]` (ascending), e.g.
+        a period's Listen+ `ui` aggregate. The fallback ranks the column sums (MostPop)."""
         import implicit.gpu
         from implicit.als import AlternatingLeastSquares
 
         use_gpu = implicit.gpu.HAS_CUDA if self.use_gpu is None else bool(self.use_gpu)
         log.info("iALS backend: %s", "gpu" if use_gpu else "cpu")
-        self._seqs = seqs
-        self._user_items = self._confidence_matrix(seqs, n_items)
+        self._uids = np.asarray(uids)
+        mat = csr_matrix(counts, dtype=np.float32, copy=True)
+        mat.data = 1.0 + self.alpha * mat.data
+        self._user_items = mat
         kw = {} if use_gpu else {"num_threads": 0}  # 0 = all cores
         self._model = AlternatingLeastSquares(
             factors=self.factors,
@@ -70,15 +75,15 @@ class IALS:
             **kw,
         )
         self._model.fit(self._user_items, show_progress=False)
-        self._fallback = MostPop().fit(seqs, n_items)
+        self._fallback = MostPop().fit_counts(np.asarray(counts.sum(axis=0)).ravel())
         return self
 
     def recommend(self, uids: np.ndarray, k: int) -> np.ndarray:
         uids = np.asarray(uids)
-        rows = self._seqs.index_of(uids)
+        rows = index_of(self._uids, uids)
         # users without a positive (empty CSR row) get the fallback too: their factors are arbitrary
         has_pos = np.diff(self._user_items.indptr) > 0
-        known = (rows >= 0) & has_pos[np.maximum(rows, 0)]
+        known = (rows >= 0) & has_pos[np.maximum(rows, 0)] if len(has_pos) else rows >= 0
         out = np.zeros((len(uids), k), dtype=np.int64)
         if known.any():
             r = rows[known]
@@ -98,7 +103,8 @@ class IALS:
 
 @register("ials")
 def _build_ials(data: ProcessedData, cfg: dict, split: Split) -> IALS:
-    seqs, _ = history_for(data, split)
+    """iALS on the full training period's Listen+ counts (R18)."""
+    agg = aggregates_for(data, split)
     model = IALS(
         factors=cfg["factors"],
         regularization=cfg["regularization"],
@@ -107,4 +113,4 @@ def _build_ials(data: ProcessedData, cfg: dict, split: Split) -> IALS:
         use_gpu=cfg.get("use_gpu"),
         seed=cfg.get("seed", 0),
     )
-    return model.fit(seqs, data.vocab.n_items)
+    return model.fit_counts(agg.ui, agg.uids)

@@ -20,7 +20,9 @@ def label_events(lf: pl.LazyFrame, full_threshold: int = 50) -> pl.LazyFrame:
     """Add `token` (u8), `ratio_bucket` (u8) and `is_positive` (bool).
 
     Listens with played_ratio_pct >= full_threshold are LISTEN_FULL, other listens LISTEN_SKIP.
-    Positive = LISTEN_FULL or LIKE.
+    Positive = LISTEN_FULL or LIKE. LISTEN_FULL alone is the Yambda paper's "Listen+"
+    interaction: the default ground truth (`eval.target`), the warm-user criterion and the
+    baselines' training signal.
     """
     import polars as pl  # lazy: the demo imports the token constants without polars
 

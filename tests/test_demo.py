@@ -111,6 +111,23 @@ def test_unknown_items_and_bad_input(engine):
         engine.recommend([(int(engine.raw_ids[0]), "like", False)], "ials")
 
 
+def test_input_filters_recorded_and_sasrec_reads_listen_full_only(engine, processed_synth):
+    assert engine.meta["input_filter"] == {"hookseq": "all", "sasrec": "listen_plus"}
+    ids = [int(i) for i in engine.raw_ids[:4]]
+    full = [(ids[0], "listen_full", True), (ids[1], "listen_full", False)]
+    noisy = [full[0], (ids[2], "listen_skip", True), (ids[3], "like", False), full[1]]
+    assert engine.recommend(noisy, "sasrec", 5) == engine.recommend(full, "sasrec", 5)
+    assert engine.recommend(noisy, "hookseq", 5) != engine.recommend(full, "hookseq", 5)
+    with pytest.raises(ValueError, match="listen_full"):
+        engine.recommend([(int(engine.raw_ids[0]), "listen_skip", False)], "sasrec")
+    # sample windows come from HookSeq's sequence set (all events)
+    s = processed_synth.seqs_train
+    uid = int(engine._w["w_uids"][0])
+    row = int(s.index_of(np.array([uid]))[0])
+    tail = np.asarray(s.tokens)[s.offsets[row] : s.offsets[row + 1]][-engine.max_len :]
+    assert engine._w["w_tokens"][engine._window(0)].tolist() == tail.tolist()
+
+
 def test_new_track_audience_for_idless_item(engine):
     assert engine.idless_audio_items, "synthetic data should have ID-less items with audio"
     track = engine.idless_audio_items[0]
@@ -191,6 +208,9 @@ def test_build_app_constructs(engine):
     hs, sas, msg = recommend_both(engine, rows, 5)
     assert len(hs) == len(sas) == 5 and "1 events" in msg
     assert recommend_both(engine, [[1, "nope", True]], 5)[2].startswith("**Error")
+    # no listen_full event: HookSeq still answers, SASRec (Listen+ input) explains why it can't
+    hs, sas, msg = recommend_both(engine, [[int(engine.raw_ids[0]), "listen_skip", True]], 5)
+    assert len(hs) == 5 and sas == [] and "SASRec" in msg and "listen_full" in msg
 
 
 def test_maybe_gpu_identity_without_spaces(monkeypatch):

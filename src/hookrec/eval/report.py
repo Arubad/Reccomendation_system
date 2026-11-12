@@ -37,11 +37,14 @@ def _is_eval(r: dict) -> bool:
 def _latest(
     runs: list[dict], split: str, size: str | None, evals: bool = False
 ) -> dict[tuple[str, str | None], dict]:
-    """Latest record per (run_name, size) for `split` (and dataset size, if given)."""
+    """Latest record per (run_name, size) for `split` (and dataset size, if given).
+
+    `--quick` records (`extra.quick`, a one-point smoke grid) never count.
+    """
     out: dict[str, dict] = {}
     for r in sorted(runs, key=lambda r: r["timestamp"]):
         ex = r.get("extra", {})
-        if _is_eval(r) != evals or ex.get("split") != split:
+        if _is_eval(r) != evals or ex.get("split") != split or ex.get("quick"):
             continue
         if size is not None and ex.get("dataset_size") != size:
             continue
@@ -63,7 +66,11 @@ def results_table(
     split: str = "test",
     size: str = "50m",
 ) -> str:
-    """Latest run per name for `split` and `size`, then the paper rows marked "(paper)"."""
+    """Latest run per name for `split` and `size`, then the paper rows marked "(paper)".
+
+    Every row is in the paper's Listen+ setting (its Table 6): Listen+ ground truth over warm
+    users (>= 1 Listen+ train event), baselines fit on the full train period.
+    """
     rows = []
     for (name, _), r in sorted(
         _latest(runs, split, size).items(), key=lambda kv: (kv[0][0], str(kv[0][1]))
@@ -177,30 +184,42 @@ def paired_diff_ci(
     return bootstrap_ci(diff, n_boot=n_boot, seed=seed)
 
 
+# Paired-diff baselines, preferred first: the paper-comparable SASRec row, then the same-code-path
+# control (HookSeq with every flag off, all-event input).
+PAIRED_BASELINES = (
+    ("sasrec", "SASRec, Listen+ input (paper setting)"),
+    ("a0_sasrec", "a0 control, same code path"),
+)
+
+
 def _paired_section(evals: list[dict], results_dir: Path, size: str) -> str:
-    """HookSeq vs SASRec paired diff for one size; needs matching size and processed_dir."""
-    header = ["metric", "mean diff", "95% CI"]
+    """HookSeq vs SASRec paired diffs for one size, against every evaluated baseline of
+    `PAIRED_BASELINES` (`sasrec` first); each needs the same processed_dir as HookSeq."""
+    header = ["baseline", "metric", "mean diff", "95% CI"]
     by = {r["run_name"]: r for r in evals if r.get("extra", {}).get("dataset_size") == size}
     a_rec = by.get("hookseq-test-eval")
-    b_rec = by.get("a0_sasrec-test-eval") or by.get("sasrec-test-eval")
-    if a_rec is None or b_rec is None:
-        return _table(header, [[f"HookSeq vs SASRec: {NOT_RUN}", "-", "-"]])
-    if a_rec["extra"].get("processed_dir") != b_rec["extra"].get("processed_dir"):
-        return _table(
-            header, [["HookSeq vs SASRec: not available (processed_dir mismatch)", "-", "-"]]
-        )
+    found = [
+        (n, label, by[f"{n}-test-eval"]) for n, label in PAIRED_BASELINES if f"{n}-test-eval" in by
+    ]
+    if a_rec is None or not found:
+        return _table(header, [[f"HookSeq vs SASRec: {NOT_RUN}", "-", "-", "-"]])
     a = results_dir / f"hookseq-test-{size}-eval-peruser.npz"
-    b = results_dir / f"{b_rec['run_name'].removesuffix('-eval')}-{size}-eval-peruser.npz"
     rows = []
-    for m in ("ndcg@10", "recall@100"):
-        try:
-            mean, lo, hi = paired_diff_ci(a, b, m)
-        except Exception as e:  # noqa: BLE001  # missing / corrupt npz
-            log.warning("paired diff %s unavailable: %s", m, e)
-            rows.append([f"{m}: not available", "-", "-"])
+    for name, label, b_rec in found:
+        base = f"{name} ({label})"
+        if a_rec["extra"].get("processed_dir") != b_rec["extra"].get("processed_dir"):
+            rows.append([base, "not available (processed_dir mismatch)", "-", "-"])
             continue
-        label = b_rec["run_name"].removesuffix("-test-eval")
-        rows.append([f"{m} (HookSeq - {label})", f"{mean:+.4f}", f"[{lo:+.4f}, {hi:+.4f}]"])
+        b = results_dir / f"{name}-test-{size}-eval-peruser.npz"
+        for m in ("ndcg@10", "recall@100"):
+            try:
+                mean, lo, hi = paired_diff_ci(a, b, m)
+            except Exception as e:  # noqa: BLE001  # missing / corrupt npz
+                log.warning("paired diff %s vs %s unavailable: %s", m, name, e)
+                rows.append([base, f"{m}: not available", "-", "-"])
+                continue
+            diff = [f"{m} (HookSeq - {name})", f"{mean:+.4f}", f"[{lo:+.4f}, {hi:+.4f}]"]
+            rows.append([base, *diff])
     return _table(header, rows)
 
 
@@ -240,7 +259,7 @@ def write_readme_tables(results_dir, out_md) -> Path:
     parts = ["# Results", ""]
     for size in sizes:
         parts += [
-            f"## Headline ({size}, test split, Listen+)",
+            f"## Headline ({size}, test split, Listen+ truth and warm users)",
             "",
             _section(lambda s=size: results_table(runs, size=s)),
             "",

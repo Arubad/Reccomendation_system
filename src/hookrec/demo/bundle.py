@@ -1,7 +1,8 @@
 """Self-contained demo bundle: everything the engine needs, with no `ProcessedData`.
 
 Layout of `out_dir`:
-    meta.json    both models' cfg.model sections, session gap, sizes, format version
+    meta.json    both models' cfg.model sections and `data.input_filter`s, session gap, sizes,
+                 format version
     arrays.npz   item subset (raw ids, popularity, artist ids, flags), the compact feature rows the
                  HookSeq encoder needs, fp16 item vectors of both models, sample user windows
     hookseq.pt / sasrec.pt   state_dicts over the compact subset
@@ -11,6 +12,9 @@ Compact item space: index 0 = pad, 1..M = the subset items in ascending raw-id o
 no artist, so HookSeq encodes it as its learned missing-audio vector, and SASRec as a zero
 embedding (it has no unknown row of its own). It is never offered as a recommendation.
 Every item of every sample window is in the subset, so sample sessions are encoded exactly.
+Sample windows come from HookSeq's sequence set (its `data.input_filter`). A model trained on
+Listen+ input only (`input_filter: listen_plus`, the `sasrec` config) sees only the session's
+listen_full events (see `DemoEngine`).
 
 Subset = top `n_items` by train popularity, plus the items of the sampled users' windows, plus up
 to 500 ID-less items with audio (the new-track-audience tab). Artist ids in the bundle are the
@@ -78,9 +82,16 @@ def _pick_subset(data: ProcessedData, windows_items: np.ndarray, n_items: int) -
     return np.unique(np.concatenate([top, windows_items, idless]))
 
 
-def _sample_windows(data: ProcessedData, n_users: int, max_len: int, seed: int) -> dict:
+def input_filter_of(cfg: dict) -> str:
+    """A training cfg's `data.input_filter` ("all" when unset; old bundles have no key)."""
+    return (cfg.get("data") or {}).get("input_filter", "all")
+
+
+def _sample_windows(
+    data: ProcessedData, n_users: int, max_len: int, seed: int, input_filter: str = "all"
+) -> dict:
     """Last `max_len` events of `n_users` random train users, vectorised, in vocab indices."""
-    s = data.seqs_train
+    s = data.seqs("train", input_filter)
     offsets = np.asarray(s.offsets)
     lens = np.diff(offsets)
     eligible = np.flatnonzero(lens >= MIN_WINDOW)
@@ -175,7 +186,7 @@ def export_demo_bundle(
             f"n_items={v.n_items}: wrong checkpoint or processed dir"
         )
     max_len = int(hs_cfg["max_len"])
-    win = _sample_windows(data, n_users, max_len, seed)
+    win = _sample_windows(data, n_users, max_len, seed, input_filter_of(hs_full_cfg))
     sub = _pick_subset(data, win["items_vocab"], n_items)  # vocab indices, ascending
     m = len(sub)
 
@@ -239,6 +250,10 @@ def export_demo_bundle(
         "session_gap": session_gap_from(hs_full_cfg),
         "hookseq_model": hs_cfg,
         "sasrec_model": sas_cfg,
+        "input_filter": {
+            "hookseq": input_filter_of(hs_full_cfg),
+            "sasrec": input_filter_of(sas_full_cfg),
+        },
         "n_sample_users": len(win["uids"]),
         "processed_dir": data.path.name,
     }

@@ -115,6 +115,31 @@ def test_decaypop_builder_missing_half_life(processed_synth):
         fit_recommender("decaypop", processed_synth, {}, "val")
 
 
+def test_decaypop_per_day_within_half_a_day_of_per_event():
+    rng = np.random.default_rng(0)
+    t_end, h = 50 * DAY, 3.0
+    ts = rng.integers(0, t_end, size=500)
+    items = rng.integers(1, 6, size=500)
+    exact = np.bincount(items, weights=0.5 ** ((t_end - ts) / (h * DAY)), minlength=6)
+    day = (t_end - ts) // DAY
+    key, cnt = np.unique(np.stack([items, day]), axis=1, return_counts=True)
+    got = DecayPop(h).fit_days(key[0], key[1], cnt, n_items=5).scores
+    bound = 0.5 ** (-0.5 / h)  # each event's age is off by at most half a day
+    assert got[0] == exact[0] == 0
+    assert np.all(got[1:] <= exact[1:] * bound) and np.all(got[1:] >= exact[1:] / bound)
+    one = DecayPop(1.0).fit_days(np.array([1]), np.array([0]), np.array([4]), n_items=1)
+    assert one.scores[1] == pytest.approx(4 * 0.5**0.5)
+
+
+def test_registry_baselines_fit_full_period_aggregates(processed_synth):
+    d = processed_synth
+    for split, agg in (("val", d.agg_val_train), ("test", d.agg_train)):
+        m = fit_recommender("mostpop", d, {}, split)
+        np.testing.assert_array_equal(m.scores, agg.pop_lp.astype(np.float64))
+        dp = fit_recommender("decaypop", d, {"half_life_days": 1e9}, split)
+        np.testing.assert_allclose(dp.scores, agg.pop_lp, rtol=1e-6)  # ~no decay = MostPop
+
+
 def test_fill_cold_pads_short_fallback():
     recs = np.array([[5, 6, 7], [8, 9, 4]])
     out = fill_cold(np.array([1, 2]), recs, np.array([1, 2]), np.array([True, False]))

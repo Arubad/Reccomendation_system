@@ -120,6 +120,9 @@ class DemoEngine:
         self.pop, self.artist = a["item_pop"], a["item_artist"]
         self.has_id, self.has_audio = a["has_id"], a["has_audio"]
         self.models = dict(zip(("hookseq", "sasrec"), build_models(b), strict=True))
+        # per model: "listen_plus" models were trained on listen_full events only
+        filters = self.meta.get("input_filter", {})  # absent in older bundles: all events
+        self.input_filter = {m: filters.get(m, "all") for m in self.models}
         self._token = next(_TOKENS)
         # rows 0..M: pad + subset. The unknown row is never a candidate.
         self._vecs = {
@@ -151,14 +154,18 @@ class DemoEngine:
         pos = np.minimum(np.searchsorted(self.raw_ids, raw), len(self.raw_ids) - 1)
         return np.where(self.raw_ids[pos] == raw, pos + 1, self.unknown_index)
 
-    def _session_batch(self, session) -> dict[str, torch.Tensor]:
+    def _session_batch(self, session, input_filter: str = "all") -> dict[str, torch.Tensor]:
         if len(session) == 0:
             raise ValueError("the session is empty: add at least one event")
-        session = list(session)[-self.max_len :]
-        events = [e for _, e, _ in session]
-        bad = sorted({e for e in events if e not in EVENT_TOKEN})
+        bad = sorted({e for _, e, _ in session if e not in EVENT_TOKEN})
         if bad:
             raise ValueError(f"unknown event {bad[0]!r}; use one of {sorted(EVENT_TOKEN)}")
+        if input_filter == "listen_plus":  # the model's input was Listen+ events only
+            session = [ev for ev in session if ev[1] == "listen_full"]
+            if not session:
+                raise ValueError("this model reads listen_full events only: add at least one")
+        session = list(session)[-self.max_len :]
+        events = [e for _, e, _ in session]
         n = len(session)
         gap = np.zeros(n, dtype=np.int64)
         gap[1:] = gap_buckets(np.full(n - 1, SESSION_SPACING_S), self.session_gap)
@@ -179,12 +186,14 @@ class DemoEngine:
     ) -> list[dict]:
         """Top-k next tracks for a session; nothing is excluded except pad and the unknown row.
 
-        Session items outside the bundle's item subset are encoded as the unknown item.
+        Session items outside the bundle's item subset are encoded as the unknown item. A
+        model trained on Listen+ input (`input_filter: listen_plus`) reads only the session's
+        listen_full events.
         """
         if model not in self.models:
             raise ValueError(f"model must be 'hookseq' or 'sasrec', got {model!r}")
         k = max(1, min(int(k), self.n_subset))
-        batch = self._session_batch(session)
+        batch = self._session_batch(session, self.input_filter[model])
         vals, idx = _topk(self._token, model, batch, k, self.device)
         return [
             {

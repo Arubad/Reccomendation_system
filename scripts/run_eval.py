@@ -3,7 +3,8 @@
 python scripts/run_eval.py --processed DIR --run results/<run>.json [--ckpt DIR] --out results/
 
 Rebuilds the recommender from the run record: neural runs (config has a `model` key) load
-`model_final.pt` from --ckpt; baselines (mostpop/decaypop/ials) are refit on the train history.
+`model_final.pt` from --ckpt and read the train sequences of their `data.input_filter`;
+baselines (mostpop/decaypop/ials) are refit on the full train period's Listen+ aggregates.
 Warm test users are scored once; slices, artist-exposure fairness, bootstrap CIs (ndcg@10,
 recall@100) and the cold-user metrics all come from that one pass. Writes `{run_name}-eval-*.json`
 (via save_run) and `{run_name}-{size}-eval-peruser.npz` (for paired comparisons) into --out.
@@ -26,7 +27,7 @@ from hookrec.eval.protocol import Recommender, evaluate
 from hookrec.eval.slices import evaluate_slices, slice_truth
 from hookrec.models import fit_recommender
 from hookrec.models.base import build_model
-from hookrec.models.popularity import MostPop
+from hookrec.models.popularity import mostpop_fallback
 from hookrec.utils.results import save_run
 
 log = logging.getLogger("run_eval")
@@ -45,7 +46,7 @@ def build_recommender(run: dict, data: ProcessedData, ckpt: Path | None) -> Reco
     if "model" in cfg:
         import torch
 
-        from hookrec.models.base import history_for
+        from hookrec.models.base import history_for, input_filter_of
         from hookrec.train.datasets import session_gap_from
         from hookrec.train.scoring import SeqRecommender
 
@@ -57,11 +58,10 @@ def build_recommender(run: dict, data: ProcessedData, ckpt: Path | None) -> Reco
         payload = torch.load(Path(ckpt) / "model_final.pt", map_location=device, weights_only=True)
         model.load_state_dict(payload["model"])
         model.to(device)
-        seqs, _ = history_for(data, "test")
-        fallback = MostPop().fit(seqs, data.vocab.n_items)
+        seqs, _ = history_for(data, "test", input_filter_of(cfg))
         return SeqRecommender(
-            model, seqs, cfg["model"]["max_len"], device, fallback,
-            session_gap=session_gap_from(cfg),
+            model, seqs, cfg["model"]["max_len"], device, mostpop_fallback(data, "test"),
+            session_gap=session_gap_from(cfg), amp=bool(tc.get("amp", True)),
         )  # fmt: skip
     model_name = name.rsplit("-", 1)[0]
     if model_name not in BASELINES:
@@ -125,8 +125,9 @@ def main(argv: list[str] | None = None) -> Path:
         check_drift(run, warm.metrics["ndcg@10"])
 
     slices = slice_truth(
-        data.truth_test, data.test_events(), data.vocab, data.features, data.seqs_train
-    )
+        data.truth_test, data.test_events(), data.vocab, data.features, data.agg_train,
+        target=data.meta.get("eval_target", "listen_plus"),
+    )  # fmt: skip
     slice_metrics = evaluate_slices(warm.topk, warm.uids, slices, n)
 
     fairness: dict[str, float] = {}

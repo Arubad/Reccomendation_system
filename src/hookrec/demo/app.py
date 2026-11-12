@@ -48,11 +48,17 @@ def recommend_both(engine: DemoEngine, rows, k):
     """(HookSeq rows, SASRec rows, status) for the editor contents; errors go to the status."""
     try:
         session = parse_session(rows)
-        out = [_rec_rows(engine.recommend(session, m, int(k))) for m in ("hookseq", "sasrec")]
+        out = [_rec_rows(engine.recommend(session, "hookseq", int(k)))]
     except ValueError as e:
         return [], [], f"**Error:** {e}"
+    notes = []
+    try:  # SASRec reads listen_full events only: a session without any still gets HookSeq
+        out.append(_rec_rows(engine.recommend(session, "sasrec", int(k))))
+    except ValueError as e:
+        out.append([])
+        notes.append(f"SASRec: {e}")
     known = engine.to_compact([s[0] for s in session]) != engine.unknown_index
-    msg = f"{len(session)} events"
+    msg = "; ".join([f"{len(session)} events", *notes])
     if not known.all():
         msg += f", {int((~known).sum())} outside the bundle's item subset (treated as unknown)"
     return out[0], out[1], msg

@@ -26,8 +26,8 @@ import torch
 import yaml
 
 from hookrec.data.processed import load_processed
-from hookrec.models.base import build_model, evaluate_split, history_for
-from hookrec.models.popularity import MostPop
+from hookrec.models.base import build_model, evaluate_split, history_for, input_filter_of
+from hookrec.models.popularity import mostpop_fallback
 from hookrec.train.checkpoint import load_latest, read_horizon
 from hookrec.train.datasets import session_gap_from
 from hookrec.train.scoring import SeqRecommender
@@ -148,11 +148,11 @@ def main(argv: list[str] | None = None) -> Path | None:
         model.load_state_dict(
             torch.load(args.ckpt / "best.pt", map_location=device, weights_only=True)["model"]
         )
-    seqs, _ = history_for(data, args.split)
-    fallback = MostPop().fit(seqs, data.vocab.n_items)
+    seqs, _ = history_for(data, args.split, input_filter_of(cfg))
     rec = SeqRecommender(
-        model, seqs, cfg["model"]["max_len"], device, fallback, session_gap=session_gap_from(cfg)
-    )
+        model, seqs, cfg["model"]["max_len"], device, mostpop_fallback(data, args.split),
+        session_gap=session_gap_from(cfg), amp=bool(cfg["train"].get("amp", True)),
+    )  # fmt: skip
     ev = evaluate_split(rec, data, args.split)
 
     gpu = device_name(device)
