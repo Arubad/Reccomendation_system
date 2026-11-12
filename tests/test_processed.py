@@ -177,6 +177,14 @@ def test_val_test_events_sorted(built):
 # ---- F1: Listen+ protocol, full-period aggregates, Listen+ sequences, pipeline version ------
 
 
+def _assert_bins_partition(a):
+    """Hourly bins (age < 30 d) + daily bins with day >= 30 count every Listen+ event once."""
+    old = a.day_index >= 30
+    per_item = np.bincount(a.hour_items, weights=a.hour_counts, minlength=len(a.pop_lp))
+    per_item += np.bincount(a.day_items[old], weights=a.day_counts[old], minlength=len(a.pop_lp))
+    assert per_item.astype(np.int64).tolist() == a.pop_lp.tolist()
+
+
 def _labeled_train_rows(synth_dir, cfg, t_end):
     from hookrec.data.clean import clean_events, scan_events
     from hookrec.data.label import label_events
@@ -210,9 +218,10 @@ def test_aggregates_equal_brute_force(synth_dir, built):
         got_hour = {
             (int(i), int(h)): int(n) for i, h, n in zip(a.hour_items, a.hour_index, a.hour_counts)
         }
-        recent = [(i, (t_end - t) // 3600) for _, i, t in lp if t >= t_end - 30 * 86400]
+        recent = [(i, (t_end - t) // 3600) for _, i, t in lp if t > t_end - 30 * 86400]
         assert recent and got_hour == dict(Counter(recent))
         assert a.hour_index.dtype == np.uint16 and a.hour_index.max() < 720
+        _assert_bins_partition(a)
         assert a.day_index.dtype == np.int16 and a.day_items.dtype == np.int32
         n1 = v.n_items + 1
         assert a.pop_lp.tolist() == np.bincount([i for _, i, _ in lp], minlength=n1).tolist()
@@ -307,13 +316,14 @@ def test_pipeline_version_changes_dir_name(synth_dir, tmp_path, monkeypatch):
 
 
 HEAVY_UID, HEAVY_ITEM, FILLER_ITEM = 10_000, 1, 2
+EDGE_UID, EDGE_ITEM = 10_001, 3
 
 
 @pytest.fixture(scope="module")
 def custom(synth, tmp_path_factory):
     """Synth plus (a) a user with > max_len_store events whose OLD Listen+ events make
     HEAVY_ITEM the most popular item, and (b) a user whose train history has no Listen+."""
-    from hookrec.data.fixtures import BASE_TS, DAY, write_yambda_layout
+    from hookrec.data.fixtures import BASE_TS, DAY, GAP, write_yambda_layout
 
     me = synth["multi_event"]
     t_test = int(me["timestamp"].max()) - DAY
@@ -342,7 +352,14 @@ def custom(synth, tmp_path_factory):
             "track_length_seconds": pl.Series([200] * n, dtype=pl.UInt32),
         }
     )
-    data = {**synth, "multi_event": pl.concat([me, heavy]).sort("uid", "timestamp")}
+    # (c): one Listen+ event exactly 30 days before the train period end (the hourly boundary)
+    t_train_end = int(me["timestamp"].max()) - DAY - GAP
+    edge = heavy.head(1).with_columns(
+        pl.lit(EDGE_UID, dtype=pl.UInt32).alias("uid"),
+        pl.lit(EDGE_ITEM, dtype=pl.UInt32).alias("item_id"),
+        pl.lit(t_train_end - 30 * DAY, dtype=pl.UInt32).alias("timestamp"),
+    )
+    data = {**synth, "multi_event": pl.concat([me, heavy, edge]).sort("uid", "timestamp")}
     root = write_yambda_layout(data, tmp_path_factory.mktemp("yambda_custom"))
     # a capped history (as at 500M) is what makes truncation matter
     d = preprocess(root, _cfg(max_len_store=512), tmp_path_factory.mktemp("processed_custom"))
@@ -367,6 +384,22 @@ def test_mostpop_counts_listen_plus_older_than_max_len_store(custom):
     lp = d.seqs_train_lp
     r = int(lp.index_of(np.array([HEAVY_UID]))[0])
     assert (np.asarray(lp.items)[lp.offsets[r] : lp.offsets[r + 1]] == heavy).sum() == 300
+
+
+def test_event_exactly_30_days_old_is_counted_once(custom):
+    d, _ = custom
+    a = d.agg_train
+    t_edge = a.t_end - 30 * 86400
+    assert d.meta["t_train_end"] == a.t_end
+    edge = int(d.vocab.encode(np.array([EDGE_ITEM]))[0])
+    # it is in day bin 30 and in no hourly bin (hour 720 would be its hour)
+    assert a.hour_index.max() < 720
+    in_day30 = (a.day_items == edge) & (a.day_index == 30)
+    assert in_day30.any()
+    s = d.seqs_train
+    r = int(s.index_of(np.array([EDGE_UID]))[0])
+    assert np.asarray(s.ts)[s.offsets[r] : s.offsets[r + 1]].tolist() == [t_edge]
+    _assert_bins_partition(a)  # every Listen+ event, the edge one included, counted once
 
 
 def test_user_without_train_listen_plus_is_cold(custom):

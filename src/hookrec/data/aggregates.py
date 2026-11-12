@@ -9,7 +9,8 @@ untruncated events:
     item_day_{period}.npz  sparse (item_idx, day, count) of Listen+ events, day =
                            (t_end - ts) // 86400 (0 = the last day before the period end).
     item_hour_{period}.npz sparse (item_idx, hour, count) of the Listen+ events of the last
-                           HOURLY_DAYS (30) days only, hour = (t_end - ts) // 3600 < 720.
+                           HOURLY_DAYS (30) days only (age < 30 d, strictly), hour =
+                           (t_end - ts) // 3600 < 720.
                            DecayPop decays these per hour and older events per day (R26).
     pop_lp_{period}.npy    i64[N+1] Listen+ events per item.
     pop_pos_{period}.npy   i64[N+1] positive (LISTEN_FULL or LIKE) events per item.
@@ -113,7 +114,8 @@ def _binned(
 
     The bin and the count are typed in polars (the caller picks the narrowest dtype that fits)
     and sorted there: vocab indices ascend with raw ids, so (item_id, bin) order is (item_idx,
-    bin) order and no numpy re-sort or int64 copy is needed.
+    bin) order and no numpy re-sort is needed. `vocab.encode` still makes one int64 temporary
+    of the items (cast to int32 right away); bins and counts are never widened.
     """
     df = (
         lf.group_by("item_id", bin_expr.alias("bin"))
@@ -160,7 +162,8 @@ def build_period_aggregates(lf: pl.LazyFrame, vocab: ItemVocab, t_end: int) -> P
 
     age = pl.lit(t_end, dtype=pl.Int64) - pl.col("timestamp").cast(pl.Int64)
     d_items, d_day, d_n = _binned(vocab, lp, (age // SECONDS_PER_DAY).cast(pl.Int16))
-    recent = lp.filter(pl.col("timestamp") >= t_end - HOURLY_DAYS * SECONDS_PER_DAY)
+    # age < HOURLY_DAYS days, strictly: an event exactly 30 d old is day 30 (daily part) only
+    recent = lp.filter(pl.col("timestamp") > t_end - HOURLY_DAYS * SECONDS_PER_DAY)
     h_items, h_hour, h_n = _binned(vocab, recent, (age // SECONDS_PER_HOUR).cast(pl.UInt16))
 
     pop = (

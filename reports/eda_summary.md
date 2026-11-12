@@ -10,7 +10,7 @@ Cleaning (`clean_report`, `hookrec.data.clean`) reconciles unlike/undislike agai
   - Listens make up 98.1% of events, likes 1.7% and dislikes 0.2%.
   - Item popularity is extremely concentrated. The item Gini is 0.907. The top 1% of items take 49.2% of all events, and the top 10% take 87.9%. The power-law tail exponent is alpha ≈ 1.49.
   - Users are much less unequal, with a user Gini of 0.586.
-  - Basis for `min_count` (read off the K1 item rank plot, `figures/loglog_counts.png`): roughly 3×10⁵ of the 886K items have at least 5 events, and the remaining ~590K items together carry well under 1% of all events. A cut-off of 5 therefore gives an ID row to the items behind almost all of the traffic, while keeping the ID table to about a third of the catalog.
+  - Basis for `min_count` (read off the K1 item rank plot, `figures/loglog_counts.png`): roughly 3×10⁵ of the 886K items have at least 5 events, and the remaining ~590K items each have 1–4 events, so together they carry between ~1.3% and ~5% of all events (590K × 1 to 590K × 4 of 46.8M). A cut-off of 5 therefore gives an ID row to the items behind about 95–99% of the traffic, while keeping the ID table to about a third of the catalog. A K1 re-run will report the exact `items_with_ge_k_positives`.
   - These figures are approximate: they count events of any type in the whole log, while `min_count` counts positive train events. The next EDA run writes the exact numbers to `popularity.items_with_ge_k_positives` in `eda_stats.json`: items and event share with at least k positives (a listen with played_ratio_pct ≥ 50, or a like), for k ∈ {1, 2, 5, 10, 20}.
 - **Figure:** `figures/event_mix.png`, `figures/loglog_counts.png`, `figures/lorenz.png`
 - **Decision -> config key:**
