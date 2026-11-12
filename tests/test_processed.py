@@ -21,10 +21,8 @@ def _cfg(**kw):
 
 
 @pytest.fixture(scope="module")
-def built(synth_dir, tmp_path_factory):
-    out = tmp_path_factory.mktemp("proc")
-    d = preprocess(synth_dir, _cfg(), out)
-    return d, load_processed(d)
+def built(processed_synth):
+    return processed_synth.path, processed_synth
 
 
 def test_preprocess_end_to_end_synth(built):
