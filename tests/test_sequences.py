@@ -70,8 +70,8 @@ def test_sharded_equals_unsharded(synth):
     split = global_temporal_split(lf)
     vocab = build_vocab(lf, split.train, min_count=2)
     for kw in (
-        dict(max_len=None, collapse_consecutive_dups=False),
-        dict(max_len=20, collapse_consecutive_dups=True),
+        {"max_len": None, "collapse_consecutive_dups": False},
+        {"max_len": 20, "collapse_consecutive_dups": True},
     ):
         a = build_sequences(split.train, vocab, **kw)
         b = build_sequences_sharded(lambda: split.train, vocab, n_shards=3, **kw)
