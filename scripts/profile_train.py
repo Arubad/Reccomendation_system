@@ -55,6 +55,7 @@ from hookrec.models.base import (
     build_model,
     history_for,
     input_filter_of,
+    scoring_mask,
 )
 from hookrec.models.losses import make_log_q
 from hookrec.models.popularity import mostpop_fallback
@@ -162,6 +163,7 @@ class Ctx:
     session_gap: float
     fallback: object
     eval_truth: dict
+    item_mask: np.ndarray | None = None  # R32 scoring catalog (None = all items)
     epoch: int = 0
     epoch_batch: int = 0
     parts: dict = field(default_factory=lambda: {"rank": float("nan"), "like": 0.0})
@@ -221,6 +223,7 @@ def setup(cfg: dict, data, model: nn.Module, split: str) -> Ctx:
         gen=gen, log_q=log_q, n_items=n_items, spec=spec, max_grad_norm=tc["max_grad_norm"],
         seqs=seqs, ds=ds, sampler=sampler,
         loader=loader, session_gap=session_gap, fallback=fallback, eval_truth=eval_truth,
+        item_mask=scoring_mask(cfg, data),
     )  # fmt: skip
 
 
@@ -459,7 +462,7 @@ def timed_eval(ctx: Ctx) -> dict:
     rec = SeqRecommender(
         ctx.model, ctx.seqs, ctx.cfg["model"]["max_len"], ctx.device, ctx.fallback,
         tc.get("eval_batch_size", 1024), session_gap=ctx.session_gap,
-        amp=bool(tc.get("amp", True)),
+        amp=bool(tc.get("amp", True)), item_mask=ctx.item_mask,
     )  # fmt: skip
     t0 = time.perf_counter()
     metric = evaluate(rec, ctx.eval_truth, ctx.n_items, ks=(10,)).metrics["ndcg@10"]

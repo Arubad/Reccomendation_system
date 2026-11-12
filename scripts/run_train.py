@@ -26,7 +26,14 @@ import torch
 import yaml
 
 from hookrec.data.processed import load_processed
-from hookrec.models.base import build_model, evaluate_split, history_for, input_filter_of
+from hookrec.models.base import (
+    build_model,
+    eval_catalog_of,
+    evaluate_split,
+    history_for,
+    input_filter_of,
+    scoring_mask,
+)
 from hookrec.models.popularity import mostpop_fallback
 from hookrec.train.checkpoint import load_latest, read_horizon
 from hookrec.train.datasets import session_gap_from
@@ -152,6 +159,7 @@ def main(argv: list[str] | None = None) -> Path | None:
     rec = SeqRecommender(
         model, seqs, cfg["model"]["max_len"], device, mostpop_fallback(data, args.split),
         session_gap=session_gap_from(cfg, data.cfg), amp=bool(cfg["train"].get("amp", True)),
+        item_mask=scoring_mask(cfg, data),  # R32
     )  # fmt: skip
     ev = evaluate_split(rec, data, args.split)
 
@@ -160,6 +168,7 @@ def main(argv: list[str] | None = None) -> Path | None:
         "split": args.split,
         "processed_dir": data.path.name,
         "training_hash": training_hash(cfg),  # K4's has_run: a stale record never skips a split
+        "eval_catalog": eval_catalog_of(cfg),  # R32: listen_plus = scoring masked to it
         "dataset_size": data.cfg["size"],
         "best_step": res.best_step,
         "steps": res.steps,

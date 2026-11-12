@@ -359,6 +359,19 @@ def test_oversized_bundle_is_removed(processed_synth, tiny_ckpts, tmp_path, monk
     assert list((tmp_path / "x").iterdir()) == []
 
 
+def test_export_refuses_a_listen_plus_catalog_model(processed_synth, tiny_ckpts, tmp_path):
+    """R32: the demo ranks its own item subset unmasked, so a `loss.neg_catalog: listen_plus`
+    model (sasrec_bce, never-trained rows outside the catalog) is refused at export."""
+    payload = torch.load(tiny_ckpts["sasrec"] / "model_final.pt", weights_only=True)
+    payload["cfg"]["loss"]["neg_catalog"] = "listen_plus"
+    bad = tmp_path / "bad.pt"
+    torch.save(payload, bad)
+    with pytest.raises(ValueError, match="neg_catalog"):
+        export_demo_bundle(
+            processed_synth, tiny_ckpts["hookseq"] / "model_final.pt", bad, tmp_path / "b"
+        )
+
+
 def test_demo_imports_stay_lean():
     """The Space installs hookrec without its training deps: the demo must not need them."""
     import subprocess

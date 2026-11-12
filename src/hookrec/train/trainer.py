@@ -38,7 +38,13 @@ from torch.utils.data import DataLoader, Dataset, Sampler
 from hookrec.data.label import DISLIKE
 from hookrec.data.processed import ProcessedData
 from hookrec.eval.protocol import evaluate
-from hookrec.models.base import aggregates_for, history_for, input_filter_of, listen_plus_items
+from hookrec.models.base import (
+    aggregates_for,
+    history_for,
+    input_filter_of,
+    listen_plus_items,
+    scoring_mask,
+)
 from hookrec.models.losses import (
     DEFAULT_CHUNK_ROWS,
     bce_loss,
@@ -429,6 +435,7 @@ def train(
         pop = agg.pop_lp if input_filter == "listen_plus" else agg.pop_pos
         log_q = make_log_q(pop, lc.get("mix_uniform", 0.0), spec.n_ib, spec.n_uni).to(device)
     eval_truth = _eval_truth(data.truth_val, tc.get("eval_max_users"), tc["seed"])
+    item_mask = scoring_mask(cfg, data)  # R32: None unless neg_catalog = listen_plus
 
     st = {
         "epoch": 0,
@@ -508,7 +515,7 @@ def train(
         nonlocal dirty
         rec = SeqRecommender(
             model, seqs, max_len, device, fallback, tc.get("eval_batch_size", 1024),
-            session_gap=session_gap, amp=bool(tc.get("amp", True)),
+            session_gap=session_gap, amp=bool(tc.get("amp", True)), item_mask=item_mask,
         )  # fmt: skip
         metric = evaluate(rec, eval_truth, n_items, ks=(10,)).metrics["ndcg@10"]
         st["last_eval_step"] = step

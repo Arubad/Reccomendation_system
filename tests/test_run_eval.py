@@ -75,6 +75,39 @@ def test_run_eval_neural_smoke(processed_synth, tmp_path):
     assert "### sasrec-test" in text
 
 
+def test_run_eval_masks_like_run_train_for_listen_plus_catalog(processed_synth, tmp_path):
+    """R32: run_eval rebuilds the same catalog mask (the drift check then holds) and records it."""
+    import hookrec.train.scoring as scoring_mod
+
+    train = _load("run_train")
+    ev = _load("run_eval")
+    tiny = {**TINY, "loss.type": "bce", "loss.neg_catalog": "listen_plus"}
+    over = [a for k, v in tiny.items() for a in ("--override", f"{k}={v}")]
+    cfg = str(ROOT / "configs" / "sasrec.yaml")
+    run_path = train.main(
+        ["--processed", str(processed_synth.path), "--config", cfg, "--split", "test",
+         "--allow-no-val", "--ckpt", str(tmp_path / "ck"), "--out", str(tmp_path / "r"), *over]
+    )  # fmt: skip
+    assert json.loads(Path(run_path).read_text())["extra"]["eval_catalog"] == "listen_plus"
+    seen = []
+    real_init = scoring_mod.SeqRecommender.__init__
+
+    def init(self, *a, **kw):
+        seen.append(kw.get("item_mask"))
+        real_init(self, *a, **kw)
+
+    scoring_mod.SeqRecommender.__init__ = init
+    try:
+        path = ev.main(
+            ["--processed", str(processed_synth.path), "--run", str(run_path),
+             "--ckpt", str(tmp_path / "ck"), "--out", str(tmp_path / "r")]
+        )  # fmt: skip
+    finally:
+        scoring_mod.SeqRecommender.__init__ = real_init
+    assert seen and all(m is not None for m in seen)
+    assert json.loads(Path(path).read_text())["extra"]["eval_catalog"] == "listen_plus"
+
+
 def test_run_eval_baseline_smoke(processed_synth, tmp_path):
     base = _load("run_baselines")
     ev = _load("run_eval")

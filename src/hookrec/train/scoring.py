@@ -49,21 +49,30 @@ def score_topk(
     k: int,
     item_chunk: int = 500_000,
     exclude_pad: bool = True,
+    allowed: Tensor | None = None,
 ) -> tuple[Tensor, Tensor]:
     """Top-k items by dot product, [U, k] scores and LongTensor ids; ties go to the lower id.
 
     A running top-k is merged across item chunks, so memory is O(U * item_chunk). Computed in
     float32 on the inputs' device. With `exclude_pad`, item 0 scores -inf (it can only appear
-    if k exceeds the number of real items, and 0 is never a hit).
+    if k exceeds the number of real items, and 0 is never a hit). `allowed` (bool, one per
+    item row) scores the other items -inf (R32); they can only appear if k exceeds the number
+    of allowed items, which `SeqRecommender` rejects.
     """
     u = user_vecs.float()
     n_users, dev = u.shape[0], u.device
+    if allowed is not None:
+        if allowed.shape != (item_vecs.shape[0],):
+            raise ValueError(f"allowed has shape {tuple(allowed.shape)}, want ({len(item_vecs)},)")
+        blocked = ~allowed.to(dev, torch.bool)
     best_v = torch.full((n_users, k), float("-inf"), device=dev)
     best_i = torch.zeros((n_users, k), dtype=torch.long, device=dev)
     for start in range(0, item_vecs.shape[0], item_chunk):
         sc = u @ item_vecs[start : start + item_chunk].to(dev).float().T
         if exclude_pad and start == 0:
             sc[:, 0] = float("-inf")
+        if allowed is not None:
+            sc.masked_fill_(blocked[None, start : start + item_chunk], float("-inf"))
         vals, idx = _chunk_topk(sc, min(k, sc.shape[1]))
         cand_v = torch.cat([best_v, vals], dim=1)
         cand_i = torch.cat([best_i, idx + start], dim=1)
@@ -78,6 +87,8 @@ class SeqRecommender:
     Users absent from `seqs` get the fallback's top-k. Item representations are computed once
     per instance, so build a new recommender after the weights change. User states use fp16
     autocast on CUDA unless `amp` is False (`train.amp`); on CPU they are always fp32.
+    `item_mask` (bool [N+1], `hookrec.models.base.scoring_mask`) restricts the recommendable
+    items (R32); None = the full catalog.
     """
 
     def __init__(
@@ -91,12 +102,15 @@ class SeqRecommender:
         item_chunk: int = 500_000,
         session_gap: float = DEFAULT_SESSION_GAP,
         amp: bool = True,
+        item_mask: np.ndarray | None = None,
     ):
         self.session_gap, self.amp = session_gap, bool(amp)
         self.model, self.seqs, self.max_len = model, seqs, max_len
         self.device = torch.device(device)
         self.fallback, self.batch_size, self.item_chunk = fallback, batch_size, item_chunk
         self._item_vecs: Tensor | None = None
+        self._allowed = None if item_mask is None else torch.from_numpy(np.asarray(item_mask))
+        self._n_allowed = None if item_mask is None else int(np.asarray(item_mask)[1:].sum())
 
     def _windows(self, rows: np.ndarray) -> dict[str, Tensor]:
         """Left-padded last windows of the given rows, as in `SeqInferDataset` (vectorised)."""
@@ -120,6 +134,8 @@ class SeqRecommender:
 
     @torch.no_grad()
     def recommend(self, uids: np.ndarray, k: int) -> np.ndarray:
+        if self._n_allowed is not None and k > self._n_allowed:
+            raise ValueError(f"k={k} exceeds the {self._n_allowed} items of the scoring catalog")
         rows = self.seqs.index_of(np.asarray(uids))
         known = rows >= 0
         out = np.zeros((len(rows), k), dtype=np.int64)
@@ -128,13 +144,17 @@ class SeqRecommender:
         try:
             if self._item_vecs is None:
                 self._item_vecs = self.model.all_item_repr().float()
+                if self._allowed is not None:  # once, next to the item vectors
+                    self._allowed = self._allowed.to(self._item_vecs.device)
             amp = self.device.type == "cuda" and self.amp
             known_pos = np.flatnonzero(known)
             for s in range(0, len(known_pos), self.batch_size):
                 at = known_pos[s : s + self.batch_size]
                 with torch.autocast(self.device.type, dtype=torch.float16, enabled=amp):
                     users = self.model.user_state(self._windows(rows[at]))
-                _, idx = score_topk(users, self._item_vecs, k, self.item_chunk)
+                _, idx = score_topk(
+                    users, self._item_vecs, k, self.item_chunk, allowed=self._allowed
+                )
                 out[at] = idx.cpu().numpy()
         finally:
             self.model.train(was_training)

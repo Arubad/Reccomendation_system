@@ -806,3 +806,59 @@ def test_neg_catalog_validation(processed_synth, tmp_path, over, match):
     cfg = tiny_cfg(**over)
     with pytest.raises(ValueError, match=match):
         train(cfg, processed_synth, _fresh(cfg, processed_synth), "test", tmp_path / "ck")
+
+
+# ---- F3 fix round 2 (R32): never-trained items are masked at scoring ---------------------
+
+LP_BCE = {"loss.type": "bce", "loss.neg_catalog": "listen_plus"}
+
+
+def test_listen_plus_scoring_keeps_topk_inside_the_catalog(processed_synth):
+    from hookrec.models.base import eval_catalog_of, listen_plus_items, scoring_mask
+
+    data = processed_synth
+    assert scoring_mask(tiny_cfg(), data) is None and eval_catalog_of(tiny_cfg()) == "all"
+    assert scoring_mask(tiny_cfg(**{"loss.neg_catalog": "all"}), data) is None
+    cfg = tiny_cfg(**LP_BCE)
+    assert eval_catalog_of(cfg) == "listen_plus"
+    mask = scoring_mask(cfg, data)
+    catalog = listen_plus_items(data)
+    assert mask.shape == (data.vocab.n_items + 1,) and not mask[0]
+    assert np.flatnonzero(mask).tolist() == catalog.tolist()
+    model = _fresh(cfg, data)  # untrained: random rows everywhere, as never-trained items
+    seqs, _ = history_for(data, "test", input_filter_of(cfg))
+    uids = seqs.uids.astype(np.int64)
+    fb = mostpop_fallback(data, "test")
+    masked = SeqRecommender(model, seqs, 20, "cpu", fb, item_mask=mask).recommend(uids, 10)
+    plain = SeqRecommender(model, seqs, 20, "cpu", fb).recommend(uids, 10)
+    assert np.isin(masked, catalog).all()
+    assert not np.isin(plain, catalog).all()  # without the mask, random rows do get in
+    with pytest.raises(ValueError, match="catalog"):
+        SeqRecommender(model, seqs, 20, "cpu", fb, item_mask=mask).recommend(uids, mask.sum() + 1)
+
+
+def test_run_train_masks_scoring_and_records_eval_catalog(processed_synth, tmp_path, monkeypatch):
+    import hookrec.train.scoring as scoring_mod
+
+    masks = []
+    real_init = scoring_mod.SeqRecommender.__init__
+
+    def init(self, *a, **kw):
+        masks.append(kw.get("item_mask"))
+        real_init(self, *a, **kw)
+
+    monkeypatch.setattr(scoring_mod.SeqRecommender, "__init__", init)
+    mod = _load_runner()
+    over = ["--override", "loss.type=bce", "--override", "loss.neg_catalog=listen_plus",
+            "--override", "train.eval_every_steps=10"]  # fmt: skip
+    out = tmp_path / "results"
+    mod.main(_runner_args(processed_synth, out, "--split", "val", "--ckpt", str(tmp_path / "c"),
+                          *over))  # fmt: skip
+    assert len(masks) >= 2  # the trainer's periodic eval(s) and run_train's final eval
+    assert all(m is not None and m.sum() < len(m) - 1 for m in masks)
+    assert _record(out, "val")["extra"]["eval_catalog"] == "listen_plus"
+    masks.clear()
+    out2 = tmp_path / "results2"
+    mod.main(_runner_args(processed_synth, out2, "--split", "val", "--ckpt", str(tmp_path / "d")))
+    assert masks and all(m is None for m in masks)  # "all": unchanged
+    assert _record(out2, "val")["extra"]["eval_catalog"] == "all"

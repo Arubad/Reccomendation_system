@@ -89,6 +89,30 @@ def listen_plus_items(data: ProcessedData) -> np.ndarray:
     return np.flatnonzero(has)
 
 
+def eval_catalog_of(cfg: dict) -> str:
+    """The items a run may recommend: "listen_plus" when it trained with
+    `loss.neg_catalog: listen_plus`, else "all" (recorded as `extra.eval_catalog`)."""
+    return "listen_plus" if (cfg.get("loss") or {}).get("neg_catalog") == "listen_plus" else "all"
+
+
+def scoring_mask(cfg: dict, data: ProcessedData) -> np.ndarray | None:
+    """R32: bool [N+1], True = item may be recommended; None = every item (the default).
+
+    With `neg_catalog: listen_plus` (and the Listen+ input of sasrec_bce, so every positive is
+    Listen+ too) the items outside `listen_plus_items` never get a gradient: BCE touches only
+    positives and catalog negatives, so their rows stay at random init. They are masked at
+    scoring, as the official eval ranks only its Listen+ catalog. Lossless under the default
+    `eval.target: listen_plus`: val and test truth are Listen+ events of the train period and
+    the test day, all inside the catalog. Coverage keeps the full catalog N as its
+    denominator, as for every other run.
+    """
+    if eval_catalog_of(cfg) != "listen_plus":
+        return None
+    mask = np.zeros(data.vocab.n_items + 1, dtype=bool)
+    mask[listen_plus_items(data)] = True
+    return mask
+
+
 def evaluate_split(rec: Recommender, data: ProcessedData, split: Split) -> dict:
     """Metrics on the split's warm truth plus the cold-user slice.
 

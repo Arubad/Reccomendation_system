@@ -170,9 +170,21 @@ def export_demo_bundle(
     n_items: int = 50_000,
     seed: int = 0,
 ) -> Path:
-    """Write the demo bundle for two trained checkpoints (a `model_final.pt` or its directory)."""
+    """Write the demo bundle for two trained checkpoints (a `model_final.pt` or its directory).
+
+    A model trained with `loss.neg_catalog: listen_plus` (sasrec_bce) is refused (R32): its
+    rows outside the Listen+ catalog were never trained, and the demo ranks its own item subset
+    without the scoring mask the evaluation applies.
+    """
     hs_state, hs_full_cfg = _load_ckpt(hookseq_ckpt, "hookseq")
     sas_state, sas_full_cfg = _load_ckpt(sasrec_ckpt, "sasrec")
+    for name, full in (("hookseq", hs_full_cfg), ("sasrec", sas_full_cfg)):
+        if (full.get("loss") or {}).get("neg_catalog", "all") != "all":
+            raise ValueError(
+                f"{name} checkpoint was trained with loss.neg_catalog="
+                f"{full['loss']['neg_catalog']!r}: its never-trained item rows would be ranked "
+                "unmasked in the demo; export a neg_catalog=all model (sasrec or hookseq)"
+            )
     hs_cfg = {k: x for k, x in hs_full_cfg["model"].items() if k != "name"}
     sas_cfg = {k: x for k, x in sas_full_cfg["model"].items() if k != "name"}
     v, f = data.vocab, data.features

@@ -64,6 +64,25 @@ def test_score_topk_never_returns_pad():
     assert all(len(set(r)) == 39 for r in idx.tolist())
 
 
+@pytest.mark.parametrize("chunk", [7, 1000])
+def test_score_topk_allowed_mask(chunk):
+    """R32: items outside `allowed` score -inf; an all-True mask changes nothing."""
+    g = torch.Generator().manual_seed(4)
+    u, v = torch.randn(8, 6, generator=g), torch.randn(120, 6, generator=g)
+    allowed = torch.rand(120, generator=g) < 0.4
+    allowed[0] = True  # pad stays excluded by exclude_pad anyway
+    want = _bruteforce(u, v * 1.0, 10)
+    s = (u.double() @ v.double().T).numpy()
+    s[:, 0] = -np.inf
+    s[:, ~allowed.numpy()] = -np.inf
+    order = np.stack([np.lexsort((np.arange(120), -row))[:10] for row in s])
+    _, idx = score_topk(u, v, k=10, item_chunk=chunk, allowed=allowed)
+    np.testing.assert_array_equal(idx.numpy(), order)
+    assert allowed[idx].all() and (idx != 0).all()
+    _, idx_all = score_topk(u, v, k=10, item_chunk=chunk, allowed=torch.ones(120, dtype=bool))
+    np.testing.assert_array_equal(idx_all.numpy(), want[1])
+
+
 def _tiny_model(n_items):
     torch.manual_seed(0)
     return SASRec(n_items, d_model=16, n_layers=1, n_heads=2, max_len=20, dropout=0.0)

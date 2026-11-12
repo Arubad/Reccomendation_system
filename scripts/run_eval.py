@@ -26,7 +26,7 @@ from hookrec.eval.fairness import artist_coverage, artist_exposure_gini, long_ta
 from hookrec.eval.protocol import Recommender, evaluate
 from hookrec.eval.slices import evaluate_slices, slice_truth
 from hookrec.models import fit_recommender
-from hookrec.models.base import build_model
+from hookrec.models.base import build_model, eval_catalog_of
 from hookrec.models.popularity import mostpop_fallback
 from hookrec.utils.results import save_run
 
@@ -46,7 +46,7 @@ def build_recommender(run: dict, data: ProcessedData, ckpt: Path | None) -> Reco
     if "model" in cfg:
         import torch
 
-        from hookrec.models.base import history_for, input_filter_of
+        from hookrec.models.base import history_for, input_filter_of, scoring_mask
         from hookrec.train.datasets import session_gap_from
         from hookrec.train.scoring import SeqRecommender
 
@@ -62,6 +62,7 @@ def build_recommender(run: dict, data: ProcessedData, ckpt: Path | None) -> Reco
         return SeqRecommender(
             model, seqs, cfg["model"]["max_len"], device, mostpop_fallback(data, "test"),
             session_gap=session_gap_from(cfg, data.cfg), amp=bool(tc.get("amp", True)),
+            item_mask=scoring_mask(cfg, data),  # R32: as run_train scored it
         )  # fmt: skip
     model_name = name.rsplit("-", 1)[0]
     if model_name not in BASELINES:
@@ -156,6 +157,7 @@ def main(argv: list[str] | None = None) -> Path:
         "source_run": name,
         "processed_dir": data.path.name,
         "dataset_size": data.cfg["size"],
+        "eval_catalog": eval_catalog_of(run["config"]),  # R32
         "n_eval_users": len(warm.uids),
         "n_cold_users": len(data.truth_test_cold),
         "metrics_cold": cold,
