@@ -48,11 +48,13 @@ def test_hard_negative_accidental_hit_and_padding_masked():
     hard_items = torch.stack([p[0], torch.tensor(0), torch.tensor(15)])[None]
     hard_vecs = table[hard_items]
     hard_vecs[0, 1] = 5.0 * torch.ones(8)  # padding vec must not matter
-    got = sampled_softmax_loss(u, p, pv, n, nv, None, hard_neg_vecs=hard_vecs,
-                               hard_neg_items=hard_items)
-    want = sampled_softmax_loss(u, p, pv, n, nv, None, hard_neg_vecs=hard_vecs[:, 2:],
-                                hard_neg_items=hard_items[:, 2:])
-    assert torch.allclose(got, want, atol=1e-5)
+    for t in (1.0, 0.1):
+        got = sampled_softmax_loss(u, p, pv, n, nv, None, temperature=t,
+                                   hard_neg_vecs=hard_vecs, hard_neg_items=hard_items)
+        want = sampled_softmax_loss(u, p, pv, n, nv, None, temperature=t,
+                                    hard_neg_vecs=hard_vecs[:, 2:],
+                                    hard_neg_items=hard_items[:, 2:])
+        assert torch.allclose(got, want, atol=1e-5)
 
 
 def test_all_ignored_rows_zero_loss_finite_grad():
@@ -123,3 +125,30 @@ def test_sample_negatives_range_and_determinism():
     a = sample_negatives(50, 1000, torch.Generator().manual_seed(1))
     b = sample_negatives(50, 1000, torch.Generator().manual_seed(1))
     assert torch.equal(a, b) and a.min() >= 1 and a.max() <= 50 and a.dtype == torch.long
+
+
+def test_logq_applied_after_temperature():
+    u, p, pv, n, nv, _ = _toy(n_items=40)
+    t = 0.1
+    log_q = torch.randn(41)
+    logits = torch.cat([(u * pv).sum(-1, keepdim=True) / t - log_q[p][:, None],
+                        u @ nv.T / t - log_q[n][None, :]], 1)
+    want = F.cross_entropy(logits, torch.zeros(len(u), dtype=torch.long))
+    got = sampled_softmax_loss(u, p, pv, n, nv, log_q, temperature=t)
+    assert torch.allclose(got, want, atol=1e-4)
+
+
+def test_pad_negative_masked():
+    u, p, pv, n, nv, _ = _toy()
+    n2 = torch.cat([n, torch.tensor([0])])
+    nv2 = torch.cat([nv, 9.0 * torch.ones(1, 8)])
+    got = sampled_softmax_loss(u, p, pv, n2, nv2, None)
+    assert torch.allclose(got, sampled_softmax_loss(u, p, pv, n, nv, None), atol=1e-5)
+
+
+def test_make_log_q_zero_pop_uniform_fallback_and_empty_raises():
+    lq = make_log_q(np.zeros(5, dtype=np.int64), 0.2, 100, 40)
+    assert torch.isfinite(lq).all()
+    assert torch.allclose(lq[1:], lq[1:2].expand(4))
+    with pytest.raises(ValueError):
+        make_log_q(np.zeros(1, dtype=np.int64), 0.2, 100, 40)

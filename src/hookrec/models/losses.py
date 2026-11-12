@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-_MASK = -1e4  # large negative that is still finite and fp16-safe
+_MASK = -1e4  # large negative; logits are float32 so this is finite and exp() underflows to 0
 _Q_FLOOR = 1e-12
 
 
@@ -26,27 +26,29 @@ def sampled_softmax_loss(
 
     user_vecs [M,d]; pos_items [M] (0 = ignored row); pos_vecs [M,d]; neg_items [S] and
     neg_vecs [S,d] are one negative set shared by all rows; hard_neg_vecs [M,H,d] with ids
-    hard_neg_items [M,H] (0 = padding). With `log_q` [N+1], log q[item] is subtracted from the
-    positive and sampled-negative logits (hard negatives are not corrected). Negatives equal to
-    the row's positive (accidental hits) and padded hard negatives are masked. Computed in
+    hard_neg_items [M,H] (0 = padding). Logits are s/T; with `log_q` [N+1], log q[item] is then
+    subtracted (s/T - log q) from the positive and sampled-negative logits (hard negatives are
+    not corrected). Negatives equal to the row's positive (accidental hits), padded sampled
+    negatives (id 0) and padded hard negatives are masked. Computed in
     float32. Returns the mean over valid rows, or 0.0 * user_vecs.sum() when none are valid.
     """
     u = user_vecs.float()
-    pos_logit = (u * pos_vecs.float()).sum(-1, keepdim=True)
-    neg_logit = u @ neg_vecs.float().T
+    pos_logit = (u * pos_vecs.float()).sum(-1, keepdim=True) / temperature
+    neg_logit = (u @ neg_vecs.float().T) / temperature
     if log_q is not None:
         lq = log_q.float()
         pos_logit = pos_logit - lq[pos_items][:, None]
         neg_logit = neg_logit - lq[neg_items][None, :]
-    neg_logit = neg_logit.masked_fill(neg_items[None, :] == pos_items[:, None], _MASK)
+    neg_bad = (neg_items[None, :] == pos_items[:, None]) | (neg_items[None, :] == 0)
+    neg_logit = neg_logit.masked_fill(neg_bad, _MASK)
     cols = [pos_logit, neg_logit]
     if hard_neg_vecs is not None:
-        hard_logit = (u[:, None, :] * hard_neg_vecs.float()).sum(-1)
+        hard_logit = (u[:, None, :] * hard_neg_vecs.float()).sum(-1) / temperature
         if hard_neg_items is not None:
             bad = (hard_neg_items == pos_items[:, None]) | (hard_neg_items == 0)
             hard_logit = hard_logit.masked_fill(bad, _MASK)
         cols.append(hard_logit)
-    logits = torch.cat(cols, dim=1) / temperature
+    logits = torch.cat(cols, dim=1)
 
     valid = pos_items != 0
     n_valid = valid.sum()
@@ -72,7 +74,11 @@ def make_log_q(
     """
     pop = np.asarray(pop_train, dtype=np.float64)[1:]
     n = len(pop)
-    p_pop = (1.0 - mix_uniform) * pop / pop.sum() + mix_uniform / n
+    if n == 0:
+        raise ValueError("pop_train must contain at least one item (length N+1 with N >= 1)")
+    total = pop.sum()
+    base = pop / total if total > 0 else np.full(n, 1.0 / n)
+    p_pop = (1.0 - mix_uniform) * base + mix_uniform / n
     expected = n_in_batch * p_pop + n_uniform / n
     out = np.empty(n + 1, dtype=np.float64)
     out[0] = _Q_FLOOR
