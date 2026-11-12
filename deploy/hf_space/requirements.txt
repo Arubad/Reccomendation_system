@@ -1,0 +1,7 @@
+spaces
+gradio
+torch
+numpy
+polars
+huggingface_hub
+git+https://github.com/Arubad/Reccomendation_system.git@hookseq-impl
