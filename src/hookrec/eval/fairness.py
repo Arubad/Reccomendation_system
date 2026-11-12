@@ -16,24 +16,41 @@ def _valid_items(topk: np.ndarray, n_items: int) -> np.ndarray:
     return flat[(flat >= 1) & (flat <= n_items)]
 
 
-def _artist_counts(topk: np.ndarray, artist_idx: np.ndarray, n_artists: int | None) -> np.ndarray:
+def _artist_counts(
+    topk: np.ndarray, artist_idx: np.ndarray, n_artists: int | None, ignore_zero: bool = False
+) -> np.ndarray:
+    """Recommendation count per artist.
+
+    With `ignore_zero`, `artist_idx` is 1..n_artists with 0 = unknown: unknown-artist items are
+    dropped and the result covers exactly the real artists 1..n_artists.
+    """
     n_items = len(artist_idx) - 1
     if n_artists is None:
-        n_artists = int(artist_idx[1:].max()) + 1 if n_items > 0 else 0
+        n_artists = int(artist_idx[1:].max()) + (0 if ignore_zero else 1) if n_items > 0 else 0
     items = _valid_items(topk, n_items)
+    if ignore_zero:
+        return np.bincount(artist_idx[items], minlength=n_artists + 1)[1 : n_artists + 1]
     return np.bincount(artist_idx[items], minlength=n_artists)[:n_artists]
 
 
 def artist_exposure_gini(
-    topk: np.ndarray, artist_idx: np.ndarray, n_artists: int | None = None
+    topk: np.ndarray,
+    artist_idx: np.ndarray,
+    n_artists: int | None = None,
+    ignore_zero: bool = False,
 ) -> float:
-    """Gini of recommendation counts per artist, over all artists (zero-exposure ones included)."""
-    return gini(_artist_counts(topk, artist_idx, n_artists))
+    """Gini of recommendation counts per artist, over all artists (zero-exposure ones included).
+
+    `ignore_zero`: artist index 0 means unknown and is excluded (see `_artist_counts`).
+    """
+    return gini(_artist_counts(topk, artist_idx, n_artists, ignore_zero))
 
 
-def artist_coverage(topk: np.ndarray, artist_idx: np.ndarray, n_artists: int) -> float:
-    """Share of artists that appear at least once in `topk`."""
-    return float((_artist_counts(topk, artist_idx, n_artists) > 0).sum() / n_artists)
+def artist_coverage(
+    topk: np.ndarray, artist_idx: np.ndarray, n_artists: int, ignore_zero: bool = False
+) -> float:
+    """Share of artists that appear at least once in `topk` (`ignore_zero` as above)."""
+    return float((_artist_counts(topk, artist_idx, n_artists, ignore_zero) > 0).sum() / n_artists)
 
 
 def long_tail_share(topk: np.ndarray, pop_train: np.ndarray, head_frac: float = 0.2) -> float:

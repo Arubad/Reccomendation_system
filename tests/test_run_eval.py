@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 TINY = {
@@ -30,7 +31,7 @@ def _load(script):
     return mod
 
 
-def _check(path, data, out, name):
+def _check(path, data, out, name, run_json):
     rec = json.loads(Path(path).read_text())
     assert rec["run_name"] == f"{name}-eval"
     ex = rec["extra"]
@@ -46,7 +47,9 @@ def _check(path, data, out, name):
     for m in ("ndcg@10", "recall@100"):
         mean, lo, hi = ex["ci"][m]
         assert lo <= mean <= hi
-    with np.load(Path(out) / f"{name}-eval-peruser.npz") as z:
+    recorded = json.loads(Path(run_json).read_text())["metrics"]["ndcg@10"]
+    assert abs(rec["metrics"]["ndcg@10"] - recorded) < 1e-6  # drift check held
+    with np.load(Path(out) / f"{name}-{data.cfg['size']}-eval-peruser.npz") as z:
         assert len(z["uids"]) == len(z["ndcg@10"]) == len(z["recall@100"]) == ex["n_eval_users"]
 
 
@@ -63,7 +66,7 @@ def test_run_eval_neural_smoke(processed_synth, tmp_path):
         ["--processed", str(processed_synth.path), "--run", str(run_path),
          "--ckpt", str(tmp_path / "ck"), "--out", str(tmp_path / "r")]
     )  # fmt: skip
-    _check(path, processed_synth, tmp_path / "r", "sasrec-test")
+    _check(path, processed_synth, tmp_path / "r", "sasrec-test", run_path)
     # the eval record must not leak into the headline table
     from hookrec.eval.report import write_readme_tables
 
@@ -85,4 +88,42 @@ def test_run_eval_baseline_smoke(processed_synth, tmp_path):
         ["--processed", str(processed_synth.path), "--run", str(run_json),
          "--out", str(tmp_path / "r")]
     )  # fmt: skip
-    _check(path, processed_synth, tmp_path / "r", "mostpop-test")
+    _check(path, processed_synth, tmp_path / "r", "mostpop-test", run_json)
+
+
+def test_run_eval_drift_and_dir_mismatch(processed_synth, tmp_path):
+    base = _load("run_baselines")
+    ev = _load("run_eval")
+    cfg = str(ROOT / "configs" / "baselines.yaml")
+    common = ["--processed", str(processed_synth.path), "--config", cfg, "--models", "mostpop",
+              "--out", str(tmp_path / "r")]  # fmt: skip
+    base.main([*common, "--split", "val"])
+    base.main([*common, "--split", "test"])
+    (run_json,) = (tmp_path / "r").glob("mostpop-test-2*.json")
+    rec = json.loads(run_json.read_text())
+    args = ["--processed", str(processed_synth.path), "--out", str(tmp_path / "o")]
+
+    drifted = tmp_path / "drift.json"
+    drifted.write_text(json.dumps({**rec, "metrics": {**rec["metrics"], "ndcg@10": 0.5}}))
+    with pytest.raises(RuntimeError, match="reproduce"):
+        ev.main([*args, "--run", str(drifted)])
+    assert ev.main([*args, "--run", str(drifted), "--no-drift-check"]).exists()
+
+    other = tmp_path / "other.json"
+    other.write_text(json.dumps({**rec, "extra": {**rec["extra"], "processed_dir": "elsewhere"}}))
+    with pytest.raises(SystemExit):
+        ev.main([*args, "--run", str(other)])
+
+
+def test_run_eval_ials_is_deterministic(processed_synth, tmp_path):
+    base = _load("run_baselines")
+    ev = _load("run_eval")
+    cfg = str(ROOT / "configs" / "baselines.yaml")
+    common = ["--processed", str(processed_synth.path), "--config", cfg, "--models", "ials",
+              "--quick", "--out", str(tmp_path / "r")]  # fmt: skip
+    base.main([*common, "--split", "val"])
+    base.main([*common, "--split", "test"])
+    (run_json,) = (tmp_path / "r").glob("ials-test-2*.json")
+    path = ev.main(["--processed", str(processed_synth.path), "--run", str(run_json),
+                    "--out", str(tmp_path / "r")])  # fmt: skip
+    assert path.exists()  # drift check (1e-4) passed on the refit

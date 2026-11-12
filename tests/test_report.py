@@ -102,20 +102,31 @@ def _write(d: Path, rec: dict, i: int):
     (d / f"{rec['run_name']}-{i}.json").write_text(json.dumps(rec))
 
 
+def _eval_rec(name, v, ts, size="50m", pdir="p1"):
+    r = _run(name, v, ts, size=size)
+    r["run_name"] = f"{name}-test-eval"
+    r["extra"].update(
+        kind="eval",
+        processed_dir=pdir,
+        slices={"all": {"n_users": 3, "ndcg@10": v}},
+        fairness={"artist_gini@10": 0.5},
+        ci={"ndcg@10": [v, v - 0.1, v + 0.1]},
+    )
+    return r
+
+
+def _peruser(res, name, size, shift):
+    base = np.random.default_rng(1).random(40)
+    both = {"ndcg@10": base + shift, "recall@100": base + shift}
+    _npz(res / f"{name}-test-{size}-eval-peruser.npz", np.arange(40), **both)
+
+
 def test_write_readme_tables(tmp_path):
     res = tmp_path / "results"
     res.mkdir()
     for i, (n, v) in enumerate([("a0_sasrec", 0.1), ("a1_audio", 0.2), ("hookseq", 0.3)]):
         _write(res, _run(n, v, f"2026-01-0{i + 1}"), i)
-    ev = _run("hookseq", 0.3, "2026-01-05")
-    ev["run_name"] = "hookseq-test-eval"
-    ev["extra"].update(
-        kind="eval",
-        slices={"all": {"n_users": 3, "ndcg@10": 0.3}},
-        fairness={"artist_gini@10": 0.5},
-        ci={"ndcg@10": [0.3, 0.2, 0.4]},
-    )
-    _write(res, ev, 9)
+    _write(res, _eval_rec("hookseq", 0.3, "2026-01-05"), 8)
     out = tmp_path / "reports" / "results.md"
     first = write_readme_tables(res, out).read_text()
     for h in ("Headline", "Ablations", "Slices", "Fairness", "Paired difference"):
@@ -123,17 +134,65 @@ def test_write_readme_tables(tmp_path):
     assert "HookSeq vs SASRec: not yet run" in first
     assert "SASRec (paper)" in first
 
-    base = np.random.default_rng(1).random(40)
-    both = {"ndcg@10": base + 0.1, "recall@100": base + 0.1}
-    _npz(res / "hookseq-test-eval-peruser.npz", np.arange(40), **both)
-    _npz(
-        res / "a0_sasrec-test-eval-peruser.npz",
-        np.arange(40),
-        **{"ndcg@10": base, "recall@100": base},
-    )
+    _write(res, _eval_rec("a0_sasrec", 0.2, "2026-01-06"), 9)
+    _peruser(res, "hookseq", "50m", 0.1)
+    _peruser(res, "a0_sasrec", "50m", 0.0)
     text = write_readme_tables(res, out).read_text()
     paired = text.split("## Paired")[1]
     assert "+0.1000" in paired and "not yet run" not in paired
+
+
+def test_paired_section_per_size_and_processed_dir(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    # 50m: consistent; 500m: processed_dir mismatch between the two sides
+    _write(res, _eval_rec("hookseq", 0.3, "2026-01-05"), 1)
+    _write(res, _eval_rec("a0_sasrec", 0.2, "2026-01-05"), 2)
+    _write(res, _eval_rec("hookseq", 0.4, "2026-01-05", size="500m", pdir="pA"), 3)
+    _write(res, _eval_rec("a0_sasrec", 0.2, "2026-01-05", size="500m", pdir="pB"), 4)
+    for size in ("50m", "500m"):
+        _peruser(res, "hookseq", size, 0.1)
+        _peruser(res, "a0_sasrec", size, 0.0)
+    text = write_readme_tables(res, tmp_path / "o.md").read_text()
+    assert "## Headline (500m" in text and "## Headline (50m" in text
+    paired = text.split("## Paired")[1]
+    p500, p50 = paired.split("### 500m")[1].split("### 50m")
+    assert "+0.1000" in p50
+    assert "processed_dir mismatch" in p500
+
+
+def test_ablation_table_test_suffix_and_mixed_sizes():
+    runs = [
+        _run("a0_sasrec", 0.1, "2026-01-01"),
+        _run("a1_audio", 0.2, "2026-01-01"),
+        _run("a1_audio", 0.7, "2026-01-02", size="500m"),
+        _run("a0_sasrec", 0.6, "2026-01-02", size="500m"),
+    ]
+    t = ablation_table(runs, size="50m")
+    assert "| a0_sasrec |" in t and "-test" not in t
+    assert "0.7000" not in t and "+0.1000" in t
+    t5 = ablation_table(runs, size="500m")
+    assert "0.7000" in t5 and "0.2000" not in t5
+
+
+def test_write_readme_tables_survives_bad_files(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    _write(res, _run("hookseq", 0.3, "2026-01-01"), 0)
+    _write(res, _eval_rec("hookseq", 0.3, "2026-01-05"), 1)
+    _write(res, _eval_rec("a0_sasrec", 0.2, "2026-01-05"), 2)
+    (res / "broken-1.json").write_text("{not json")
+    (res / "nokeys-1.json").write_text(json.dumps({"hello": 1}))
+    bad = _eval_rec("weird", 0.5, "2026-01-06")
+    bad["extra"]["slices"] = {"all": "oops"}
+    bad["extra"]["fairness"] = {"artist_gini@10": "x"}
+    bad["extra"]["ci"] = {"ndcg@10": [1]}
+    _write(res, bad, 3)
+    (res / "hookseq-test-50m-eval-peruser.npz").write_bytes(b"garbage")
+    _peruser(res, "a0_sasrec", "50m", 0.0)
+    text = write_readme_tables(res, tmp_path / "o.md").read_text()
+    assert "Headline" in text
+    assert "not available" in text.split("## Paired")[1]
 
 
 def test_write_readme_tables_empty_dir(tmp_path):

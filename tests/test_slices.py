@@ -18,8 +18,7 @@ def test_slices_partition_organic_served(processed_synth):
         got = np.union1d(sl["organic"].get(u, items[:0]), sl["served"].get(u, items[:0]))
         # OOV items never appear in test_events (they encode to 0): only in-vocab are covered
         inv = items[items <= d.vocab.n_items]
-        assert set(inv.tolist()) <= set(got.tolist())
-        assert set(got.tolist()) <= set(items.tolist())
+        assert set(got.tolist()) == set(inv.tolist())  # organic | served == all in-vocab items
 
 
 def test_organic_served_come_from_labeled_events(processed_synth):
@@ -28,7 +27,9 @@ def test_organic_served_come_from_labeled_events(processed_synth):
     ev = d.test_events().filter(pl.col("is_positive").cast(pl.Boolean)).collect()
     org = {
         (int(u), int(i))
-        for u, i in ev.filter(pl.col("is_organic").cast(pl.Boolean)).select("uid", "item_idx").rows()
+        for u, i in ev.filter(pl.col("is_organic").cast(pl.Boolean))
+        .select("uid", "item_idx")
+        .rows()
     }
     for u, items in sl["organic"].items():
         assert all((u, int(i)) in org for i in items)

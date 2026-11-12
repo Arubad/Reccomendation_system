@@ -6,7 +6,7 @@ Rebuilds the recommender from the run record: neural runs (config has a `model` 
 `model_final.pt` from --ckpt; baselines (mostpop/decaypop/ials) are refit on the train history.
 Warm test users are scored once; slices, artist-exposure fairness, bootstrap CIs (ndcg@10,
 recall@100) and the cold-user metrics all come from that one pass. Writes `{run_name}-eval-*.json`
-(via save_run) and `{run_name}-eval-peruser.npz` (for paired comparisons) into --out.
+(via save_run) and `{run_name}-{size}-eval-peruser.npz` (for paired comparisons) into --out.
 """
 
 from __future__ import annotations
@@ -34,6 +34,8 @@ log = logging.getLogger("run_eval")
 BASELINES = ("mostpop", "decaypop", "ials")
 FAIRNESS_KS = (10, 100)
 CI_METRICS = ("ndcg@10", "recall@100")
+DRIFT_TOL_NEURAL = 1e-6
+DRIFT_TOL_BASELINE = 1e-4
 
 
 def build_recommender(run: dict, data: ProcessedData, ckpt: Path | None) -> Recommender:
@@ -65,12 +67,29 @@ def build_recommender(run: dict, data: ProcessedData, ckpt: Path | None) -> Reco
     return fit_recommender(model_name, data, cfg, "test")
 
 
+def check_drift(run: dict, ndcg10: float) -> None:
+    """Raise if the rebuilt recommender's ndcg@10 differs from the run record's."""
+    recorded = run["metrics"]["ndcg@10"]
+    tol = DRIFT_TOL_NEURAL if "model" in run["config"] else DRIFT_TOL_BASELINE
+    if abs(ndcg10 - recorded) > tol:
+        log.error("drift: re-scored ndcg@10 %.6f vs recorded %.6f (tol %g)", ndcg10, recorded, tol)
+        raise RuntimeError(
+            f"{run['run_name']}: rebuilt model does not reproduce the recorded ndcg@10 "
+            f"({ndcg10:.6f} vs {recorded:.6f}); wrong checkpoint or data? (--no-drift-check skips)"
+        )
+
+
 def main(argv: list[str] | None = None) -> Path:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--processed", type=Path, required=True)
     ap.add_argument("--run", type=Path, required=True, help="results/<run>.json (a test run)")
     ap.add_argument("--ckpt", type=Path, help="dir with model_final.pt (neural runs)")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument(
+        "--no-drift-check",
+        action="store_true",
+        help="skip the check that re-scored ndcg@10 matches the run record",
+    )
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -80,14 +99,16 @@ def main(argv: list[str] | None = None) -> Path:
         raise SystemExit(f"{args.run} is not a test run (extra.split != 'test')")
     data = load_processed(args.processed)
     if run["extra"].get("processed_dir") not in (None, data.path.name):
-        log.warning(
-            "run was made on %s but evaluating on %s", run["extra"]["processed_dir"], data.path.name
+        raise SystemExit(
+            f"run was made on {run['extra']['processed_dir']} but --processed is {data.path.name}"
         )
     n = data.vocab.n_items
 
     rec = build_recommender(run, data, args.ckpt)
     warm = evaluate(rec, data.truth_test, n)  # the one scoring pass
     log.info("%s: scored %d warm test users", name, len(warm.uids))
+    if not args.no_drift_check:
+        check_drift(run, warm.metrics["ndcg@10"])
 
     slices = slice_truth(
         data.truth_test, data.test_events(), data.vocab, data.features, data.seqs_train
@@ -98,10 +119,13 @@ def main(argv: list[str] | None = None) -> Path:
     feat = data.features
     for k in FAIRNESS_KS:
         top = warm.topk[:, :k]
+        # artist 0 = unknown: excluded from exposure counts and from the denominator
         fairness[f"artist_gini@{k}"] = artist_exposure_gini(
-            top, feat.artist_idx, feat.n_artists + 1
+            top, feat.artist_idx, feat.n_artists, ignore_zero=True
         )
-        fairness[f"artist_coverage@{k}"] = artist_coverage(top, feat.artist_idx, feat.n_artists + 1)
+        fairness[f"artist_coverage@{k}"] = artist_coverage(
+            top, feat.artist_idx, feat.n_artists, ignore_zero=True
+        )
         fairness[f"long_tail_share@{k}"] = long_tail_share(top, feat.pop_train)
 
     ci = {m: list(bootstrap_ci(warm.per_user[m], seed=0)) for m in CI_METRICS}
@@ -124,9 +148,11 @@ def main(argv: list[str] | None = None) -> Path:
         "fairness": fairness,
         "ci": ci,
     }
+    peruser = Path(args.out) / f"{name}-{data.cfg['size']}-eval-peruser.npz"
+    extra["peruser_file"] = peruser.name
     path = save_run(args.out, f"{name}-eval", run["config"], warm.metrics, extra)
     np.savez(
-        Path(args.out) / f"{name}-eval-peruser.npz",
+        peruser,
         uids=warm.uids,
         **{m: warm.per_user[m] for m in CI_METRICS},
     )

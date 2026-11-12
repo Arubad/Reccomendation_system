@@ -29,3 +29,17 @@ def test_long_tail_share():
     topk = np.array([[1, 2, 3, 4, 0]])
     assert long_tail_share(topk, pop, head_frac=0.5) == pytest.approx(0.5)
     assert long_tail_share(np.array([[0, 0]]), pop) == 0.0
+
+
+def test_ignore_zero_excludes_unknown_artist():
+    # items 1..5 -> artists 0 (unknown), 1, 1, 2, 3; real artists 1..3
+    art = np.array([0, 0, 1, 1, 2, 3])
+    topk = np.array([[1, 2, 3, 0, 99]])  # unknown item, artist 1 twice
+    # counts over real artists [2, 0, 0] -> gini 2/3; coverage 1/3
+    assert artist_exposure_gini(topk, art, 3, ignore_zero=True) == pytest.approx(2 / 3)
+    assert artist_coverage(topk, art, 3, ignore_zero=True) == pytest.approx(1 / 3)
+    # the last artist (3) is not dropped
+    assert artist_coverage(np.array([[5]]), art, 3, ignore_zero=True) == pytest.approx(1 / 3)
+    # unknown item alone gives no exposure at all
+    assert artist_coverage(np.array([[1]]), art, 3, ignore_zero=True) == 0.0
+    assert artist_exposure_gini(topk, art, ignore_zero=True) == pytest.approx(2 / 3)
