@@ -5,8 +5,10 @@ python scripts/run_train.py --processed DIR --config configs/sasrec.yaml --split
 
 `--split val` trains on the val-train history with periodic val NDCG@10 and early stopping, then
 evaluates `best.pt`. `--split test` trains on the full train history for the `best_step` of the
-best matching val run (same processed dir, same config apart from `train.max_steps`), then
-evaluates the final weights. Both write `{name}-{split}` via `save_run` (warm + cold slices).
+best matching val run (same processed dir, same config up to operational keys), with that run's
+LR horizon as `schedule_steps`, then evaluates the final weights. With no matching val run it
+resumes a checkpoint's own horizon, or fails unless `--allow-no-val` is given. Both write
+`{name}-{split}` via `save_run` (warm + cold slices).
 
 Kaggle sessions: if training stops on `train.max_hours`, a checkpoint is written and the script
 exits 0 *without* evaluating or recording a run; re-run with the same `--ckpt` (or with the
@@ -16,7 +18,6 @@ previous output as `--resume`) to continue.
 from __future__ import annotations
 
 import argparse
-import copy
 import logging
 import sys
 from pathlib import Path
@@ -27,10 +28,12 @@ import yaml
 from hookrec.data.processed import load_processed
 from hookrec.models.base import build_model, evaluate_split, history_for
 from hookrec.models.popularity import MostPop
+from hookrec.train.checkpoint import load_latest
 from hookrec.train.scoring import SeqRecommender
-from hookrec.train.trainer import device_name, train
-from hookrec.utils.config import config_hash, load_config
+from hookrec.train.trainer import device_name, train, training_hash
+from hookrec.utils.config import load_config
 from hookrec.utils.results import best_run, save_run
+from hookrec.utils.seed import set_seed
 
 log = logging.getLogger("run_train")
 
@@ -46,22 +49,48 @@ def parse_overrides(items: list[str]) -> dict:
     return out
 
 
-def _hash_without_max_steps(cfg: dict) -> str:
-    c = copy.deepcopy(cfg)
-    c.get("train", {}).pop("max_steps", None)
-    return config_hash(c)
+def best_val_horizon(out: Path, name: str, processed_dir: str, cfg: dict) -> tuple[int, int] | None:
+    """(best_step, schedule_steps) of the best matching `{name}-val` run, or None.
 
-
-def best_val_step(out: Path, name: str, processed_dir: str, cfg: dict) -> int | None:
-    """`best_step` of the best `{name}-val` run whose config matches `cfg` up to max_steps."""
-    target = _hash_without_max_steps(cfg)
+    A run matches when its config equals `cfg` up to the operational keys (`training_hash`).
+    schedule_steps is that val run's own LR horizon, so the test refit follows the same LR
+    curve as the val model up to best_step.
+    """
+    target = training_hash(cfg)
     best = best_run(
         out,
         f"{name}-val",
         processed_dir,
-        lambda r: _hash_without_max_steps(r["config"]) == target and r["extra"].get("best_step"),
+        lambda r: training_hash(r["config"]) == target and r["extra"].get("best_step"),
     )
-    return int(best["extra"]["best_step"]) if best else None
+    if best is None:
+        return None
+    t = best["config"]["train"]
+    return int(best["extra"]["best_step"]), int(t.get("schedule_steps") or t["max_steps"])
+
+
+def _set_test_horizon(args, cfg: dict, name: str, processed_dir: str) -> None:
+    found = best_val_horizon(args.out, name, processed_dir, cfg)
+    if found is not None:
+        cfg["train"]["max_steps"], cfg["train"]["schedule_steps"] = found
+        log.info("test run: max_steps = best val step %d, schedule_steps = %d", *found)
+        return
+    payload = load_latest([args.ckpt, *args.resume])
+    if payload is not None and "max_steps" in payload:
+        log.info(
+            "no matching '%s-val' run in %s: resuming %s with its horizon (%d / %d steps)",
+            name, args.out, payload["path"], payload["max_steps"], payload["schedule_steps"],
+        )  # fmt: skip
+        return
+    if not args.allow_no_val:
+        raise SystemExit(
+            f"no matching '{name}-val' run for processed dir '{processed_dir}' in {args.out} and "
+            "no checkpoint to resume: run --split val first (same config), or pass "
+            "--allow-no-val to train for the configured train.max_steps"
+        )
+    log.warning(
+        "--allow-no-val: training for the configured max_steps=%d", cfg["train"]["max_steps"]
+    )
 
 
 def main(argv: list[str] | None = None) -> Path | None:
@@ -74,6 +103,11 @@ def main(argv: list[str] | None = None) -> Path | None:
     ap.add_argument("--override", action="append", default=[], metavar="KEY=VALUE")
     ap.add_argument("--name", help="run name (default: config file stem)")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument(
+        "--allow-no-val",
+        action="store_true",
+        help="--split test without a matching val run: use the configured max_steps",
+    )
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -82,18 +116,13 @@ def main(argv: list[str] | None = None) -> Path | None:
     data = load_processed(args.processed)
 
     if args.split == "test":
-        step = best_val_step(args.out, name, data.path.name, cfg)
-        if step is None:
-            log.warning(
-                "no matching '%s-val' run in %s: training for the configured max_steps=%d",
-                name, args.out, cfg["train"]["max_steps"],
-            )  # fmt: skip
-        else:
-            log.info("test run: max_steps = best val step %d", step)
-            cfg["train"]["max_steps"] = step
+        _set_test_horizon(args, cfg, name, data.path.name)
 
+    set_seed(cfg["train"]["seed"])  # model init is part of the run
     model = build_model(cfg, data)
     res = train(cfg, data, model, args.split, args.ckpt, args.resume)
+    # record the horizon actually trained (a resumed run takes it from its checkpoint)
+    cfg["train"]["max_steps"], cfg["train"]["schedule_steps"] = res.max_steps, res.schedule_steps
     if res.stopped_reason == "max_hours":
         log.warning(
             "stopped on max_hours at step %d: resume from %s to finish", res.steps, args.ckpt

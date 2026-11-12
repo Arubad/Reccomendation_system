@@ -10,6 +10,8 @@ from hookrec.data.sequences import PackedSequences
 from hookrec.models.popularity import MostPop, fill_cold
 from hookrec.train.datasets import _INPUT_FIELDS
 
+_TIE_ROWS = 64  # rows per full stable sort when a top-k cut falls inside a tie
+
 
 def _sort_desc_low_index_first(vals: Tensor, idx: Tensor) -> tuple[Tensor, Tensor]:
     """Order candidates by (-score, index): sort by index, then a stable sort by score."""
@@ -28,9 +30,11 @@ def _chunk_topk(sc: Tensor, kk: int) -> tuple[Tensor, Tensor]:
     thr = vals[:, -1:]
     ambiguous = (sc == thr).sum(1) > (vals == thr).sum(1)
     if ambiguous.any():
-        rows = ambiguous.nonzero().squeeze(1)
-        s = sc[rows].sort(dim=1, descending=True, stable=True)
-        vals[rows], idx[rows] = s.values[:, :kk], s.indices[:, :kk]
+        all_rows = ambiguous.nonzero().squeeze(1)
+        for s in range(0, len(all_rows), _TIE_ROWS):  # bounds the full-sort memory
+            rows = all_rows[s : s + _TIE_ROWS]
+            srt = sc[rows].sort(dim=1, descending=True, stable=True)
+            vals[rows], idx[rows] = srt.values[:, :kk], srt.indices[:, :kk]
     return vals, idx
 
 

@@ -11,6 +11,7 @@ to `ckpt_dir` (2 newest kept). A run resumes from the newest good checkpoint in
 
 from __future__ import annotations
 
+import copy
 import logging
 import math
 import os
@@ -44,6 +45,7 @@ from hookrec.train.checkpoint import (
 )
 from hookrec.train.datasets import SeqTrainDataset
 from hookrec.train.scoring import SeqRecommender
+from hookrec.utils.config import config_hash
 from hookrec.utils.seed import set_seed
 
 log = logging.getLogger(__name__)
@@ -51,6 +53,23 @@ log = logging.getLogger(__name__)
 # `max_hours` bounds the Kaggle session, so it is measured from when this process imported the
 # trainer (i.e. includes data loading), not from when `train` was called.
 _PROCESS_T0 = time.monotonic()
+
+# train.* keys that do not change what is learned (or that define the horizon, which is
+# persisted separately); they are excluded from `training_hash`.
+OPERATIONAL_KEYS = frozenset(
+    {
+        "max_hours", "num_workers", "device", "log_every_steps", "eval_max_users",
+        "eval_batch_size", "ckpt_every_steps", "max_steps", "schedule_steps",
+    }
+)  # fmt: skip
+
+
+def training_hash(cfg: dict) -> str:
+    """Config hash ignoring OPERATIONAL_KEYS: resume compatibility and the val<->test match."""
+    c = copy.deepcopy(cfg)
+    for k in OPERATIONAL_KEYS:
+        c.get("train", {}).pop(k, None)
+    return config_hash(c)
 
 
 @dataclass
@@ -62,6 +81,8 @@ class TrainResult:
     best_step: int  # step of best.pt (val); the final step (test)
     steps_per_sec: float  # this session
     final_loss: float
+    max_steps: int  # horizon actually used (from the checkpoint when resumed)
+    schedule_steps: int
 
 
 def device_name(device: torch.device) -> str:
@@ -173,15 +194,34 @@ def train(
     set_seed(tc["seed"])
     seqs, _ = history_for(data, split)
     n_items = data.vocab.n_items
-    max_steps = tc["max_steps"]
     eval_every, ckpt_every = tc["eval_every_steps"], tc["ckpt_every_steps"]
     log_every = tc.get("log_every_steps", 100)
     n_ib, n_uni = lc.get("n_in_batch_negatives", 4096), lc["n_uniform_negatives"]
     n_hard = lc.get("n_hard", 4) if lc.get("dislike_hard_negatives") else 0
 
+    cfg_hash = training_hash(cfg)
+    payload = load_latest([ckpt_dir, *resume_dirs])
+    if payload is not None:
+        if payload.get("split", split) != split:
+            raise ValueError(
+                f"{payload['path']} is a split={payload['split']!r} checkpoint; "
+                f"use a separate --ckpt dir for split={split!r}"
+            )
+        if payload.get("config_hash", cfg_hash) != cfg_hash:
+            raise ValueError(
+                f"{payload['path']} was trained with a different config "
+                f"(hash {payload['config_hash']} != {cfg_hash}); use a fresh --ckpt dir"
+            )
+    # The training horizon is persisted: a resumed run always finishes the run it started.
+    if payload is not None and "max_steps" in payload:
+        max_steps, schedule_steps = payload["max_steps"], payload["schedule_steps"]
+    else:
+        max_steps = tc["max_steps"]
+        schedule_steps = tc.get("schedule_steps") or max_steps
+
     model.to(device).train()
     opt = torch.optim.AdamW(param_groups(model, tc["weight_decay"]), lr=tc["lr"])
-    sched = LambdaLR(opt, warmup_cosine(tc["warmup_steps"], max_steps))
+    sched = LambdaLR(opt, warmup_cosine(tc["warmup_steps"], schedule_steps))
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
     gen = torch.Generator().manual_seed(tc["seed"])  # negative sampling
     fallback = MostPop().fit(seqs, n_items)
@@ -203,17 +243,11 @@ def train(
     }
     step = 0
     best_path = ckpt_dir / "best.pt"
-    payload = load_latest([ckpt_dir, *resume_dirs])
     if payload is None:
         if best_path.exists():
             log.warning("fresh run: removing stale %s", best_path)
             best_path.unlink()
     else:
-        if payload.get("split", split) != split:
-            raise ValueError(
-                f"{payload['path']} is a split={payload['split']!r} checkpoint; "
-                f"use a separate --ckpt dir for split={split!r}"
-            )
         model.load_state_dict(payload["model"])
         opt.load_state_dict(payload["optimizer"])
         sched.load_state_dict(payload["scheduler"])
@@ -230,7 +264,10 @@ def train(
             b = torch.load(best_path, map_location="cpu", weights_only=True)
             if b["metric"] > st["best_metric"]:
                 st["best_metric"], st["best_step"] = b["metric"], b["step"]
-        log.info("resumed from %s at step %d", payload["path"], step)
+        log.info(
+            "resumed from %s at step %d (max_steps %d, schedule_steps %d)",
+            payload["path"], step, max_steps, schedule_steps,
+        )  # fmt: skip
         del payload
 
     ds = _EpochIndexed(SeqTrainDataset(seqs, max_len, tc["seed"]))
@@ -250,6 +287,7 @@ def train(
     )
 
     t_session, steps_session, last_ckpt = time.monotonic(), 0, -1
+    dirty = False  # early-stopping state changed since the last checkpoint
     seconds_before = st["train_seconds"]
     loss = torch.tensor(float("nan"))
 
@@ -263,15 +301,17 @@ def train(
         return None
 
     def run_eval() -> None:
+        nonlocal dirty
         rec = SeqRecommender(
             model, seqs, max_len, device, fallback, tc.get("eval_batch_size", 1024)
         )
         metric = evaluate(rec, eval_truth, n_items, ks=(10,)).metrics["ndcg@10"]
         st["last_eval_step"] = step
+        dirty = True
         if metric > st["best_metric"]:
             st.update(best_metric=metric, best_step=step, bad_evals=0)
             atomic_save({"model": model.state_dict(), "step": step, "metric": metric}, best_path)
-        else:
+        elif step > st["best_step"]:  # replayed evals before an adopted best.pt don't count
             st["bad_evals"] += 1
         log.info(
             "eval step %d ndcg@10 %.5f (best %.5f @ %d, %d bad)",
@@ -279,17 +319,18 @@ def train(
         )  # fmt: skip
 
     def checkpoint() -> None:
-        nonlocal last_ckpt
+        nonlocal last_ckpt, dirty
         rng = capture_rng_states()
         rng["sampler"] = gen.get_state()
         st["train_seconds"] = seconds_before + time.monotonic() - t_session
         extra = {k: v for k, v in st.items() if k not in ("epoch", "best_metric")}
         save_checkpoint(
             ckpt_dir / ckpt_name(step), model, opt, sched, scaler, step, st["epoch"],
-            st["best_metric"], rng, split=split, **extra,
+            st["best_metric"], rng, split=split, config_hash=cfg_hash, max_steps=max_steps,
+            schedule_steps=schedule_steps, **extra,
         )  # fmt: skip
         prune_checkpoints(ckpt_dir, keep=2)
-        last_ckpt = step
+        last_ckpt, dirty = step, False
 
     def train_step(batch: dict[str, Tensor]) -> Tensor:
         batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
@@ -303,23 +344,27 @@ def train(
                     0, pos_items[torch.randint(len(pos_items), (n_ib,), generator=gen).to(device)]
                 )
             neg_items = torch.cat(neg)
+            pos_vecs, neg_vecs = model.item_repr(pos_items), model.item_repr(neg_items)
             hard_items = hard_vecs = None
             if n_hard:
                 rows = valid.nonzero()[:, 0]
                 hard_items = hard_negatives(batch["items"], batch["tokens"], n_hard)[rows]
-                hard_vecs = model.item_repr(hard_items)
+                hard_vecs = model.item_repr(hard_items).float()
+        with torch.autocast(device.type, enabled=False):  # logits / softmax in fp32
             out = sampled_softmax_loss(
-                user_vecs, pos_items, model.item_repr(pos_items), neg_items,
-                model.item_repr(neg_items), log_q, lc.get("temperature", 1.0),
-                hard_neg_vecs=hard_vecs, hard_neg_items=hard_items,
+                user_vecs.float(), pos_items, pos_vecs.float(), neg_items, neg_vecs.float(),
+                log_q, lc.get("temperature", 1.0), hard_neg_vecs=hard_vecs,
+                hard_neg_items=hard_items,
             )  # fmt: skip
         opt.zero_grad(set_to_none=True)
         scaler.scale(out).backward()
         scaler.unscale_(opt)
         nn.utils.clip_grad_norm_(model.parameters(), tc["max_grad_norm"])
+        scale_before = scaler.get_scale()
         scaler.step(opt)
         scaler.update()
-        sched.step()
+        if scaler.get_scale() >= scale_before:  # a dropped scale = inf/NaN grads, step skipped
+            sched.step()
         return out.detach()
 
     reason = stop_reason()
@@ -349,7 +394,7 @@ def train(
 
     if split == "val" and reason == "max_steps" and st["last_eval_step"] != step:
         run_eval()
-    if last_ckpt != step:
+    if last_ckpt != step or dirty:
         checkpoint()
     if reason != "max_hours":
         atomic_save(
@@ -367,4 +412,6 @@ def train(
         best_step=st["best_step"] if split == "val" else step,
         steps_per_sec=sps,
         final_loss=float(loss),
+        max_steps=max_steps,
+        schedule_steps=schedule_steps,
     )

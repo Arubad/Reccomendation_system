@@ -30,6 +30,21 @@ def test_score_topk_matches_bruteforce(chunk):
     np.testing.assert_allclose(vals.numpy(), ref_vals, rtol=1e-6)
 
 
+def test_score_topk_many_tie_rows_are_sorted_in_sub_batches():
+    from hookrec.train import scoring
+
+    g = torch.Generator().manual_seed(3)
+    u = torch.randint(-1, 2, (200, 3), generator=g).float()  # >64 rows with boundary ties
+    v = torch.randint(-1, 2, (150, 3), generator=g).float()
+    sc = u @ v.T
+    sc[:, 0] = float("-inf")
+    vals = sc.topk(10, dim=1).values
+    thr = vals[:, -1:]
+    assert ((sc == thr).sum(1) > (vals == thr).sum(1)).sum() > scoring._TIE_ROWS
+    _, idx = score_topk(u, v, k=10, item_chunk=60)
+    np.testing.assert_array_equal(idx.numpy(), _bruteforce(u, v, 10)[1])
+
+
 def test_score_topk_random_floats_and_k_larger_than_chunk():
     g = torch.Generator().manual_seed(1)
     u, v = torch.randn(5, 8, generator=g), torch.randn(301, 8, generator=g)

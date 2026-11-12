@@ -5,15 +5,19 @@ train:
   weight_decay: 0.01
   warmup_steps: 1000
   max_steps: 200000
+  schedule_steps: null  # LR cosine horizon; null = max_steps (test refits use the val run's)
   eval_every_steps: 2000
   patience: 5
   ckpt_every_steps: 2000
   max_grad_norm: 1.0
+  # Kaggle sessions die at 9 h. The 1 h margin covers the final checkpoint, the last eval in
+  # flight and output saving. max_hours is measured from process start, data loading included.
   max_hours: 8.0
   num_workers: 4
   seed: 42
   log_every_steps: 100
   eval_max_users: null  # subsample of val users for the periodic eval; the final eval uses all
+  eval_batch_size: 1024
 loss:
   n_uniform_negatives: 8192
   n_in_batch_negatives: 4096
