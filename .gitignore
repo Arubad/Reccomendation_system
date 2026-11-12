@@ -1,0 +1,9 @@
+data/
+checkpoints/
+*.parquet
+*.npz
+*.pt
+__pycache__/
+.venv/
+.ipynb_checkpoints/
+.DS_Store
