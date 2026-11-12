@@ -80,18 +80,40 @@ def test_sharded_equals_unsharded(synth):
             assert np.array_equal(getattr(a, f), getattr(b, f)), f
 
 
-def test_npz_roundtrip_mmap(tmp_path):
+def test_roundtrip_mmap(tmp_path):
     rows = [(1, 10, 1, LISTEN_FULL), (1, 20, 2, LIKE), (4, 10, 3, LISTEN_SKIP)]
     lf = _events(rows)
     s = build_sequences(lf, _vocab(lf), max_len=None, collapse_consecutive_dups=False)
-    p = tmp_path / "seq.npz"
+    p = tmp_path / "seq"
     s.save(p)
     w = PackedSequences.load(p)
     for f in FIELDS:
+        assert isinstance(getattr(w, f), np.memmap), f
         assert np.array_equal(getattr(s, f), getattr(w, f)), f
         assert getattr(w, f).dtype == getattr(s, f).dtype
     assert len(w) == 2
     assert list(w.get(0)["ts"]) == [1, 2]
+
+
+def test_oov_events_dropped(tmp_path):
+    from hookrec.train.datasets import SeqInferDataset
+
+    rows = [(1, 10, 1, LISTEN_FULL), (1, 20, 2, LISTEN_FULL), (1, 77, 3, LISTEN_FULL)]
+    lf = _events(rows)
+    v = build_vocab(lf.filter(pl.col("item_id") != 77), lf.filter(pl.col("item_id") != 77), 1)
+    s = build_sequences(lf, v, max_len=None, collapse_consecutive_dups=False)
+    assert s.n_dropped_oov == 1 and list(s.ts) == [1, 2] and (s.items > 0).all()
+    x = SeqInferDataset(s, 3)[0]
+    assert x["items"].tolist() == [0, int(s.items[0]), int(s.items[1])]
+
+
+def test_null_organic_and_ratio_filled():
+    lf = _events([(1, 10, 1, LISTEN_FULL), (1, 20, 2, LISTEN_FULL)]).with_columns(
+        pl.Series("is_organic", [None, 1], dtype=pl.UInt8),
+        pl.Series("ratio_bucket", [3, None], dtype=pl.UInt8),
+    )
+    s = build_sequences(lf, _vocab(lf), max_len=None, collapse_consecutive_dups=False)
+    assert list(s.organic) == [0, 1] and list(s.ratio) == [3, 0]
 
 
 def test_index_of():

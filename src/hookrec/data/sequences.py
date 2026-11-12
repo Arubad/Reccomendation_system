@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +11,8 @@ import numpy as np
 import polars as pl
 
 from hookrec.data.vocab import ItemVocab
+
+log = logging.getLogger(__name__)
 
 _FIELDS = ("items", "tokens", "organic", "ratio", "ts")
 _DTYPES = {
@@ -25,6 +28,12 @@ _DTYPES = {
 
 @dataclass
 class PackedSequences:
+    """CSR-style per-user sequences.
+
+    Pad contract: `items == 0` if and only if the position is padding. Out-of-vocab events are
+    dropped at build time (counted in `n_dropped_oov`), so every stored item is >= 1.
+    """
+
     uids: np.ndarray  # u32[U], ascending
     offsets: np.ndarray  # i64[U+1]
     items: np.ndarray  # i32[T] vocab indices
@@ -32,6 +41,7 @@ class PackedSequences:
     organic: np.ndarray  # u8[T]
     ratio: np.ndarray  # u8[T]
     ts: np.ndarray  # u32[T]
+    n_dropped_oov: int = 0  # events dropped at build time (item not in vocab); not persisted
 
     def __len__(self) -> int:
         return len(self.uids)
@@ -49,17 +59,19 @@ class PackedSequences:
         return np.where(self.uids[pos] == uids, pos, -1).astype(np.int64)
 
     def save(self, path) -> None:
-        # uncompressed on purpose: compressed members cannot be memory-mapped
-        with open(Path(path), "wb") as f:
-            np.savez(f, **{k: getattr(self, k) for k in _DTYPES})
+        """Write a directory with one .npy file per field (so `load` can memory-map them)."""
+        d = Path(path)
+        d.mkdir(parents=True, exist_ok=True)
+        for k in _DTYPES:
+            np.save(d / f"{k}.npy", getattr(self, k))
 
     @classmethod
     def load(cls, path) -> PackedSequences:
-        z = np.load(Path(path), mmap_mode="r")
-        return cls(**{k: z[k] for k in _DTYPES})
+        d = Path(path)
+        return cls(**{k: np.load(d / f"{k}.npy", mmap_mode="r") for k in _DTYPES})
 
 
-def _pack(uid, item, token, organic, ratio, ts, max_len, collapse) -> PackedSequences:
+def _pack(uid, item, token, organic, ratio, ts, max_len, collapse, n_dropped=0):
     """Pack arrays that are already sorted by (uid, chronological order)."""
     cols = [uid, item, token, organic, ratio, ts]
     if collapse and len(uid):  # keep the last event of each run of identical (user, item, token)
@@ -77,6 +89,7 @@ def _pack(uid, item, token, organic, ratio, ts, max_len, collapse) -> PackedSequ
     return PackedSequences(
         uids=uids.astype(np.uint32),
         offsets=offsets,
+        n_dropped_oov=n_dropped,
         **{f: a.astype(_DTYPES[f]) for f, a in zip(_FIELDS, cols[1:], strict=True)},
     )
 
@@ -89,7 +102,9 @@ def build_sequences(
 ) -> PackedSequences:
     """Per-user chronological sequences (stable w.r.t. input order on timestamp ties).
 
-    Collapsing happens before truncation, so `max_len` counts collapsed events.
+    Events whose item is not in the vocab are dropped first (they would encode to the pad
+    index 0); a warning is logged and the count is kept in `n_dropped_oov`. Collapsing happens
+    before truncation, so `max_len` counts collapsed events. Null organic/ratio become 0.
     """
     df = (
         lf.select("uid", "item_id", "timestamp", "is_organic", "token", "ratio_bucket")
@@ -99,16 +114,21 @@ def build_sequences(
     uid = df["uid"].to_numpy()
     ts = df["timestamp"].to_numpy()
     order = np.lexsort((ts, uid))  # stable: ties keep original order
-    return _pack(
+    item = vocab.encode(df["item_id"].to_numpy())[order]
+    cols = [
         uid[order],
-        vocab.encode(df["item_id"].to_numpy())[order],
+        item,
         df["token"].to_numpy()[order],
-        df["is_organic"].cast(pl.UInt8).to_numpy()[order],
-        df["ratio_bucket"].to_numpy()[order],
+        df["is_organic"].fill_null(0).cast(pl.UInt8).to_numpy()[order],
+        df["ratio_bucket"].fill_null(0).cast(pl.UInt8).to_numpy()[order],
         ts[order],
-        max_len,
-        collapse_consecutive_dups,
-    )
+    ]
+    known = item > 0
+    n_dropped = int((~known).sum())
+    if n_dropped:
+        log.warning("dropped %d events with items outside the vocab", n_dropped)
+        cols = [a[known] for a in cols]
+    return _pack(*cols, max_len, collapse_consecutive_dups, n_dropped)
 
 
 def build_sequences_sharded(
@@ -132,4 +152,9 @@ def build_sequences_sharded(
     np.cumsum(counts, out=offsets[1:])
     idx = np.arange(offsets[-1]) - np.repeat(offsets[:-1] - starts, counts)
     cat = {f: np.concatenate([getattr(s, f) for s in shards]) for f in _FIELDS}
-    return PackedSequences(uids=uids[order], offsets=offsets, **{f: a[idx] for f, a in cat.items()})
+    return PackedSequences(
+        uids=uids[order],
+        offsets=offsets,
+        n_dropped_oov=sum(s.n_dropped_oov for s in shards),
+        **{f: a[idx] for f, a in cat.items()},
+    )

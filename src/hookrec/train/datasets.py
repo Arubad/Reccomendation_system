@@ -1,4 +1,7 @@
-"""Torch datasets over PackedSequences: random-window training, last-window inference."""
+"""Torch datasets over PackedSequences: random-window training, last-window inference.
+
+Pad contract: every field is left-padded with 0 and `items == 0` <=> pad (stored items are >= 1).
+"""
 
 from __future__ import annotations
 
