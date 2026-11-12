@@ -94,6 +94,11 @@ def test_all_flags_off_param_set_equals_sasrec(processed_synth):
         return {k: tuple(p.shape) for k, p in x.state_dict().items()}
 
     assert shapes(m) == shapes(s)
+    # same seed => identical init values, not just identical shapes
+    torch.manual_seed(0)
+    s = SASRec(n_items=v.n_id, d_model=16, n_layers=1, n_heads=2, max_len=20, dropout=0.1)
+    ms, ss = m.state_dict(), s.state_dict()
+    assert all(torch.equal(ms[k], ss[k]) for k in ss)
     assert m.all_item_repr().shape == (v.n_items + 1, 16)
 
 
@@ -186,19 +191,31 @@ def _cold_ndcg(model, data):
     return evaluate(rec, truth, n, ks=(10,)).metrics["ndcg@10"]
 
 
-def test_hookseq_overfits_synth_better_than_or_equal_sasrec_on_cold_items(
-    processed_synth, tmp_path
-):
+def test_audio_path_beats_untrained_idonly_and_sasrec_on_cold_items(processed_synth, tmp_path):
+    """Cold items (no ID row) are reachable only via audio/artist. Isolate the audio path
+    (artist off): trained audio-only must clearly beat the same net untrained, an ID-only
+    HookSeq and SASRec; the full model must beat SASRec."""
     data = processed_synth
     over = {**TINY, "train.batch_size": 16, "train.lr": 5e-3, "train.warmup_steps": 20,
             "train.max_steps": 300, "train.eval_every_steps": 1000, "train.ckpt_every_steps": 1000,
             "train.patience": 100, "loss.logq": False, "loss.dislike_hard_negatives": False}  # fmt: skip
+    audio_only = {"model.use_artist": False}
+    runs = {  # name: (base config, overrides, trained?)
+        "sasrec": ("sasrec", {}, True),
+        "full": ("hookseq", {}, True),
+        "audio_only": ("hookseq", audio_only, True),
+        "audio_only_untrained": ("hookseq", audio_only, False),
+        "id_only": ("hookseq", {"model.use_artist": False, "model.use_audio": False}, True),
+    }
     scores = {}
-    for name in ("sasrec", "hookseq"):
-        cfg = load_config(ROOT / "configs" / f"{name}.yaml", over)
+    for name, (base, extra, trained) in runs.items():
+        cfg = load_config(ROOT / "configs" / f"{base}.yaml", {**over, **extra})
         torch.manual_seed(0)
         model = build_model(cfg, data)
-        train(cfg, data, model, "test", tmp_path / name)
+        if trained:
+            train(cfg, data, model, "test", tmp_path / name)
         scores[name] = _cold_ndcg(model.eval(), data)
-    print(scores)
-    assert scores["hookseq"] > scores["sasrec"], scores
+    margin = 0.03  # audio-only scored 0.055-0.064 over seeds 0-2; the others score 0.0
+    for other in ("audio_only_untrained", "id_only", "sasrec"):
+        assert scores["audio_only"] > scores[other] + margin, scores
+    assert scores["full"] > scores["sasrec"] + margin, scores

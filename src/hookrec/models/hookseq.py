@@ -38,23 +38,38 @@ class HookSeq(SASRec):
         use_ratio: bool = True,
         id_dropout: float = 0.2,
     ):
-        # The inherited item_emb is the ID table (n_id + 1 rows), not one row per catalog item.
+        # NB: on HookSeq `self.n_items` is n_id (the ID table size, SASRec's constructor arg);
+        # `self.n_catalog` is the catalog size N that item_repr / all_item_repr cover.
+        # item_emb is the ID table (n_id + 1 rows), not one row per catalog item.
         super().__init__(n_id, d_model, n_layers, n_heads, max_len, dropout)
-        n_catalog = features.audio.shape[0] - 1
-        if n_catalog != n_items or len(id_idx) != n_catalog + 1:
-            raise ValueError(f"features/id_idx do not match n_items={n_items}")
+        id_idx = np.asarray(id_idx)
+        n_catalog = len(id_idx) - 1
+        if n_catalog != n_items:
+            raise ValueError(f"id_idx has {len(id_idx)} rows, expected n_items + 1 = {n_items + 1}")
+        if id_idx.min() < 0 or id_idx.max() > n_id:
+            raise ValueError(f"id_idx values must lie in [0, n_id={n_id}], got max {id_idx.max()}")
+        for name in ("audio", "has_audio", "artist_idx"):
+            if len(getattr(features, name)) != n_catalog + 1:
+                raise ValueError(f"features.{name} must have n_items + 1 = {n_items + 1} rows")
         self.n_catalog = n_catalog
         self.use_audio, self.use_artist = use_audio, use_artist
         self.use_event, self.use_organic, self.use_ratio = use_event, use_organic, use_ratio
         self.id_dropout = id_dropout
         d = d_model
-        # non-persistent: rebuilt from ProcessedData, kept out of checkpoints
+        # Non-persistent (kept out of checkpoints; run_train rebuilds them from ProcessedData)
+        # and only registered when used. With every flag off, an item without an ID
+        # (id_idx == 0) has a zero representation (R4: a0 is ID-only; cold items are
+        # unscorable, unlike SASRec's row per catalog item).
         self.register_buffer("id_idx", torch.as_tensor(id_idx, dtype=torch.long), persistent=False)
-        self.register_buffer("audio", torch.as_tensor(features.audio), persistent=False)
-        self.register_buffer("has_audio", torch.as_tensor(features.has_audio), persistent=False)
-        self.register_buffer(
-            "artist_idx", torch.as_tensor(features.artist_idx, dtype=torch.long), persistent=False
-        )
+        if use_audio:
+            self.register_buffer("audio", torch.as_tensor(features.audio), persistent=False)
+            self.register_buffer("has_audio", torch.as_tensor(features.has_audio), persistent=False)
+        if use_artist:
+            self.register_buffer(
+                "artist_idx",
+                torch.as_tensor(features.artist_idx, dtype=torch.long),
+                persistent=False,
+            )
         if use_audio:
             self.audio_mlp = nn.Sequential(
                 nn.Linear(features.audio.shape[1], d), nn.GELU(), nn.Linear(d, d)
