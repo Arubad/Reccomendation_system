@@ -47,6 +47,8 @@ def test_primary_artist_and_pop(synth):
     first = am.group_by("item_id").agg(pl.col("artist_id").min())
     idx = vocab.encode(first["item_id"].to_numpy())
     a = first["artist_id"].to_numpy()
+    known = idx > 0  # a rare item without audio can fall below min_count and stay out of the vocab
+    idx, a = idx[known], a[known]
     same_idx = f.artist_idx[idx][:, None] == f.artist_idx[idx][None, :]
     assert np.array_equal(same_idx, a[:, None] == a[None, :])
     assert (f.artist_idx[idx] > 0).all()

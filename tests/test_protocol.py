@@ -77,3 +77,16 @@ def test_evaluate_batches_equal_unbatched():
 def test_evaluate_rejects_short_recs():
     with pytest.raises(ValueError):
         evaluate(Fixed({1: np.array([1])}), {1: np.array([1])}, n_items=3, ks=(2,))
+
+
+def test_split_by_history_warm_cold():
+    from hookrec.eval.protocol import split_by_history
+
+    truth = {1: np.array([5]), 2: np.array([6, 7]), 9: np.array([1])}
+    warm, cold = split_by_history(truth, np.array([2, 2, 1, 4]))
+    assert set(warm) == {1, 2} and set(cold) == {9}
+    assert warm[2].tolist() == [6, 7]
+    w2, c2 = split_by_history({}, np.array([], dtype=np.int64))
+    assert w2 == {} and c2 == {}
+    w3, c3 = split_by_history(truth, np.array([], dtype=np.int64))
+    assert w3 == {} and set(c3) == {1, 2, 9}

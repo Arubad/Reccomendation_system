@@ -1,9 +1,10 @@
 """Small structured synthetic Yambda-like data for tests.
 
-Layout (t0 = min timestamp, DAY = 17280 five-second units):
-  train       [t0, t0+300d)
-  gap/test    test window [t0+300d+30min, t0+301d)
-  trailing    a few skip-only listens after the window so the data spans >= n_days-ish
+Layout follows the official Yambda split (anchored at the last timestamp, DAY = 17280 units):
+  t_last      BASE_TS + n_days*DAY - 1 (the last event; nothing exists after it)
+  test        [t_last - DAY, t_last]
+  gap         the 30 minutes before the test day (no events)
+  train       [BASE_TS, t_last - DAY - 30min), >= 300 days with the default n_days=301
 Users prefer 1-2 artist clusters; audio embeddings are artist centroid + noise.
 Special users (ids): 0-2 have events only in the test window, 3-5 only skip in the test window,
 6 only ever skips, 7+ are regular. The last N_NEW items first appear inside the test window.
@@ -31,14 +32,17 @@ def _sample_items(rng, artists: np.ndarray, n_pool: int, n_artists: int) -> np.n
 def make_synthetic_yambda(
     n_users: int = 50,
     n_items: int = 200,
-    n_days: int = 310,
+    n_days: int = 301,
     n_artists: int = 20,
     emb_dim: int = 16,
     missing_audio_frac: float = 0.1,
     seed: int = 0,
 ) -> dict[str, pl.DataFrame]:
-    assert n_users > N_SPECIAL + 2 and n_days >= 303 and n_items > 4 * N_NEW
+    assert n_users > N_SPECIAL + 2 and n_days >= 301 and n_items > 4 * N_NEW
     rng = np.random.default_rng(seed)
+    t_last = BASE_TS + n_days * DAY - 1
+    w_start = t_last - DAY  # test window start (inclusive)
+    train_span = w_start - GAP - BASE_TS  # train events lie in [BASE_TS, BASE_TS + train_span)
     n_old = n_items - N_NEW
     uids = np.arange(n_users)
 
@@ -65,31 +69,22 @@ def make_synthetic_yambda(
 
     item_tr, pref_tr = draw(u_tr, n_old)
     item_w, pref_w = draw(u_w, n_items)
-    ts_tr = BASE_TS + rng.integers(0, 300 * DAY, size=len(u_tr))
-    ts_w = BASE_TS + 300 * DAY + GAP + rng.integers(0, DAY - GAP, size=len(u_w))
+    ts_tr = BASE_TS + rng.integers(0, train_span, size=len(u_tr))
+    ts_w = w_start + rng.integers(0, DAY + 1, size=len(u_w))
 
     # one forced listen per new item inside the window, by a regular user
     new_items = np.arange(n_old, n_items)
     u_new = N_SPECIAL + 1 + (new_items % (n_users - N_SPECIAL - 1))
-    ts_new = BASE_TS + 300 * DAY + GAP + rng.integers(0, DAY - GAP, size=N_NEW)
+    ts_new = w_start + rng.integers(0, DAY + 1, size=N_NEW)
+    ts_new[0] = t_last  # pin the last timestamp
 
-    # trailing skip-only events after the window (so the data spans n_days)
-    n_tail = 5
-    u_tail = np.full(n_tail, N_SPECIAL)
-    item_tail = rng.integers(0, n_old, size=n_tail)
-    ts_tail = BASE_TS + (n_days - 1) * DAY + rng.integers(0, DAY, size=n_tail)
-
-    uid = np.concatenate([u_tr, u_w, u_new, u_tail])
-    item = np.concatenate([item_tr, item_w, new_items, item_tail])
-    ts = np.concatenate([ts_tr, ts_w, ts_new, ts_tail])
-    is_pref = np.concatenate([pref_tr, pref_w, np.ones(N_NEW, bool), np.zeros(n_tail, bool)])
-    in_window = np.concatenate(
-        [np.zeros(len(u_tr), bool), np.ones(len(u_w) + N_NEW, bool), np.zeros(n_tail, bool)]
-    )
+    uid = np.concatenate([u_tr, u_w, u_new])
+    item = np.concatenate([item_tr, item_w, new_items])
+    ts = np.concatenate([ts_tr, ts_w, ts_new])
+    is_pref = np.concatenate([pref_tr, pref_w, np.ones(N_NEW, bool)])
+    in_window = np.concatenate([np.zeros(len(u_tr), bool), np.ones(len(u_w) + N_NEW, bool)])
     forced_pos = np.zeros(len(uid), bool)
     forced_pos[len(u_tr) + len(u_w) : len(u_tr) + len(u_w) + N_NEW] = True
-    is_tail = np.zeros(len(uid), bool)
-    is_tail[-n_tail:] = True
     ts[np.flatnonzero(u_tr == N_SPECIAL + 1)[0]] = BASE_TS  # pin t0
 
     # event types: mostly listens, a few likes/dislikes/unlikes/undislikes
@@ -99,12 +94,12 @@ def make_synthetic_yambda(
     etype[(r >= 0.05) & (r < 0.07)] = "dislike"
     etype[(r >= 0.07) & (r < 0.08)] = "unlike"
     etype[(r >= 0.08) & (r < 0.09)] = "undislike"
-    regular_train = np.flatnonzero((uid >= N_SPECIAL) & ~in_window & ~is_tail)
+    regular_train = np.flatnonzero((uid >= N_SPECIAL) & ~in_window)
     etype[regular_train[:4]] = ["like", "dislike", "unlike", "undislike"]
-    etype[forced_pos | is_tail | (uid < N_SPECIAL)] = "listen"
+    etype[forced_pos | (uid < N_SPECIAL)] = "listen"
 
     ratio = np.where(is_pref, rng.integers(60, 101, len(uid)), rng.integers(0, 40, len(uid)))
-    skip_only = (uid == 6) | ((uid >= 3) & (uid <= 5) & in_window) | is_tail
+    skip_only = (uid == 6) | ((uid >= 3) & (uid <= 5) & in_window)
     ratio = np.where(skip_only, rng.integers(0, 40, len(uid)), ratio)
     ratio = np.where((uid < 3) | forced_pos, rng.integers(60, 101, len(uid)), ratio)
     ratio = np.where(forced_pos, 90, ratio)
@@ -112,7 +107,7 @@ def make_synthetic_yambda(
 
     track_len = rng.integers(120, 300, size=n_items)[item].astype(np.int64)
     # a few listens with 0/null duration (cleaned in Task 3)
-    cand = np.flatnonzero(listen & (uid >= N_SPECIAL) & ~in_window & ~is_tail)
+    cand = np.flatnonzero(listen & (uid >= N_SPECIAL) & ~in_window)
     zero_rows, null_rows = cand[:2], cand[2:4]
     track_len[zero_rows] = 0
 

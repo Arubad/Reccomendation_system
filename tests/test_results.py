@@ -18,3 +18,17 @@ def test_save_run_collision_and_load_sorted(tmp_path):
     assert len(runs) == 3
     assert [r["timestamp"] for r in runs] == sorted(r["timestamp"] for r in runs)
     assert load_runs(tmp_path / "missing") == []
+
+
+def test_save_run_serialises_numpy_path_nan_and_int_keys(tmp_path):
+    from pathlib import Path
+
+    import numpy as np
+
+    cfg = {"dir": Path("/x/y"), "lr": np.float32(0.5)}
+    metrics = {"ndcg@10": float("nan"), "inf": float("inf"), "by_uid": {np.int64(3): np.float32(0.25)}}
+    p = save_run(tmp_path, "r", cfg, metrics)
+    d = json.loads(p.read_text())
+    assert d["config"] == {"dir": "/x/y", "lr": 0.5}
+    assert d["metrics"] == {"ndcg@10": None, "inf": None, "by_uid": {"3": 0.25}}
+    assert not list(tmp_path.glob("*.tmp"))

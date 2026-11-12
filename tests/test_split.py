@@ -13,8 +13,8 @@ GAP = 1800 // 5
 @pytest.fixture(scope="module")
 def parts(synth):
     lf = clean_events(synth["multi_event"].lazy())
-    t0 = lf.select(pl.col("timestamp").min()).collect().item()
-    return t0, global_temporal_split(lf)
+    t_last = lf.select(pl.col("timestamp").max()).collect().item()
+    return t_last, global_temporal_split(lf)
 
 
 def _rng(lf):
@@ -23,24 +23,41 @@ def _rng(lf):
 
 
 def test_split_boundaries(parts):
-    t0, s = parts
-    assert s.t_train_end == t0 + 300 * DAY
-    assert s.t_test_start == s.t_train_end + GAP
-    assert s.t_test_end == s.t_train_end + DAY
-    tr_lo, tr_hi = _rng(s.train)
-    assert tr_lo == t0 and tr_hi < s.t_train_end
+    t_last, s = parts
+    assert s.t_test_start == t_last - DAY
+    assert s.t_test_end == t_last + 1
+    assert s.t_train_end == s.t_test_start - GAP  # gap sits on the train side
     te_lo, te_hi = _rng(s.test)
-    assert te_lo >= s.t_test_start and te_hi < s.t_test_end
-    # trailing skip-only events (~day 309) are excluded from every part
-    for part in (s.train, s.val_train, s.val, s.test):
-        assert _rng(part)[1] < s.t_test_end
+    assert te_lo >= s.t_test_start and te_hi == t_last
+    tr_lo, tr_hi = _rng(s.train)
+    assert tr_hi < s.t_train_end
+    assert s.t_train_end - tr_lo >= 299 * DAY  # train keeps the earliest history
     assert s.test.collect().height > 0
     v_lo, v_hi = _rng(s.val)
-    assert v_lo >= s.t_train_end - DAY + GAP and v_hi < s.t_train_end
+    assert v_lo >= s.t_train_end - DAY and v_hi < s.t_train_end
     vt_hi = _rng(s.val_train)[1]
-    assert vt_hi < s.t_train_end - DAY
-    assert vt_hi + GAP <= v_lo
+    assert vt_hi < s.t_train_end - DAY - GAP
+    assert s.t_val_start == s.t_train_end - DAY
+    assert s.t_val_train_end == s.t_val_start - GAP
     assert_no_leakage(s)
+
+
+def test_test_is_full_day_and_gap_is_empty_in_train(parts):
+    _, s = parts
+    assert s.t_test_end - s.t_test_start == DAY + 1  # [t_last - day, t_last]
+    assert s.t_test_start - s.t_train_end == GAP
+    ts = pl.col("timestamp")
+    in_gap = (ts >= s.t_train_end) & (ts < s.t_test_start)
+    for part in (s.train, s.val, s.test):
+        assert part.filter(in_gap).collect().height == 0
+
+
+def test_split_anchored_at_last_ts_not_first():
+    lf = pl.DataFrame({"timestamp": [10, 500_000, 600_000]}).lazy()
+    s = global_temporal_split(lf)
+    assert s.t_test_start == 600_000 - DAY
+    assert s.train.collect()["timestamp"].to_list() == [10, 500_000]
+    assert s.test.collect()["timestamp"].to_list() == [600_000]
 
 
 def test_assert_no_leakage_raises(parts):

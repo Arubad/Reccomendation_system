@@ -53,6 +53,18 @@ def build_ground_truth(test_lf_labeled: pl.LazyFrame, vocab: ItemVocab) -> dict[
     return {int(u): g for u, g in zip(uids[np.concatenate([[0], cuts])], groups)}
 
 
+def split_by_history(
+    truth: dict[int, np.ndarray], history_uids: np.ndarray
+) -> tuple[dict[int, np.ndarray], dict[int, np.ndarray]]:
+    """Split truth into (warm, cold): warm users appear in `history_uids` (official protocol)."""
+    hist = set(np.unique(np.asarray(history_uids)).tolist())
+    warm: dict[int, np.ndarray] = {}
+    cold: dict[int, np.ndarray] = {}
+    for u, t in truth.items():
+        (warm if u in hist else cold)[u] = t
+    return warm, cold
+
+
 def count_oov(truth: dict[int, np.ndarray], n_items: int) -> int:
     """Number of ground-truth entries that are out-of-vocabulary placeholders (> N)."""
     return int(sum(int((t > n_items).sum()) for t in truth.values()))

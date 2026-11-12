@@ -1,11 +1,18 @@
-"""Yambda Global Temporal Split (GTS).
+"""Yambda Global Temporal Split (GTS), mirroring the official benchmark code.
 
-Paper (arXiv 2505.22238) gives "Train: 300 days, Gap: 30 minutes, Test: 1 day" but does not say
-whether the gap is carved out of the test day. We take the gap out of the test day, so the test
-window is [t_train_end + gap, t_train_end + 1 day), matching the synthetic fixture window.
-Validation repeats the scheme one day earlier: val = [t_train_end - 1d + gap, t_train_end),
-val_train = [t0, t_train_end - 1d). Everything at or past t_test_end is dropped from every part.
-All boundaries are ints in timestamp units.
+Source: `benchmarks/yambda/processing/timesplit.py` (`flat_split_train_val_test`, docstring and
+the `train_timestamp = test_timestamp - gap_size - val_size - gap_size` line) and
+`benchmarks/yambda/constants.py` (GAP_SIZE = 30 min, VAL_SIZE = TEST_SIZE = 1 day,
+TEST_TIMESTAMP = LAST_TIMESTAMP - TEST_SIZE) in the HF dataset repo `yandex/yambda`.
+
+The split is anchored at the LAST timestamp, not the first:
+  t_test_start = t_last - test_days * day; test = ts >= t_test_start (t_test_end = t_last + 1)
+  t_train_end  = t_test_start - gap;       train = ts < t_train_end
+  val mirrors it inside train: val = [t_train_end - day, t_train_end),
+  val_train = ts < t_val_start - gap  (the official "train" when val_size != 0).
+The gap is carved from the train side; the test day is a full day. The official code does not
+bound train from below (train = [0, ...)), so `train_days` is only validated (>= 2) and does not
+cut the start of history. All boundaries are ints in timestamp units.
 """
 
 from __future__ import annotations
@@ -25,14 +32,15 @@ class Split:
     t_test_start: int
     t_test_end: int
     day_units: int = 86400 // 5  # one day in ts units; sets the val window
-
-    @property
-    def t_val_train_end(self) -> int:
-        return self.t_train_end - self.day_units
+    gap_units: int = 1800 // 5  # gap in ts units (test_start - train_end)
 
     @property
     def t_val_start(self) -> int:
-        return self.t_val_train_end + (self.t_test_start - self.t_train_end)
+        return self.t_train_end - self.day_units
+
+    @property
+    def t_val_train_end(self) -> int:
+        return self.t_val_start - self.gap_units
 
 
 def global_temporal_split(
@@ -44,17 +52,17 @@ def global_temporal_split(
 ) -> Split:
     if train_days < 2:
         raise ValueError(f"train_days must be >= 2 (need a validation day), got {train_days}")
-    t0 = lf.select(pl.col("timestamp").min()).collect().item()
-    if t0 is None:
+    t_last = lf.select(pl.col("timestamp").max()).collect().item()
+    if t_last is None:
         raise ValueError("cannot split an empty event table")
-    t0 = int(t0)
+    t_last = int(t_last)
     day = 86400 // ts_unit_seconds
     gap = gap_seconds // ts_unit_seconds
-    t_train_end = t0 + train_days * day
-    t_test_start = t_train_end + gap
-    t_test_end = t_train_end + test_days * day
-    t_val_train_end = t_train_end - day
-    t_val_start = t_val_train_end + gap
+    t_test_start = t_last - test_days * day
+    t_test_end = t_last + 1
+    t_train_end = t_test_start - gap
+    t_val_start = t_train_end - day
+    t_val_train_end = t_val_start - gap
 
     ts = pl.col("timestamp")
     return Split(
@@ -66,6 +74,7 @@ def global_temporal_split(
         t_test_start=t_test_start,
         t_test_end=t_test_end,
         day_units=day,
+        gap_units=gap,
     )
 
 

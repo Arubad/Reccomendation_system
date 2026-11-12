@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,22 +28,31 @@ def save_run(
         "metrics": metrics,
         "extra": extra or {},
     }
+    text = json.dumps(_clean(record), indent=2, allow_nan=False)
     stem = f"{run_name}-{now.strftime('%Y%m%d-%H%M%S')}"
     path = out_dir / f"{stem}.json"
     n = 0
-    while True:
-        try:
-            with open(path, "x") as f:
-                json.dump(record, f, indent=2, default=_jsonable)
-            return path
-        except FileExistsError:
-            n += 1
-            path = out_dir / f"{stem}-{n}.json"
+    while path.exists():
+        n += 1
+        path = out_dir / f"{stem}-{n}.json"
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+    return path
 
 
-def _jsonable(o):
+def _clean(o):
+    """JSON-safe copy: numpy -> python, non-finite floats -> None, keys -> str, other -> str."""
+    if isinstance(o, dict):
+        return {str(k): _clean(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple, set)):
+        return [_clean(v) for v in o]
     if hasattr(o, "tolist"):  # numpy scalars / arrays
-        return o.tolist()
+        return _clean(o.tolist())
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if o is None or isinstance(o, (bool, int, str)):
+        return o
     return str(o)
 
 
