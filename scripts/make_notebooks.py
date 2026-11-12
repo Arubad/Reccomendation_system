@@ -19,10 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_URL = "https://github.com/Arubad/Reccomendation_system.git"
-DEFAULT_GIT_REF = "v0.2-r2"  # the tag the reported runs use; the maintainer creates it
-# K4P runs scripts/profile_train.py, which is newer than DEFAULT_GIT_REF: it tracks the dev
-# branch until the maintainer tags a release that contains the profiler (then pin it here).
-PROFILE_GIT_REF = "hookseq-impl"
+DEFAULT_GIT_REF = "v0.3"  # the tag the reported runs (and K4P) use; the maintainer creates it
 POLARS_FLOOR = "2.1"  # = pyproject's `polars>=` floor (tests/test_notebooks.py checks they agree)
 
 CPU = {"accelerator": "none", "isGpuEnabled": False}
@@ -692,9 +689,8 @@ def notebooks(repo_url: str, git_ref: str) -> dict[str, dict]:
                 "wait, H2D, encode, negatives + item_repr, loss, backward, optimizer), the "
                 "unsynchronised steps/s, a torch.profiler top-25, one timed periodic eval and a "
                 "DataLoader-only sweep (num_workers 0/2/4 x pin_memory). Nothing is trained to "
-                "keep.\n\n**GIT_REF defaults to the branch `hookseq-impl`, not a release tag:** "
-                f"the profiler is newer than the `{DEFAULT_GIT_REF}` tag the K4 runs use. Pin "
-                "GIT_REF to a tag once one contains `scripts/profile_train.py`.",
+                "keep.\n\nGIT_REF defaults to the release tag the K4 runs use, so the profiled "
+                "step is the step those runs train.",
             ),
             [
                 ("CONFIGS", ["configs/sasrec.yaml", "configs/hookseq.yaml"], "profiled in order"),
@@ -708,8 +704,6 @@ def notebooks(repo_url: str, git_ref: str) -> dict[str, dict]:
             ],
             [K4P_DISCOVER, K4P_WORK, K4P_SUMMARY],
             GPU,
-            ref=PROFILE_GIT_REF,
-            ref_note="branch or tag to run: the dev branch (the profiler postdates the release tag)",
         ),
         "k5_eval_report": nb(
             _md(

@@ -81,16 +81,21 @@ def test_generated_notebooks_valid(name):
     assert "input(" not in src
 
 
-def test_k4p_tracks_the_dev_branch():
-    """The profiler postdates the release tag: K4P defaults to the branch, whatever --git-ref."""
+def test_every_notebook_including_k4p_is_pinned_to_the_git_ref():
+    """v0.3 contains the profiler, so K4P follows --git-ref like K0-K5 (no dev branch)."""
     gen = _gen()
+    assert gen.DEFAULT_GIT_REF == "v0.3"
+    assert not hasattr(gen, "PROFILE_GIT_REF")
     nbs = gen.notebooks("https://example.invalid/r.git", "some-tag")
-    params = _code(nbs["k4p_profile"])[0]
-    assert re.search(r'^GIT_REF = "hookseq-impl"', params, re.MULTILINE)
-    assert gen.PROFILE_GIT_REF == "hookseq-impl"
+    for name, nb in nbs.items():
+        assert re.search(r'^GIT_REF = "some-tag"', _code(nb)[0], re.MULTILINE), name
     md = "".join(nbs["k4p_profile"]["cells"][0]["source"])
-    assert "hookseq-impl" in md and gen.DEFAULT_GIT_REF in md
-    assert re.search(r'^GIT_REF = "some-tag"', _code(nbs["k4_train"])[0], re.MULTILINE)
+    assert "hookseq-impl" not in md
+    shipped = sorted(NB_DIR.glob("*.ipynb"))
+    assert len(shipped) == len(nbs)
+    for p in shipped:  # the committed files, K4P included
+        params = _code(json.loads(p.read_text()))[0]
+        assert re.search(r'^GIT_REF = "v0.3"', params, re.MULTILINE), p.name
 
 
 def test_k4p_profiles_both_configs(processed_synth, tmp_path):
