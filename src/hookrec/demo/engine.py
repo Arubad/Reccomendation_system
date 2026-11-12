@@ -1,9 +1,13 @@
 """Demo engine: loads a bundle on CPU and scores sessions, on the GPU when one is available.
 
-Nothing touches CUDA at import or construction. The two scoring functions are wrapped with
-`spaces.GPU` only when `spaces` is installed (ZeroGPU); inside them the model and tensors move
-to CUDA if it is available and the result comes back as numpy. Without CUDA they run on CPU.
-They look the model and item vectors up by engine token rather than taking them as arguments.
+Nothing touches CUDA at import. The two scoring functions are wrapped with `spaces.GPU` only
+when `spaces` is installed (ZeroGPU). They look the model and item vectors up by engine token
+rather than taking them as arguments, and return numpy.
+
+Placement follows the ZeroGPU docs: with `spaces`, the engine moves its models and item vectors
+to `cuda` once at construction (ZeroGPU emulates CUDA outside `@spaces.GPU` and defers the
+transfer), and the decorated functions only compute. Without `spaces` the engine loads on CPU
+and, if CUDA is available, moves the model to it on first use and keeps it resident.
 """
 
 from __future__ import annotations
@@ -44,30 +48,30 @@ SESSION_SPACING_S = 60  # synthesised seconds between the events of a typed-in s
 # call, never a module or the item matrix.
 _RESIDENT: dict[int, dict] = {}
 _TOKENS = itertools.count()
-_MOVE_LOCK = threading.Lock()  # one move-to-device / score / move-back at a time
+_MOVE_LOCK = threading.Lock()  # serialises the lazy first move to CUDA (non-ZeroGPU only)
+_ZEROGPU_DEVICE = "cuda"  # emulated outside @spaces.GPU, real inside
+
+
+def _spaces_active() -> bool:
+    return gpu._spaces is not None
 
 
 def _device(device: str | None) -> torch.device:
+    if _spaces_active():  # placement was done once, at construction
+        return torch.device(_ZEROGPU_DEVICE)
     return torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
 
 @contextlib.contextmanager
 def _on_device(model, device: str | None):
-    """Model on the scoring device for the block. On ZeroGPU it goes back to CPU afterwards (the
-    GPU is released between calls); elsewhere it stays resident after the first move."""
+    """The scoring device, with the model on it. On ZeroGPU the model already is (moved once at
+    engine construction, as the ZeroGPU docs advise), so nothing moves per call. Elsewhere it
+    moves to CUDA on first use when available and stays resident."""
     dev = _device(device)
-    with _MOVE_LOCK:
-        if dev.type != "cpu":
-            model.to(dev)
-        try:
-            yield dev
-        finally:
-            if dev.type != "cpu" and _spaces_active():
-                model.to("cpu")
-
-
-def _spaces_active() -> bool:
-    return gpu._spaces is not None
+    if not _spaces_active() and dev.type != "cpu":
+        with _MOVE_LOCK:
+            model.to(dev)  # a no-op once resident
+    yield dev
 
 
 def _encode_impl(token: int, name: str, batch: dict, device: str | None = None) -> np.ndarray:
@@ -110,6 +114,11 @@ class DemoEngine:
             "hookseq": torch.from_numpy(a["vec_hookseq"][: self.n_subset + 1].astype(np.float32)),
             "sasrec": torch.from_numpy(a["vec_sasrec"][: self.n_subset + 1].astype(np.float32)),
         }
+        if _spaces_active():
+            dev = torch.device(_ZEROGPU_DEVICE)
+            for m in self.models.values():
+                m.to(dev)
+            self._vecs = {k: v.to(dev) for k, v in self._vecs.items()}
         _RESIDENT[self._token] = {"models": self.models, "vecs": self._vecs}
         self._w = {k: a[k] for k in a if k.startswith("w_")}
         self.idless_audio_items = self.raw_ids[~self.has_id & self.has_audio].tolist()
@@ -222,7 +231,7 @@ class DemoEngine:
             raise ValueError(f"track {raw_item_id} has an ID embedding: pick an ID-less track")
         if not self.has_audio[i]:
             raise ValueError(f"track {raw_item_id} has no audio embedding")
-        scores = self._sample_states() @ self._vecs["hookseq"][i + 1].numpy()
+        scores = self._sample_states() @ self._vecs["hookseq"][i + 1].cpu().numpy()
         order = np.argsort(-scores, kind="stable")[: max(1, int(k))]
         uids = self._w["w_uids"]
         return [{"uid": int(uids[j]), "score": float(scores[j])} for j in order]

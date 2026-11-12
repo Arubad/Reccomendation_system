@@ -341,3 +341,28 @@ def test_ensure_hookrec_installs_without_deps(monkeypatch):
     monkeypatch.setattr(mod.importlib.util, "find_spec", lambda name: None)
     mod.ensure_hookrec("v9")
     assert "--no-deps" in calls[0] and calls[0][-1].endswith("Reccomendation_system.git@v9")
+
+
+def test_zerogpu_placement_is_once_at_construction(bundle_dir, engine, monkeypatch):
+    """With `spaces` active the engine places models once and the GPU calls never move them."""
+    import hookrec.demo.engine as eng
+
+    class FakeSpaces:
+        @staticmethod
+        def GPU(fn):
+            return fn
+
+    monkeypatch.setattr(gpu, "_spaces", FakeSpaces)
+    monkeypatch.setattr(eng, "_ZEROGPU_DEVICE", "cpu")  # no CUDA here: stand in for the emulation
+    moves = []
+    real_to = torch.nn.Module.to
+    monkeypatch.setattr(
+        torch.nn.Module, "to", lambda self, *a, **k: moves.append(a) or real_to(self, *a, **k)
+    )
+    e = eng.DemoEngine(bundle_dir)
+    placed = len(moves)
+    assert placed == 2  # one move per model, at construction
+    session = engine.sample_user_session(0)
+    assert e.recommend(session, "hookseq", 5) == engine.recommend(session, "hookseq", 5)
+    e.new_track_audience(e.idless_audio_items[0], 3)
+    assert len(moves) == placed  # nothing moves inside the scoring calls
