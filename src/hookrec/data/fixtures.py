@@ -139,7 +139,7 @@ def make_synthetic_yambda(
     artist_of = np.arange(n_items) % n_artists
     embed = (centroids[artist_of] + 0.3 * rng.normal(size=(n_items, emb_dim))).astype(np.float32)
     normed = embed / np.linalg.norm(embed, axis=1, keepdims=True)
-    n_missing = int(round(missing_audio_frac * n_items))
+    n_missing = round(missing_audio_frac * n_items)
     missing = rng.choice(n_old, size=n_missing, replace=False)
     keep = np.setdiff1d(np.arange(n_items), missing)
     embeddings = pl.DataFrame(
