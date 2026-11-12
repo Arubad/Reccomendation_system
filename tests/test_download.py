@@ -51,3 +51,9 @@ def test_download_skips_existing(tmp_path, monkeypatch):
     n = len(calls)
     dl.download_yambda("50m", tmp_path)
     assert len(calls) == n
+
+
+def test_filter_embeddings_f16_and_empty_match(synth_dir, tmp_path):
+    out = tmp_path / "none.parquet"
+    assert dl.filter_embeddings(synth_dir / "embeddings.parquet", np.array([10**9]), out) == 0
+    assert pl.read_parquet(out).height == 0

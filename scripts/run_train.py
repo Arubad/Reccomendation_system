@@ -28,7 +28,7 @@ import yaml
 from hookrec.data.processed import load_processed
 from hookrec.models.base import build_model, evaluate_split, history_for
 from hookrec.models.popularity import MostPop
-from hookrec.train.checkpoint import load_latest
+from hookrec.train.checkpoint import load_latest, read_horizon
 from hookrec.train.datasets import session_gap_from
 from hookrec.train.scoring import SeqRecommender
 from hookrec.train.trainer import device_name, train, training_hash
@@ -72,15 +72,26 @@ def best_val_horizon(out: Path, name: str, processed_dir: str, cfg: dict) -> tup
 
 def _set_test_horizon(args, cfg: dict, name: str, processed_dir: str) -> None:
     found = best_val_horizon(args.out, name, processed_dir, cfg)
+    dirs = [args.ckpt, *args.resume]
+    ck = read_horizon(dirs)  # sidecar: no full checkpoint load (~2.3 GB at 500M)
     if found is not None:
+        if ck is not None and (ck["max_steps"], ck["schedule_steps"]) != found:
+            log.warning(
+                "checkpoint %s horizon (%d / %d steps) overrides the val-derived horizon "
+                "(%d / %d steps); the resumed run keeps the checkpoint's",
+                ck["path"], ck["max_steps"], ck["schedule_steps"], *found,
+            )  # fmt: skip
         cfg["train"]["max_steps"], cfg["train"]["schedule_steps"] = found
         log.info("test run: max_steps = best val step %d, schedule_steps = %d", *found)
         return
-    payload = load_latest([args.ckpt, *args.resume])
-    if payload is not None and "max_steps" in payload:
+    if ck is None:  # no sidecar (older checkpoint): fall back to reading the checkpoint itself
+        payload = load_latest(dirs)
+        if payload is not None and "max_steps" in payload:
+            ck = {k: payload[k] for k in ("max_steps", "schedule_steps", "path")}
+    if ck is not None:
         log.info(
             "no matching '%s-val' run in %s: resuming %s with its horizon (%d / %d steps)",
-            name, args.out, payload["path"], payload["max_steps"], payload["schedule_steps"],
+            name, args.out, ck["path"], ck["max_steps"], ck["schedule_steps"],
         )  # fmt: skip
         return
     if not args.allow_no_val:

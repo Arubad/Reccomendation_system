@@ -286,3 +286,33 @@ def test_best_val_run_matches_config_up_to_operational_keys(tmp_path):
     save_run(tmp_path, "sasrec-val", cfg, {"ndcg@10": 0.9}, {"processed_dir": "x", "best_step": 2})
     assert mod.best_val_horizon(tmp_path, "sasrec", "d", cfg) == (8, 999)
     assert mod.best_val_horizon(tmp_path, "sasrec", "none", cfg) is None
+
+
+def test_session_start_env_sets_max_hours_clock(processed_synth, tmp_path, monkeypatch):
+    import time
+
+    monkeypatch.setenv("HOOKREC_SESSION_START", str(time.time() - 10 * 3600))  # started 10 h ago
+    cfg = tiny_cfg(**{"train.max_hours": 9.0})
+    r = train(cfg, processed_synth, _fresh(cfg, processed_synth), "val", tmp_path)
+    assert (r.stopped_reason, r.steps) == ("max_hours", 0)
+    monkeypatch.setenv("HOOKREC_SESSION_START", str(time.time()))
+    r = train(cfg, processed_synth, _fresh(cfg, processed_synth), "val", tmp_path / "b")
+    assert r.stopped_reason != "max_hours"
+
+
+def test_checkpoint_horizon_sidecar(processed_synth, tmp_path, monkeypatch):
+    from hookrec.train import checkpoint as ck
+
+    cfg = tiny_cfg(**{"train.max_steps": 10, "train.max_hours": 0.0})
+    cfg["train"]["schedule_steps"] = 77
+    train(cfg, processed_synth, _fresh(cfg, processed_synth), "val", tmp_path)
+    h = ck.read_horizon([tmp_path])
+    assert (h["max_steps"], h["schedule_steps"]) == (10, 77)
+    assert sorted(p.name for p in tmp_path.glob("ckpt-*.json")) == ["ckpt-00000000.json"]
+    # reading the horizon must not deserialize the checkpoint
+    monkeypatch.setattr(ck.torch, "load", lambda *a, **k: pytest.fail("loaded checkpoint"))
+    assert ck.read_horizon([tmp_path])["max_steps"] == 10
+    # no sidecar (older checkpoint) -> None, so the caller can fall back
+    for p in tmp_path.glob("ckpt-*.json"):
+        p.unlink()
+    assert ck.read_horizon([tmp_path]) is None

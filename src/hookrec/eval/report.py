@@ -212,7 +212,8 @@ def _safe_load_runs(results_dir: Path) -> list[dict]:
             r = json.loads(p.read_text())
             if not (r["run_name"] and r["timestamp"] and isinstance(r["metrics"], dict)):
                 raise ValueError("incomplete record")
-            r.setdefault("extra", {})
+            if r.get("extra") is None:
+                r["extra"] = {}
             runs.append(r)
         except Exception as e:  # noqa: BLE001
             log.warning("skipping unreadable run record %s: %s", p.name, e)

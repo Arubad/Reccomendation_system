@@ -65,17 +65,21 @@ def filter_embeddings(
     """
     elem = pl.Float16 if np.dtype(dtype) == np.float16 else pl.Float32
     ids = pl.Series("ids", np.asarray(item_ids))
+    src = pl.scan_parquet(emb_path)
+    # Cast inside the lazy plan so only the narrow matched rows are ever materialized.
+    # D comes from the schema (fixed-size column) or one cheap head(1) row (list column).
+    col_type = src.collect_schema()[column]
+    if isinstance(col_type, pl.Array):
+        dim = col_type.size
+    else:
+        first = src.select(pl.col(column).list.len()).head(1).collect()
+        dim = int(first.item()) if first.height else None
+    embed = pl.col(column).cast(pl.Array(elem, dim) if dim else pl.List(elem)).alias("embed")
     df = (
-        pl.scan_parquet(emb_path)
-        .filter(pl.col("item_id").is_in(ids.implode()))
-        .select(pl.col("item_id"), pl.col(column).alias("embed"))
+        src.filter(pl.col("item_id").is_in(ids.implode()))
+        .select(pl.col("item_id"), embed)
         .collect(engine="streaming")
     )
-    if df.height:
-        embed = pl.col("embed").cast(pl.Array(elem, len(df["embed"][0])))
-    else:
-        embed = pl.col("embed").cast(pl.List(elem))
-    df = df.with_columns(embed)
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(out_path)
     return df.height

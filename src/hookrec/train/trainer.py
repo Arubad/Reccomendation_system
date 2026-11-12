@@ -51,9 +51,20 @@ from hookrec.utils.seed import set_seed
 
 log = logging.getLogger(__name__)
 
-# `max_hours` bounds the Kaggle session, so it is measured from when this process imported the
-# trainer (i.e. includes data loading), not from when `train` was called.
+# `max_hours` bounds the Kaggle session, so it is measured from the session start: the unix time
+# in env HOOKREC_SESSION_START (exported by the notebooks' first cell) if set, else from when
+# this process imported the trainer (includes data loading, not just the `train` call).
 _PROCESS_T0 = time.monotonic()
+
+
+def session_elapsed_seconds() -> float:
+    start = os.environ.get("HOOKREC_SESSION_START")
+    if start:
+        try:
+            return time.time() - float(start)
+        except ValueError:
+            raise ValueError(f"HOOKREC_SESSION_START must be unix seconds, got {start!r}") from None
+    return time.monotonic() - _PROCESS_T0
 
 # train.* keys that do not change what is learned (or that define the horizon, which is
 # persisted separately); they are excluded from `training_hash`.
@@ -300,7 +311,7 @@ def train(
             return "converged"
         if step >= max_steps:
             return "max_steps"
-        if time.monotonic() - _PROCESS_T0 > tc["max_hours"] * 3600:
+        if session_elapsed_seconds() > tc["max_hours"] * 3600:
             return "max_hours"
         return None
 

@@ -198,3 +198,13 @@ def test_write_readme_tables_survives_bad_files(tmp_path):
 def test_write_readme_tables_empty_dir(tmp_path):
     text = write_readme_tables(tmp_path / "nope", tmp_path / "o.md").read_text()
     assert "not yet run" in text
+
+
+def test_safe_load_runs_treats_null_extra_as_empty(tmp_path):
+    from hookrec.eval.report import _safe_load_runs
+
+    (tmp_path / "a.json").write_text(
+        json.dumps({"run_name": "a", "timestamp": "t", "metrics": {}, "extra": None})
+    )
+    (run,) = _safe_load_runs(tmp_path)
+    assert run["extra"] == {}

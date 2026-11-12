@@ -132,16 +132,27 @@ def build_sequences(
 
 
 def build_sequences_sharded(
-    lf_factory: Callable[[], pl.LazyFrame],
+    lf_factory: Callable[[], pl.LazyFrame] | None,
     vocab: ItemVocab,
     n_shards: int,
+    *,
+    shard_factory: Callable[[int], pl.LazyFrame] | None = None,
     **kw,
 ) -> PackedSequences:
-    """Same result as `build_sequences`, built one `uid % n_shards` shard at a time."""
-    shards = [
-        build_sequences(lf_factory().filter(pl.col("uid") % n_shards == s), vocab, **kw)
-        for s in range(n_shards)
-    ]
+    """Same result as `build_sequences`, built one `uid % n_shards` shard at a time.
+
+    By default each shard is `lf_factory()` filtered to its uids. With `shard_factory(s)` the
+    caller supplies shard `s` directly (already restricted to `uid % n_shards == s`), which
+    avoids re-filtering the whole table per shard; `lf_factory` is then unused.
+    """
+    if shard_factory is None:
+        if lf_factory is None:
+            raise ValueError("need lf_factory or shard_factory")
+
+        def shard_factory(s: int) -> pl.LazyFrame:
+            return lf_factory().filter(pl.col("uid") % n_shards == s)
+
+    shards = [build_sequences(shard_factory(s), vocab, **kw) for s in range(n_shards)]
     event_base = np.cumsum([0] + [len(s.items) for s in shards[:-1]])
     uids = np.concatenate([s.uids for s in shards])
     counts = np.concatenate([np.diff(s.offsets) for s in shards])

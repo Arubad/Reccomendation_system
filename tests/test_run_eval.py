@@ -127,3 +127,18 @@ def test_run_eval_ials_is_deterministic(processed_synth, tmp_path):
     path = ev.main(["--processed", str(processed_synth.path), "--run", str(run_json),
                     "--out", str(tmp_path / "r")])  # fmt: skip
     assert path.exists()  # drift check (1e-4) passed on the refit
+
+
+def test_check_drift_tolerances_and_missing_metric(caplog):
+    ev = _load("run_eval")
+    neural = {"run_name": "n-test", "config": {"model": {}}, "metrics": {"ndcg@10": 0.1}}
+    base = {"run_name": "mostpop-test", "config": {}, "metrics": {"ndcg@10": 0.1}}
+    with caplog.at_level("WARNING"):
+        ev.check_drift(neural, 0.1 + 5e-4)  # fp16-GPU vs CPU: within 1e-3
+    assert "drift" in caplog.text
+    with pytest.raises(RuntimeError, match="reproduce"):
+        ev.check_drift(neural, 0.1 + 5e-3)
+    with pytest.raises(RuntimeError, match="reproduce"):
+        ev.check_drift(base, 0.1 + 5e-4)  # baselines keep 1e-4
+    with pytest.raises(RuntimeError, match="ndcg@10"):
+        ev.check_drift({"run_name": "x", "config": {}, "metrics": {}}, 0.1)

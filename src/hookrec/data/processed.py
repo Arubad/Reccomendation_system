@@ -31,6 +31,8 @@ from hookrec.utils.config import config_hash
 log = logging.getLogger(__name__)
 
 EVENT_COLS = ["uid", "item_idx", "is_organic", "is_positive", "token", "ts"]
+# Columns every downstream stage reads from the cleaned+labeled work files.
+WORK_COLS = ["uid", "item_id", "timestamp", "is_organic", "token", "ratio_bucket", "is_positive"]
 
 
 @dataclass
@@ -99,33 +101,42 @@ def _write_events(df_lf: pl.LazyFrame, vocab: ItemVocab, path: Path) -> int:
         "is_positive",
         "token",
         pl.col("timestamp").alias("ts"),
-    ).collect()
-    item_idx = pl.Series("item_idx", vocab.encode(df["item_id"].to_numpy()), dtype=pl.Int32)
-    df = df.with_columns(item_idx).select(EVENT_COLS)
+    ).collect(engine="streaming")
+    idx = vocab.encode(df["item_id"].to_numpy())
+    assert (idx > 0).all(), "vocab must cover every event item (catalog = all events)"
+    item_idx = pl.Series("item_idx", idx, dtype=pl.Int32)
+    # deterministic output: total order (ties broken by item and token)
+    df = df.with_columns(item_idx).select(EVENT_COLS).sort("uid", "ts", "item_idx", "token")
     df.write_parquet(path)
     return df.height
 
 
 def _counts(lf: pl.LazyFrame) -> tuple[int, int]:
-    n_users, n_events = lf.select(pl.col("uid").n_unique(), pl.len()).collect().row(0)
+    n_users, n_events = lf.select(pl.col("uid").n_unique(), pl.len()).collect(engine="streaming").row(0)
     return int(n_users), int(n_events)
 
 
 def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
+    src = Path(raw_dir) / "flat" / cfg["size"] / "multi_event.parquet"
+    emb_path = Path(raw_dir) / cfg.get("embeddings_file", "embeddings.parquet")
+    artist_path = Path(raw_dir) / "artist_item_mapping.parquet"
+    missing = [str(p) for p in (src, emb_path, artist_path) if not p.exists()]
+    if missing:
+        raise FileNotFoundError("preprocess inputs not found: " + ", ".join(missing))
+
     st = _Stages()
     work = out / "_work"
     work.mkdir(parents=True)
     n_shards = int(cfg.get("n_shards", 1))
 
     # Stage A: clean + label once per uid shard.
-    src = Path(raw_dir) / "flat" / cfg["size"] / "multi_event.parquet"
     for s in range(n_shards):
         lf = scan_events(src)
         if n_shards > 1:
             lf = lf.filter(pl.col("uid") % n_shards == s)
-        label_events(clean_events(lf), cfg["full_threshold"]).collect().write_parquet(
-            work / f"events_{s}.parquet"
-        )
+        label_events(clean_events(lf), cfg["full_threshold"]).select(WORK_COLS).collect(
+            engine="streaming"
+        ).write_parquet(work / f"events_{s}.parquet")
     st.done("clean")
     all_lf = pl.scan_parquet(work / "events_*.parquet")
 
@@ -139,10 +150,9 @@ def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
         test_timestamp=sp.get("test_timestamp"),
     )
     extra = None
-    emb_path = Path(raw_dir) / cfg.get("embeddings_file", "embeddings.parquet")
     emb_col = cfg.get("emb_column", "normalized_embed")
     if cfg.get("include_embedding_only_items", False):
-        extra = pl.scan_parquet(emb_path).select("item_id").collect()["item_id"].to_numpy()
+        extra = pl.scan_parquet(emb_path).select("item_id").collect(engine="streaming")["item_id"].to_numpy()
     vocab = build_vocab(all_lf, split.train, cfg["min_count"], extra_item_ids=extra)
     st.done("vocab")
 
@@ -154,7 +164,7 @@ def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
         .select("item_id", emb_col)
         .collect(engine="streaming")
     )
-    artist_df = pl.read_parquet(Path(raw_dir) / "artist_item_mapping.parquet")
+    artist_df = pl.read_parquet(artist_path)
     features = build_item_features(
         vocab, emb_df, artist_df, split.train, cfg["pca_dim"], emb_column=emb_col
     )
@@ -169,14 +179,20 @@ def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
         "collapse_consecutive_dups": cfg["collapse_consecutive_dups"],
     }
 
-    def seqs(lf: pl.LazyFrame) -> PackedSequences:
-        if n_shards > 1:
-            return build_sequences_sharded(lambda: lf, vocab, n_shards, **kw)
+    def seqs(lf: pl.LazyFrame, ts_end: int) -> PackedSequences:
+        if n_shards > 1:  # shard files already hold one uid shard: only the time bound is left
+            return build_sequences_sharded(
+                None, vocab, n_shards,
+                shard_factory=lambda s: pl.scan_parquet(work / f"events_{s}.parquet").filter(
+                    pl.col("timestamp") < ts_end
+                ),
+                **kw,
+            )  # fmt: skip
         return build_sequences(lf, vocab, **kw)
 
-    seqs_train = seqs(split.train)
+    seqs_train = seqs(split.train, split.t_train_end)
     seqs_train.save(out / "seqs_train")
-    seqs_val_train = seqs(split.val_train)
+    seqs_val_train = seqs(split.val_train, split.t_val_train_end)
     seqs_val_train.save(out / "seqs_val_train")
     st.done("sequences")
 
@@ -195,7 +211,7 @@ def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
 
     # R3: share of distinct test-truth items (all users) with no train event of any kind.
     train_idx = vocab.encode(
-        split.train.select(pl.col("item_id").unique()).collect()["item_id"].to_numpy()
+        split.train.select(pl.col("item_id").unique()).collect(engine="streaming")["item_id"].to_numpy()
     )
     seen = np.zeros(vocab.n_items + 1, dtype=bool)
     seen[train_idx[train_idx > 0]] = True

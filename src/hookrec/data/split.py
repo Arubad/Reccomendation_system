@@ -60,7 +60,7 @@ def global_temporal_split(
 ) -> Split:
     if train_days < 2:
         raise ValueError(f"train_days must be >= 2 (need a validation day), got {train_days}")
-    t_last = lf.select(pl.col("timestamp").max()).collect().item()
+    t_last = lf.select(pl.col("timestamp").max()).collect(engine="streaming").item()
     if t_last is None:
         raise ValueError("cannot split an empty event table")
     t_last = int(t_last)

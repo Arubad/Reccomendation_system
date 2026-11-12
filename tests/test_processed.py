@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 
 import hookrec.data.processed as proc
 from hookrec.data.processed import load_processed, preprocess
@@ -105,6 +106,8 @@ def test_sharded_matches_unsharded(synth_dir, tmp_path, built):
         assert x.keys() == y.keys()
         assert all(np.array_equal(x[u], y[u]) for u in x)
     assert ref.vocab.n_items == got.vocab.n_items
+    assert np.array_equal(ref.vocab.raw_ids, got.vocab.raw_ids)
+    assert np.array_equal(ref.features.pop_train, got.features.pop_train)
 
 
 def test_cli_override(synth_dir, tmp_path, capsys):
@@ -123,3 +126,30 @@ def test_cli_override(synth_dir, tmp_path, capsys):
     )
     assert (Path(d) / "_DONE").exists()
     assert str(d) in capsys.readouterr().out
+    saved = yaml.safe_load((Path(d) / "config.yaml").read_text())
+    assert saved["min_count"] == 2
+    assert saved["split"]["test_timestamp"] is None
+
+
+def test_val_warm_cold_disjoint(built):
+    _, pd_ = built
+    assert pd_.truth_val
+    assert set(pd_.truth_val) <= set(pd_.seqs_val_train.uids.tolist())
+    assert not set(pd_.truth_val) & set(pd_.truth_val_cold)
+
+
+def test_missing_inputs_listed_in_one_error(tmp_path):
+    cfg = _cfg()
+    with pytest.raises(FileNotFoundError) as e:
+        preprocess(tmp_path / "nope", cfg, tmp_path / "out")
+    msg = str(e.value)
+    for name in ("multi_event.parquet", "embeddings.parquet", "artist_item_mapping.parquet"):
+        assert name in msg
+
+
+def test_val_test_events_sorted(built):
+    _, pd_ = built
+    for lf in (pd_.val_events(), pd_.test_events()):
+        df = lf.collect()
+        assert df.equals(df.sort("uid", "ts", maintain_order=True))
+        assert df["item_idx"].min() > 0

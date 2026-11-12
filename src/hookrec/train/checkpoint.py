@@ -6,6 +6,7 @@ Checkpoints are trusted files written by this code, so they are loaded with
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import random
@@ -38,6 +39,37 @@ def atomic_save(obj, path: Path) -> None:
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, path)
+
+
+def _sidecar(ckpt: Path) -> Path:
+    return ckpt.with_suffix(".json")
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+def read_horizon(dirs) -> dict | None:
+    """`{step, max_steps, schedule_steps, path}` of the newest checkpoint from its sidecar.
+
+    Cheap: never loads a checkpoint. None when the newest checkpoint has no readable sidecar
+    (written by an older version, or killed between the two writes); callers fall back to
+    `load_latest`.
+    """
+    dirs = [dirs] if isinstance(dirs, (str, Path)) else list(dirs)
+    cands = _candidates(dirs)
+    if not cands:
+        return None
+    path = cands[0][1]
+    try:
+        h = json.loads(_sidecar(path).read_text())
+        out = {k: int(h[k]) for k in ("step", "max_steps", "schedule_steps")}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    out["path"] = str(path)
+    return out
 
 
 def capture_rng_states() -> dict:
@@ -84,6 +116,10 @@ def save_checkpoint(
         **extra,
     }
     atomic_save(payload, Path(path))
+    # Small sidecar so the horizon can be read without deserializing the (GB-sized) checkpoint.
+    horizon = {k: int(extra[k]) for k in ("max_steps", "schedule_steps") if k in extra}
+    if horizon:
+        _atomic_write_text(_sidecar(Path(path)), json.dumps({"step": int(step), **horizon}))
 
 
 def _candidates(dirs: Sequence[Path]) -> list[tuple[int, Path]]:
@@ -124,5 +160,6 @@ def prune_checkpoints(ckpt_dir: Path, keep: int = 2) -> None:
     """Delete all but the `keep` newest step checkpoints (and stale .tmp files) in `ckpt_dir`."""
     for _, p in _candidates([ckpt_dir])[keep:]:
         p.unlink(missing_ok=True)
-    for p in Path(ckpt_dir).glob("ckpt-*.tmp"):
+        _sidecar(p).unlink(missing_ok=True)
+    for p in (*Path(ckpt_dir).glob("ckpt-*.tmp"), *Path(ckpt_dir).glob("ckpt-*.json.tmp")):
         p.unlink(missing_ok=True)

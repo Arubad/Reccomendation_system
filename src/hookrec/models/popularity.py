@@ -49,7 +49,10 @@ class MostPop(_ScoredPop):
 
 class DecayPop(_ScoredPop):
     def __init__(self, half_life_days: float):
-        self.half_life_days = float(half_life_days)
+        half_life_days = float(half_life_days)
+        if not half_life_days > 0:  # also rejects NaN
+            raise ValueError(f"half_life_days must be > 0, got {half_life_days}")
+        self.half_life_days = half_life_days
 
     def fit(self, seqs: PackedSequences, n_items: int, t_end: float) -> DecayPop:
         items, pos = _positive_events(seqs)
@@ -61,9 +64,15 @@ class DecayPop(_ScoredPop):
 def fill_cold(
     uids: np.ndarray, recs: np.ndarray, fallback_topk: np.ndarray, known_mask: np.ndarray
 ) -> np.ndarray:
-    """Replace the rows of unknown users (`known_mask` False) with `fallback_topk`."""
+    """Replace the rows of unknown users (`known_mask` False) with `fallback_topk`.
+
+    A fallback shorter than the rec width is 0-padded (0 is never a hit).
+    """
     out = np.array(recs, copy=True)
-    out[~np.asarray(known_mask, dtype=bool)] = fallback_topk[: out.shape[1]]
+    k = out.shape[1]
+    row = np.zeros(k, dtype=out.dtype)
+    row[: min(k, len(fallback_topk))] = fallback_topk[:k]
+    out[~np.asarray(known_mask, dtype=bool)] = row
     return out
 
 
@@ -76,4 +85,6 @@ def _build_mostpop(data: ProcessedData, cfg: dict, split: Split) -> MostPop:
 @register("decaypop")
 def _build_decaypop(data: ProcessedData, cfg: dict, split: Split) -> DecayPop:
     seqs, t_end = history_for(data, split)
+    if cfg.get("half_life_days") is None:
+        raise ValueError("decaypop needs cfg['half_life_days'] (> 0), but it is missing")
     return DecayPop(cfg["half_life_days"]).fit(seqs, data.vocab.n_items, t_end)

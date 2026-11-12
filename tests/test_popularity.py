@@ -100,3 +100,22 @@ def test_registry_split_and_errors(processed_synth):
         fit_recommender("nope", d, {}, "val")
     with pytest.raises(ValueError):
         fit_recommender("mostpop", d, {}, "dev")
+
+
+def test_decaypop_validates_half_life():
+    for bad in (0, -1.0):
+        with pytest.raises(ValueError, match="half_life_days"):
+            DecayPop(half_life_days=bad)
+    with pytest.raises(ValueError, match="half_life_days"):
+        DecayPop(half_life_days=float("nan"))
+
+
+def test_decaypop_builder_missing_half_life(processed_synth):
+    with pytest.raises(ValueError, match="half_life_days"):
+        fit_recommender("decaypop", processed_synth, {}, "val")
+
+
+def test_fill_cold_pads_short_fallback():
+    recs = np.array([[5, 6, 7], [8, 9, 4]])
+    out = fill_cold(np.array([1, 2]), recs, np.array([1, 2]), np.array([True, False]))
+    assert out.tolist() == [[5, 6, 7], [1, 2, 0]]

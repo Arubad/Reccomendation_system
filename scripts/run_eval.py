@@ -34,7 +34,9 @@ log = logging.getLogger("run_eval")
 BASELINES = ("mostpop", "decaypop", "ials")
 FAIRNESS_KS = (10, 100)
 CI_METRICS = ("ndcg@10", "recall@100")
-DRIFT_TOL_NEURAL = 1e-6
+DRIFT_WARN = 1e-6
+# a model trained on CUDA fp16 may be re-scored on CPU, so neural runs get a looser tolerance
+DRIFT_TOL_NEURAL = 1e-3
 DRIFT_TOL_BASELINE = 1e-4
 
 
@@ -69,9 +71,21 @@ def build_recommender(run: dict, data: ProcessedData, ckpt: Path | None) -> Reco
 
 def check_drift(run: dict, ndcg10: float) -> None:
     """Raise if the rebuilt recommender's ndcg@10 differs from the run record's."""
-    recorded = run["metrics"]["ndcg@10"]
-    tol = DRIFT_TOL_NEURAL if "model" in run["config"] else DRIFT_TOL_BASELINE
-    if abs(ndcg10 - recorded) > tol:
+    recorded = (run.get("metrics") or {}).get("ndcg@10")
+    if recorded is None:
+        raise RuntimeError(
+            f"{run.get('run_name')}: the run record has no metrics['ndcg@10'] to check drift "
+            "against (--no-drift-check skips)"
+        )
+    neural = "model" in run["config"]
+    tol = DRIFT_TOL_NEURAL if neural else DRIFT_TOL_BASELINE
+    diff = abs(ndcg10 - recorded)
+    if neural and DRIFT_WARN < diff <= tol:
+        log.warning(
+            "drift: re-scored ndcg@10 %.6f vs recorded %.6f (diff %.2g, within tol %g)",
+            ndcg10, recorded, diff, tol,
+        )  # fmt: skip
+    if diff > tol:
         log.error("drift: re-scored ndcg@10 %.6f vs recorded %.6f (tol %g)", ndcg10, recorded, tol)
         raise RuntimeError(
             f"{run['run_name']}: rebuilt model does not reproduce the recorded ndcg@10 "
@@ -95,7 +109,7 @@ def main(argv: list[str] | None = None) -> Path:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     run = json.loads(args.run.read_text())
     name = run["run_name"]
-    if run.get("extra", {}).get("split") != "test":
+    if (run.get("extra") or {}).get("split") != "test":
         raise SystemExit(f"{args.run} is not a test run (extra.split != 'test')")
     data = load_processed(args.processed)
     if run["extra"].get("processed_dir") not in (None, data.path.name):

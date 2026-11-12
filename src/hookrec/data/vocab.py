@@ -57,7 +57,11 @@ def build_vocab(
 ) -> ItemVocab:
     """Catalog = items in any split plus `extra_item_ids`; ID embeddings only for items with
     >= `min_count` positive events in `train_lf` (which must already be labeled)."""
-    ids = all_events_lf.select(pl.col("item_id").unique()).collect()["item_id"].to_numpy()
+    ids = (
+        all_events_lf.select(pl.col("item_id").unique())
+        .collect(engine="streaming")["item_id"]
+        .to_numpy()
+    )
     if extra_item_ids is not None:
         ids = np.concatenate([ids, np.asarray(extra_item_ids)])
     catalog = np.unique(ids.astype(np.uint32))
@@ -68,7 +72,7 @@ def build_vocab(
         .group_by("item_id")
         .agg(pl.len().alias("n"))
         .filter(pl.col("n") >= min_count)
-        .collect()["item_id"]
+        .collect(engine="streaming")["item_id"]
         .to_numpy()
     )
     at = np.minimum(np.searchsorted(catalog, pos), max(len(catalog) - 1, 0))

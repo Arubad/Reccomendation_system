@@ -73,10 +73,9 @@ def build_item_features(
     n1 = vocab.n_items + 1
 
     # Audio: align embedding rows to catalog indices (rows outside the catalog are dropped,
-    # duplicate item ids keep the first row).
-    emb_df = emb_df.unique(subset="item_id", keep="first", maintain_order=True)
+    # duplicate item ids keep the first row). A mask, not `unique()`, which would copy the frame.
     emb_idx = vocab.encode(emb_df["item_id"].to_numpy())
-    keep = emb_idx > 0
+    keep = (emb_idx > 0) & emb_df["item_id"].is_first_distinct().to_numpy()
     mat = _embedding_matrix(emb_df, emb_column)
     if not keep.all():
         mat = mat[keep]
@@ -88,7 +87,9 @@ def build_item_features(
     has_audio[emb_idx] = True
 
     # PCA sees only items with >= 1 train event (any kind) and audio, then maps all of them.
-    train_ids = train_lf.select(pl.col("item_id").unique()).collect()["item_id"].to_numpy()
+    train_ids = (
+        train_lf.select(pl.col("item_id").unique()).collect(engine="streaming")["item_id"].to_numpy()
+    )
     train_idx = vocab.encode(train_ids)
     in_train = np.zeros(n1, dtype=bool)
     in_train[train_idx[train_idx > 0]] = True
@@ -125,7 +126,10 @@ def build_item_features(
 
     # Popularity: positive train events per item index.
     pop = (
-        train_lf.filter(pl.col("is_positive")).group_by("item_id").agg(pl.len().alias("n")).collect()
+        train_lf.filter(pl.col("is_positive"))
+        .group_by("item_id")
+        .agg(pl.len().alias("n"))
+        .collect(engine="streaming")
     )
     p_idx = vocab.encode(pop["item_id"].to_numpy())
     p_ok = p_idx > 0
