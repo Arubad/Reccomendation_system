@@ -89,3 +89,30 @@ def test_roundtrip_save_load(synth, tmp_path):
     assert np.array_equal(f.has_audio, g.has_audio)
     assert np.array_equal(f.artist_idx, g.artist_idx) and g.n_artists == f.n_artists
     assert np.array_equal(f.pop_train, g.pop_train)
+
+
+def test_pca_applies_to_every_item(synth):
+    _, train, emb, vocab = _setup(synth)
+    f = build_item_features(vocab, emb, synth["artist_item_mapping"], train, pca_dim=8)
+    assert f.audio.shape[1] == 8
+    assert f.has_audio.sum() == emb.height
+
+
+def test_duplicate_embedding_ids_keep_first(synth):
+    _, train, emb, vocab = _setup(synth)
+    dup = pl.concat([emb, emb.head(5).with_columns(pl.col("embed").list.eval(pl.element() * 0))])
+    a = build_item_features(vocab, emb, synth["artist_item_mapping"], train, pca_dim=None)
+    b = build_item_features(vocab, dup, synth["artist_item_mapping"], train, pca_dim=None)
+    assert np.array_equal(a.audio, b.audio)
+
+
+def test_pca_errors_are_explicit(synth):
+    import pytest
+
+    _, train, emb, vocab = _setup(synth)
+    am = synth["artist_item_mapping"]
+    with pytest.raises(ValueError, match="no train item"):
+        build_item_features(vocab, emb.head(0), am, train, pca_dim=8)
+    few = emb.head(3)
+    with pytest.raises(ValueError, match="fewer than"):
+        build_item_features(vocab, few, am, train, pca_dim=8)

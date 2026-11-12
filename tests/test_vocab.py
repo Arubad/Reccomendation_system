@@ -48,3 +48,18 @@ def test_roundtrip_save_load(tmp_path):
     w = ItemVocab.load(tmp_path / "v.npz")
     assert np.array_equal(v.raw_ids, w.raw_ids) and np.array_equal(v.id_idx, w.id_idx)
     assert (w.n_items, w.n_id) == (v.n_items, v.n_id)
+
+
+def test_raw_id_zero_is_a_real_item_not_pad():
+    train = _lf([0, 0, 7])
+    v = build_vocab(train, train, min_count=1)
+    assert v.encode(np.array([0]))[0] >= 1
+    assert v.id_idx[0] == 0 and v.n_items == 2
+
+
+def test_train_positive_outside_catalog_raises():
+    import pytest
+
+    train = _lf([10, 20])
+    with pytest.raises(ValueError):
+        build_vocab(_lf([10]), train, min_count=1)

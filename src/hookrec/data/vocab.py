@@ -17,7 +17,10 @@ class ItemVocab:
     n_id: int
 
     def encode(self, raw: np.ndarray) -> np.ndarray:
-        """Raw ids -> item indices; unknown ids map to 0. Vectorised."""
+        """Raw ids -> item indices; unknown ids map to 0. Vectorised.
+
+        Index 0 is the pad only: a real catalog item with raw id 0 gets an index >= 1.
+        """
         raw = np.asarray(raw)
         catalog = self.raw_ids[1:]
         if len(catalog) == 0:
@@ -68,8 +71,11 @@ def build_vocab(
         .collect()["item_id"]
         .to_numpy()
     )
+    at = np.minimum(np.searchsorted(catalog, pos), max(len(catalog) - 1, 0))
+    if len(pos) and not np.array_equal(catalog[at], pos):
+        raise ValueError("train positives contain items missing from the catalog")
     eligible = np.zeros(len(raw_ids), dtype=bool)
-    eligible[np.searchsorted(catalog, pos) + 1] = True
+    eligible[at + 1] = True
     id_idx = np.zeros(len(raw_ids), dtype=np.int32)
     n_id = int(eligible.sum())
     id_idx[eligible] = np.arange(1, n_id + 1, dtype=np.int32)
