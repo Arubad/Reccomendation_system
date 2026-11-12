@@ -88,7 +88,9 @@ def build_item_features(
 
     # PCA sees only items with >= 1 train event (any kind) and audio, then maps all of them.
     train_ids = (
-        train_lf.select(pl.col("item_id").unique()).collect(engine="streaming")["item_id"].to_numpy()
+        train_lf.select(pl.col("item_id").unique())
+        .collect(engine="streaming")["item_id"]
+        .to_numpy()
     )
     train_idx = vocab.encode(train_ids)
     in_train = np.zeros(n1, dtype=bool)

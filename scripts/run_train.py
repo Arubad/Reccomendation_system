@@ -81,6 +81,8 @@ def _set_test_horizon(args, cfg: dict, name: str, processed_dir: str) -> None:
                 "(%d / %d steps); the resumed run keeps the checkpoint's",
                 ck["path"], ck["max_steps"], ck["schedule_steps"], *found,
             )  # fmt: skip
+        elif ck is None and any(Path(d).glob("ckpt-*.pt") for d in dirs if Path(d).is_dir()):
+            log.info("checkpoint has no horizon sidecar: cannot check it against the val horizon")
         cfg["train"]["max_steps"], cfg["train"]["schedule_steps"] = found
         log.info("test run: max_steps = best val step %d, schedule_steps = %d", *found)
         return

@@ -112,7 +112,8 @@ def _write_events(df_lf: pl.LazyFrame, vocab: ItemVocab, path: Path) -> int:
 
 
 def _counts(lf: pl.LazyFrame) -> tuple[int, int]:
-    n_users, n_events = lf.select(pl.col("uid").n_unique(), pl.len()).collect(engine="streaming").row(0)
+    counts = lf.select(pl.col("uid").n_unique(), pl.len()).collect(engine="streaming")
+    n_users, n_events = counts.row(0)
     return int(n_users), int(n_events)
 
 
@@ -152,7 +153,8 @@ def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
     extra = None
     emb_col = cfg.get("emb_column", "normalized_embed")
     if cfg.get("include_embedding_only_items", False):
-        extra = pl.scan_parquet(emb_path).select("item_id").collect(engine="streaming")["item_id"].to_numpy()
+        emb_ids = pl.scan_parquet(emb_path).select("item_id").collect(engine="streaming")
+        extra = emb_ids["item_id"].to_numpy()
     vocab = build_vocab(all_lf, split.train, cfg["min_count"], extra_item_ids=extra)
     st.done("vocab")
 
@@ -210,9 +212,8 @@ def _build(raw_dir: Path, cfg: dict, out: Path) -> None:
         save_truth(t, out / f"{name}.npz")
 
     # R3: share of distinct test-truth items (all users) with no train event of any kind.
-    train_idx = vocab.encode(
-        split.train.select(pl.col("item_id").unique()).collect(engine="streaming")["item_id"].to_numpy()
-    )
+    train_items = split.train.select(pl.col("item_id").unique()).collect(engine="streaming")
+    train_idx = vocab.encode(train_items["item_id"].to_numpy())
     seen = np.zeros(vocab.n_items + 1, dtype=bool)
     seen[train_idx[train_idx > 0]] = True
     test_items = (

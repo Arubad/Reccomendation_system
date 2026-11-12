@@ -316,3 +316,31 @@ def test_checkpoint_horizon_sidecar(processed_synth, tmp_path, monkeypatch):
     for p in tmp_path.glob("ckpt-*.json"):
         p.unlink()
     assert ck.read_horizon([tmp_path]) is None
+
+
+def test_bad_session_start_env_falls_back_with_one_warning(
+    processed_synth, tmp_path, monkeypatch, caplog
+):
+    import hookrec.train.trainer as trainer_mod
+
+    trainer_mod._warned_bad_session_start.clear()
+    monkeypatch.setenv("HOOKREC_SESSION_START", "abc")
+    cfg = tiny_cfg(**{"train.max_steps": 10})
+    with caplog.at_level("WARNING"):
+        r = train(cfg, processed_synth, _fresh(cfg, processed_synth), "val", tmp_path)
+    assert r.stopped_reason != "max_hours"
+    assert caplog.text.count("ignoring HOOKREC_SESSION_START") == 1
+
+
+def test_prune_removes_sidecars_and_stale_tmp(tmp_path):
+    from hookrec.train.checkpoint import ckpt_name, prune_checkpoints
+
+    for step in (1, 2, 3):
+        (tmp_path / ckpt_name(step)).write_bytes(b"x")
+        (tmp_path / f"ckpt-{step:08d}.json").write_text("{}")
+    (tmp_path / "ckpt-00000009.json.tmp").write_text("{")
+    (tmp_path / "ckpt-00000009.tmp").write_bytes(b"x")
+    prune_checkpoints(tmp_path, keep=2)
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "ckpt-00000002.json", "ckpt-00000002.pt", "ckpt-00000003.json", "ckpt-00000003.pt",
+    ]  # fmt: skip

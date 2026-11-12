@@ -55,6 +55,7 @@ log = logging.getLogger(__name__)
 # in env HOOKREC_SESSION_START (exported by the notebooks' first cell) if set, else from when
 # this process imported the trainer (includes data loading, not just the `train` call).
 _PROCESS_T0 = time.monotonic()
+_warned_bad_session_start: set[str] = set()
 
 
 def session_elapsed_seconds() -> float:
@@ -62,8 +63,14 @@ def session_elapsed_seconds() -> float:
     if start:
         try:
             return time.time() - float(start)
-        except ValueError:
-            raise ValueError(f"HOOKREC_SESSION_START must be unix seconds, got {start!r}") from None
+        except ValueError:  # never crash mid-training over a bad env var
+            if start not in _warned_bad_session_start:
+                _warned_bad_session_start.add(start)
+                log.warning(
+                    "ignoring HOOKREC_SESSION_START=%r (not unix seconds); "
+                    "measuring max_hours from process start",
+                    start,
+                )
     return time.monotonic() - _PROCESS_T0
 
 # train.* keys that do not change what is learned (or that define the horizon, which is
