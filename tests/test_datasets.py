@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import torch
 
 from hookrec.data.label import LIKE, LISTEN_FULL, LISTEN_SKIP
@@ -107,3 +108,55 @@ def test_infer_dataset_last_window():
     assert y["items"].tolist() == [0, B] and y["uid"].item() == 8
     train_keys = set(SeqTrainDataset(seqs, 2, 0)[0]) - {"target", "target_is_like"}
     assert train_keys == set(x) - {"uid"}
+
+
+# ---- R24 window sampling, T16 windowed gap buckets ---------------------------------------
+
+
+def test_last_window_sampling_always_takes_the_tail():
+    n, L = 30, 4
+    seqs = _seqs({1: [(i + 1, LISTEN_FULL) for i in range(n)], 2: [(A, LISTEN_FULL)] * 3})
+    ds = SeqTrainDataset(seqs, L, seed=3, window_sampling="last")
+    rnd = SeqTrainDataset(seqs, L, seed=3)
+    starts = set()
+    for e in range(200):
+        ds.set_epoch(e)
+        rnd.set_epoch(e)
+        assert ds[0]["items"].tolist() == list(range(n - L, n))  # events n-L-1 .. n-2 as input
+        assert ds[0]["target"].tolist() == list(range(n - L + 1, n + 1))
+        starts.add(int(rnd[0]["items"][0]))
+    assert len(starts) > 1  # random really does move
+    assert len(ds) == len(seqs)  # exactly one window per user per epoch
+    with pytest.raises(ValueError, match="window_sampling"):
+        SeqTrainDataset(seqs, L, seed=0, window_sampling="first")
+
+
+def test_gap_buckets_windowed_equal_full_history_and_stay_local(monkeypatch):
+    import hookrec.train.datasets as dsm
+
+    n, L = 5000, 8
+    rng = np.random.default_rng(0)
+    seqs = _seqs({1: [(i + 1, LISTEN_FULL) for i in range(n)]})  # item i+1 = event i
+    gaps = rng.choice([5, 40, 300, 1000, 4000, 30000, 100000], size=n)
+    seqs.ts = np.cumsum(gaps).astype(np.uint32)
+    full = dsm._user_gap_bucket(np.asarray(seqs.ts), dsm.DEFAULT_SESSION_GAP)  # reference
+    lens = []
+    real = dsm._user_gap_bucket
+
+    def spy(ts, gap):
+        lens.append(len(ts))
+        return real(ts, gap)
+
+    monkeypatch.setattr(dsm, "_user_gap_bucket", spy)
+    ds = SeqTrainDataset(seqs, L, seed=0)
+    for e in range(100):
+        ds.set_epoch(e)
+        x = ds[0]
+        s = int(x["items"][0]) - 1  # window start
+        assert x["gap_bucket"].tolist() == full[s : s + L].tolist(), s
+    inf = SeqInferDataset(seqs, L)[0]
+    assert inf["gap_bucket"].tolist() == full[-L:].tolist()
+    assert lens and max(lens) <= L + 2  # never the whole 5000-event history
+    for s in (0, 1):  # the user's first event keeps bucket 0; s = 1 reads its predecessor
+        got = dsm._window_gap_bucket(np.asarray(seqs.ts), s, L + 1, dsm.DEFAULT_SESSION_GAP)
+        assert got.tolist() == full[s : s + L + 1].tolist()

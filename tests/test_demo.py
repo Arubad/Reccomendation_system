@@ -62,6 +62,29 @@ def engine(bundle_dir):
     return DemoEngine(bundle_dir)
 
 
+@pytest.fixture
+def close_gradio_loops(monkeypatch):
+    """Gradio (`utils.safe_get_lock` / `safe_get_stop_event`) creates and installs fresh asyncio
+    event loops outside a running loop and never closes them; their sockets would surface as
+    ResourceWarnings in whichever later test the GC runs. Close every loop made here."""
+    import asyncio
+
+    created = []
+    real = asyncio.new_event_loop
+
+    def tracking():
+        loop = real()
+        created.append(loop)
+        return loop
+
+    monkeypatch.setattr(asyncio, "new_event_loop", tracking)
+    yield
+    asyncio.set_event_loop(None)
+    for loop in created:
+        if not loop.is_closed():
+            loop.close()
+
+
 def test_bundle_size_limit(bundle_dir):
     total = sum(p.stat().st_size for p in bundle_dir.iterdir())
     assert 0 < total < 200 * 1024 * 1024
@@ -113,6 +136,7 @@ def test_unknown_items_and_bad_input(engine):
 
 def test_input_filters_recorded_and_sasrec_reads_listen_full_only(engine, processed_synth):
     assert engine.meta["input_filter"] == {"hookseq": "all", "sasrec": "listen_plus"}
+    assert engine.session_gap == processed_synth.cfg["session_gap_seconds"]  # EDA §3, via K2
     ids = [int(i) for i in engine.raw_ids[:4]]
     full = [(ids[0], "listen_full", True), (ids[1], "listen_full", False)]
     noisy = [full[0], (ids[2], "listen_skip", True), (ids[3], "like", False), full[1]]
@@ -197,7 +221,7 @@ def test_export_script(processed_synth, tiny_ckpts, tmp_path):
         )  # fmt: skip
 
 
-def test_build_app_constructs(engine):
+def test_build_app_constructs(engine, close_gradio_loops):
     pytest.importorskip("gradio")
     from hookrec.demo.app import build_app, parse_session, recommend_both
 
@@ -231,7 +255,9 @@ def test_maybe_gpu_identity_without_spaces(monkeypatch):
     assert gpu._maybe_gpu(f)(3) == ("gpu", 3) and calls == [f]
 
 
-def test_hf_space_app_builds_with_local_bundle(bundle_dir, tmp_path, monkeypatch):
+def test_hf_space_app_builds_with_local_bundle(
+    bundle_dir, tmp_path, monkeypatch, close_gradio_loops
+):
     pytest.importorskip("gradio")
     import gradio as gr
 
@@ -313,7 +339,7 @@ def test_subset_rule(processed_synth, engine):
     assert {int(v.raw_ids[i]) for i in top} <= raw
 
 
-def test_parse_session_ranges_and_overflow():
+def test_parse_session_ranges_and_overflow(close_gradio_loops):
     pytest.importorskip("gradio")
     from hookrec.demo.app import parse_session
 

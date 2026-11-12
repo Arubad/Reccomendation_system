@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> Path | None:
     seqs, _ = history_for(data, args.split, input_filter_of(cfg))
     rec = SeqRecommender(
         model, seqs, cfg["model"]["max_len"], device, mostpop_fallback(data, args.split),
-        session_gap=session_gap_from(cfg), amp=bool(cfg["train"].get("amp", True)),
+        session_gap=session_gap_from(cfg, data.cfg), amp=bool(cfg["train"].get("amp", True)),
     )  # fmt: skip
     ev = evaluate_split(rec, data, args.split)
 

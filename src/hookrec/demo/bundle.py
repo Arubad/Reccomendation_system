@@ -88,7 +88,12 @@ def input_filter_of(cfg: dict) -> str:
 
 
 def _sample_windows(
-    data: ProcessedData, n_users: int, max_len: int, seed: int, input_filter: str = "all"
+    data: ProcessedData,
+    n_users: int,
+    max_len: int,
+    seed: int,
+    input_filter: str = "all",
+    session_gap: float = 1800,
 ) -> dict:
     """Last `max_len` events of `n_users` random train users, vectorised, in vocab indices."""
     s = data.seqs("train", input_filter)
@@ -111,7 +116,7 @@ def _sample_windows(
     first_of_user = flat == np.repeat(offsets[rows], n)
     prev = ts_all[np.maximum(flat - 1, 0)].astype(np.int64)
     # the previous event may lie before the window: keep its real gap bucket
-    gb = np.where(first_of_user, 0, gap_buckets(ts - prev))
+    gb = np.where(first_of_user, 0, gap_buckets(ts - prev, session_gap))
     return {
         "uids": np.asarray(s.uids)[rows].astype(np.int64),
         "offsets": w_off,
@@ -186,7 +191,10 @@ def export_demo_bundle(
             f"n_items={v.n_items}: wrong checkpoint or processed dir"
         )
     max_len = int(hs_cfg["max_len"])
-    win = _sample_windows(data, n_users, max_len, seed, input_filter_of(hs_full_cfg))
+    session_gap = session_gap_from(hs_full_cfg, data.cfg)
+    win = _sample_windows(
+        data, n_users, max_len, seed, input_filter_of(hs_full_cfg), session_gap
+    )
     sub = _pick_subset(data, win["items_vocab"], n_items)  # vocab indices, ascending
     m = len(sub)
 
@@ -247,7 +255,7 @@ def export_demo_bundle(
         "n_id_sub": len(id_rows),
         "n_artists_sub": len(art_uniq),
         "max_len": max_len,
-        "session_gap": session_gap_from(hs_full_cfg),
+        "session_gap": session_gap,
         "hookseq_model": hs_cfg,
         "sasrec_model": sas_cfg,
         "input_filter": {

@@ -61,7 +61,7 @@ def build_recommender(run: dict, data: ProcessedData, ckpt: Path | None) -> Reco
         seqs, _ = history_for(data, "test", input_filter_of(cfg))
         return SeqRecommender(
             model, seqs, cfg["model"]["max_len"], device, mostpop_fallback(data, "test"),
-            session_gap=session_gap_from(cfg), amp=bool(tc.get("amp", True)),
+            session_gap=session_gap_from(cfg, data.cfg), amp=bool(tc.get("amp", True)),
         )  # fmt: skip
     model_name = name.rsplit("-", 1)[0]
     if model_name not in BASELINES:

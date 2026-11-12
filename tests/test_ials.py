@@ -9,6 +9,7 @@ from hookrec.eval.protocol import evaluate
 from hookrec.models.base import fit_recommender
 from hookrec.models.ials import IALS
 from hookrec.models.popularity import MostPop
+from hookrec.utils.config import load_config
 from hookrec.utils.results import load_runs
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,7 +138,8 @@ def test_test_split_uses_winning_val_config(processed_synth, tmp_path):
     base = ["--processed", str(processed_synth.path), "--config", cfg, "--out", str(tmp_path)]
     mod.main([*base, "--split", "val", "--models", "decaypop"])
     runs = [r for r in load_runs(tmp_path) if r["run_name"] == "decaypop-val"]
-    assert len(runs) == 4
+    grid = load_config(ROOT / "configs" / "baselines.yaml")["decaypop"]["grid"]["half_life_days"]
+    assert len(runs) == len(grid)
     best = max(runs, key=lambda r: r["metrics"]["ndcg@10"])["config"]
     mod.main([*base, "--split", "test", "--models", "decaypop"])
     test_run = [r for r in load_runs(tmp_path) if r["run_name"] == "decaypop-test"]

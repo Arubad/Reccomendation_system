@@ -1,7 +1,9 @@
 mostpop: {}
 decaypop:
   grid:
-    half_life_days: [1, 3, 7, 30]
+    # R25: half-life equivalents (6.579 x window) of the official grid of 0.9-per-window decay
+    # windows 0.5, 1, 2, 3, 6, 12, 24 h (benchmarks/models/popularity/main.py), plus 30 days
+    half_life_days: [0.14, 0.27, 0.55, 0.82, 1.6, 3.3, 6.6, 30]
 ials:
   iterations: 15
   seed: 0

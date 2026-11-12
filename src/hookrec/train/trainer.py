@@ -48,7 +48,7 @@ from hookrec.train.checkpoint import (
     restore_rng_states,
     save_checkpoint,
 )
-from hookrec.train.datasets import SeqTrainDataset, session_gap_from
+from hookrec.train.datasets import SeqTrainDataset, session_gap_from, window_sampling_from
 from hookrec.train.scoring import SeqRecommender
 from hookrec.utils.config import config_hash
 from hookrec.utils.seed import set_seed
@@ -223,7 +223,7 @@ def train(
     log_every = tc.get("log_every_steps", 100)
     n_ib, n_uni = lc.get("n_in_batch_negatives", 4096), lc["n_uniform_negatives"]
     n_hard = lc.get("n_hard", 4) if lc.get("dislike_hard_negatives") else 0
-    session_gap = session_gap_from(cfg)
+    session_gap = session_gap_from(cfg, data.cfg)
     like_weight = lc.get("like_weight", 0.0) if getattr(model, "like_head", False) else 0.0
 
     cfg_hash = training_hash(cfg)
@@ -299,7 +299,9 @@ def train(
         )  # fmt: skip
         del payload
 
-    ds = _EpochIndexed(SeqTrainDataset(seqs, max_len, tc["seed"], session_gap))
+    ds = _EpochIndexed(
+        SeqTrainDataset(seqs, max_len, tc["seed"], session_gap, window_sampling_from(cfg))
+    )
     sampler = _ResumableSampler(len(seqs), tc["batch_size"], tc["seed"])
     if sampler.batches_per_epoch == 0:
         raise ValueError(f"{len(seqs)} sequences cannot fill one batch of {tc['batch_size']}")

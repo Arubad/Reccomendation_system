@@ -1,5 +1,7 @@
 extends: sasrec.yaml
-data: {input_filter: all}  # every event type is input; the ablations a0..a6 inherit this
+data:  # the ablations a0..a6 inherit both
+  input_filter: all  # every event type is input
+  window_sampling: random  # random window start per user and epoch
 model:
   name: hookseq
   use_audio: true

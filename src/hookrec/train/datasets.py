@@ -1,8 +1,10 @@
 """Torch datasets over PackedSequences: random-window training, last-window inference.
 
 Pad contract: every field is left-padded with 0 and `items == 0` <=> pad (stored items are >= 1).
-`gap_bucket` is one more such field (see `gap_buckets`), computed over the user's full packed
-sequence so a window's first event still gets the true gap to its predecessor.
+`gap_bucket` is one more such field (see `gap_buckets`). It is computed over the window plus
+the one event before it (`ts[max(s - 1, 0) : s + w]`), so a window's first event still gets the
+true gap to its predecessor while the cost stays O(window), not O(history): with
+`max_len_store: null` a history can hold tens of thousands of events.
 """
 
 from __future__ import annotations
@@ -23,9 +25,28 @@ DEFAULT_SESSION_GAP = 1800  # seconds; `data.session_gap_seconds` overrides (EDA
 N_GAP_BUCKETS = 8  # index 0 = pad / first-ever event, 1..7 = real gaps
 
 
-def session_gap_from(cfg: dict) -> int:
-    """The session-gap edge: `cfg["data"]["session_gap_seconds"]` if set, else 1800 s."""
-    return (cfg.get("data") or {}).get("session_gap_seconds") or DEFAULT_SESSION_GAP
+WINDOW_SAMPLING = ("random", "last")
+
+
+def session_gap_from(cfg: dict, data_cfg: dict | None = None) -> int:
+    """The session-gap edge in seconds.
+
+    Precedence: the training config's `data.session_gap_seconds` (a per-run override), then the
+    preprocessing config's top-level `session_gap_seconds` (`data_cfg`, i.e. `ProcessedData.cfg`,
+    set in `configs/data_*.yaml` from the EDA), then 1800 s.
+    """
+    v = (cfg.get("data") or {}).get("session_gap_seconds")
+    if v is None and data_cfg is not None:
+        v = data_cfg.get("session_gap_seconds")
+    return v or DEFAULT_SESSION_GAP
+
+
+def window_sampling_from(cfg: dict) -> str:
+    """`cfg["data"]["window_sampling"]`: "random" (default) or "last" (R24)."""
+    v = (cfg.get("data") or {}).get("window_sampling", "random")
+    if v not in WINDOW_SAMPLING:
+        raise ValueError(f"data.window_sampling must be one of {WINDOW_SAMPLING}, got {v!r}")
+    return v
 
 
 def gap_buckets(gap_seconds: np.ndarray, session_gap: float = DEFAULT_SESSION_GAP) -> np.ndarray:
@@ -55,6 +76,13 @@ def _user_gap_bucket(ts: np.ndarray, session_gap: float) -> np.ndarray:
     return out
 
 
+def _window_gap_bucket(ts: np.ndarray, s: int, w: int, session_gap: float) -> np.ndarray:
+    """[w] buckets of events s..s+w-1 of one user, reading only ts[max(s - 1, 0) : s + w]."""
+    lo = max(s - 1, 0)
+    gb = _user_gap_bucket(np.asarray(ts[lo : s + w]), session_gap)
+    return gb[s - lo :]
+
+
 def _left_pad(a: np.ndarray, length: int) -> torch.Tensor:
     out = np.zeros(length, dtype=np.int64)
     if len(a):
@@ -63,10 +91,15 @@ def _left_pad(a: np.ndarray, length: int) -> torch.Tensor:
 
 
 class SeqTrainDataset(Dataset):
-    """Random windows of `max_len + 1` events; the target at position t is event t+1's item if
-    that event is positive (LISTEN_FULL or LIKE), else 0 (ignored). On Listen+ sequences
-    (`data.input_filter: listen_plus`) every event is LISTEN_FULL, so the target is simply the
-    next item, as in the official SASRec benchmark."""
+    """One window of `max_len + 1` events per user per epoch; the target at position t is event
+    t+1's item if that event is positive (LISTEN_FULL or LIKE), else 0 (ignored). On Listen+
+    sequences (`data.input_filter: listen_plus`) every event is LISTEN_FULL, so the target is
+    simply the next item, as in the official SASRec benchmark.
+
+    `window_sampling` (`data.window_sampling`): "random" draws the window start (see `_start`);
+    "last" always takes the user's last window, like the official SASRec (one last-200 window
+    per user).
+    """
 
     def __init__(
         self,
@@ -74,9 +107,13 @@ class SeqTrainDataset(Dataset):
         max_len: int,
         seed: int,
         session_gap: float = DEFAULT_SESSION_GAP,
+        window_sampling: str = "random",
     ):
         self.seqs, self.max_len, self.seed, self.epoch = seqs, max_len, seed, 0
         self.session_gap = session_gap
+        if window_sampling not in WINDOW_SAMPLING:
+            raise ValueError(f"window_sampling must be one of {WINDOW_SAMPLING}")
+        self.window_sampling = window_sampling
         gap_buckets(np.array([0]), session_gap)  # validate early
 
     def set_epoch(self, epoch: int) -> None:
@@ -100,9 +137,9 @@ class SeqTrainDataset(Dataset):
         e = self.seqs.get(idx)
         n = len(e["items"])
         w = min(n, self.max_len + 1)
-        s = self._start(rng, n - w)
+        s = n - w if self.window_sampling == "last" else self._start(rng, n - w)
         win = {k: v[s : s + w] for k, v in e.items()}
-        win["gap_bucket"] = _user_gap_bucket(e["ts"], self.session_gap)[s : s + w]
+        win["gap_bucket"] = _window_gap_bucket(e["ts"], s, w, self.session_gap)
         out = {k: _left_pad(win[k][:-1], self.max_len) for k in (*_INPUT_FIELDS, "gap_bucket")}
         tgt_tok = win["tokens"][1:]
         positive = (tgt_tok == LISTEN_FULL) | (tgt_tok == LIKE)
@@ -124,7 +161,8 @@ class SeqInferDataset(Dataset):
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         e = self.seqs.get(idx)
         out = {k: _left_pad(e[k][-self.max_len :], self.max_len) for k in _INPUT_FIELDS}
-        gb = _user_gap_bucket(e["ts"], self.session_gap)
-        out["gap_bucket"] = _left_pad(gb[-self.max_len :], self.max_len)
+        w = min(len(e["ts"]), self.max_len)
+        gb = _window_gap_bucket(e["ts"], len(e["ts"]) - w, w, self.session_gap)
+        out["gap_bucket"] = _left_pad(gb, self.max_len)
         out["uid"] = torch.tensor(int(self.seqs.uids[idx]), dtype=torch.long)
         return out

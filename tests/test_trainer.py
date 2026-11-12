@@ -487,3 +487,52 @@ def test_run_train_smoke_on_sasrec_listen_plus(processed_synth, tmp_path, monkey
         for f in ("uids", "offsets", "items", "tokens"):
             assert np.array_equal(getattr(s, f), getattr(lp, f)), f
     assert (np.asarray(lp.tokens) == LISTEN_FULL).all()
+
+
+# ---- R23 session gap, R24 window sampling -------------------------------------------------
+
+
+def test_configs_window_sampling():
+    from hookrec.train.datasets import window_sampling_from
+
+    assert window_sampling_from(tiny_cfg()) == "last"  # official SASRec: last window per user
+    cfgs = [ROOT / "configs" / "hookseq.yaml", *sorted((ROOT / "configs" / "ablations").glob("*"))]
+    for p in cfgs:
+        assert window_sampling_from(load_config(p)) == "random", p.name
+    assert window_sampling_from({}) == "random"
+    with pytest.raises(ValueError, match="window_sampling"):
+        window_sampling_from({"data": {"window_sampling": "first"}})
+
+
+def test_session_gap_and_window_sampling_reach_the_datasets(
+    processed_synth, tmp_path, monkeypatch
+):
+    import dataclasses
+
+    import hookrec.train.trainer as trainer_mod
+
+    seen = {}
+    real_ds, real_rec = trainer_mod.SeqTrainDataset, trainer_mod.SeqRecommender
+
+    def ds(seqs, max_len, seed, session_gap, window_sampling):
+        seen["ds"] = (session_gap, window_sampling)
+        return real_ds(seqs, max_len, seed, session_gap, window_sampling)
+
+    def rec(*a, **kw):
+        seen["rec"] = kw["session_gap"]
+        return real_rec(*a, **kw)
+
+    monkeypatch.setattr(trainer_mod, "SeqTrainDataset", ds)
+    monkeypatch.setattr(trainer_mod, "SeqRecommender", rec)
+    # the preprocessing config's session_gap_seconds (data_50m.yaml, stored in the bundle)
+    data = dataclasses.replace(
+        processed_synth, cfg={**processed_synth.cfg, "session_gap_seconds": 3600}
+    )
+    assert processed_synth.cfg["session_gap_seconds"] == 1800  # EDA §3 value is in the bundle
+    cfg = tiny_cfg(**{"train.max_steps": 2, "train.eval_every_steps": 1})
+    train(cfg, data, _fresh(cfg, data), "val", tmp_path / "a")
+    assert seen == {"ds": (3600, "last"), "rec": 3600}
+    # a per-run `data.session_gap_seconds` in the training config wins
+    cfg = tiny_cfg(**{"train.max_steps": 2, "data.session_gap_seconds": 7200})
+    train(cfg, data, _fresh(cfg, data), "test", tmp_path / "b")
+    assert seen["ds"] == (7200, "last")

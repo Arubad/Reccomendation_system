@@ -140,6 +140,24 @@ def test_registry_baselines_fit_full_period_aggregates(processed_synth):
         np.testing.assert_allclose(dp.scores, agg.pop_lp, rtol=1e-6)  # ~no decay = MostPop
 
 
+def test_decaypop_grid_matches_the_official_windows():
+    """R25: official weight 0.9 ** (age / window) for windows 0.5..24 h equals our
+    0.5 ** (age / half_life) with half_life = window * ln 0.5 / ln 0.9."""
+    from pathlib import Path
+
+    from hookrec.utils.config import load_config
+
+    root = Path(__file__).resolve().parents[1]
+    grid = load_config(root / "configs" / "baselines.yaml")["decaypop"]["grid"]["half_life_days"]
+    hours = (0.5, 1, 2, 3, 6, 12, 24)
+    want = [h / 24 * np.log(0.5) / np.log(0.9) for h in hours]
+    assert len(grid) == len(hours) + 1 and grid[-1] == 30
+    np.testing.assert_allclose(grid[:-1], want, rtol=0.03)  # 2 significant digits
+    age = np.linspace(0, 5 * DAY, 11)
+    for h, hl in zip(hours, want):
+        np.testing.assert_allclose(0.9 ** (age / (h * 3600)), 0.5 ** (age / (hl * DAY)))
+
+
 def test_fill_cold_pads_short_fallback():
     recs = np.array([[5, 6, 7], [8, 9, 4]])
     out = fill_cold(np.array([1, 2]), recs, np.array([1, 2]), np.array([True, False]))

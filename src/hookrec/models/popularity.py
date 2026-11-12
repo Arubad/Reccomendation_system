@@ -58,6 +58,20 @@ class MostPop(_ScoredPop):
 
 
 class DecayPop(_ScoredPop):
+    """Exponentially time-decayed Listen+ counts, weight 0.5 ** (age / half_life).
+
+    The official Yambda DecayPop (`benchmarks/models/popularity/main.py`) weights each event
+    `tau ** (max_train_ts - ts)` with `tau = 0.9 ** (1 / (hours * 3600))`: a continuous decay
+    of 0.9 per `hours` window (no flooring), grid hours in {0.5, 1, 2, 3, 6, 12, 24}. That is
+    the same family, with half_life = hours * ln 0.5 / ln 0.9 ~= 6.579 * hours; the
+    `configs/baselines.yaml` grid holds those equivalents (R25). Two differences remain:
+    - age is measured from the period end `t_end`, not the last train event; a constant shift
+      that multiplies every score equally and so never changes the ranking;
+    - the registry fit (`fit_days`) bins events by day (R18), so every event of a day gets the
+      weight of the day's middle. For half-lives well under a day (the official 0.5-3 h
+      windows) this is a coarse approximation of the per-event decay; `fit` is exact.
+    """
+
     def __init__(self, half_life_days: float):
         half_life_days = float(half_life_days)
         if not half_life_days > 0:  # also rejects NaN
