@@ -1,4 +1,4 @@
-"""Generate the Kaggle notebooks K0-K5 (notebooks/kaggle/*.ipynb). Do not hand-edit them.
+"""Generate the Kaggle notebooks K0-K5 and K4P (notebooks/kaggle/*.ipynb). Do not hand-edit them.
 
 python scripts/make_notebooks.py [--out notebooks/kaggle] [--repo-url URL] [--git-ref REF]
 
@@ -20,6 +20,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_URL = "https://github.com/Arubad/Reccomendation_system.git"
 DEFAULT_GIT_REF = "v0.2-r2"  # the tag the reported runs use; the maintainer creates it
+# K4P runs scripts/profile_train.py, which is newer than DEFAULT_GIT_REF: it tracks the dev
+# branch until the maintainer tags a release that contains the profiler (then pin it here).
+PROFILE_GIT_REF = "hookseq-impl"
 POLARS_FLOOR = "2.1"  # = pyproject's `polars>=` floor (tests/test_notebooks.py checks they agree)
 
 CPU = {"accelerator": "none", "isGpuEnabled": False}
@@ -32,10 +35,15 @@ def _py(v) -> str:
     return json.dumps(v)
 
 
-def params_cell(repo_url: str, git_ref: str, extra: list[tuple[str, object, str]]) -> str:
+def params_cell(
+    repo_url: str,
+    git_ref: str,
+    extra: list[tuple[str, object, str]],
+    ref_note: str = "branch or tag to run (pinned to the release tag of the reported runs)",
+) -> str:
     rows = [
         ("REPO_URL", repo_url, "the HookSeq repo (public: no token needed; GITHUB_TOKEN only for a private fork)"),
-        ("GIT_REF", git_ref, "branch or tag to run (pinned to the release tag of the reported runs)"),
+        ("GIT_REF", git_ref, ref_note),
         ("SIZE", "50m", "Yambda size: '50m' or '500m'"),
         *extra,
     ]
@@ -434,6 +442,49 @@ for p in sorted(CKPT.rglob("*.pt")):
 print(results_table(load_runs(RESULTS), split="test", size=SIZE))
 print(BANNER if RESUME_NEEDED else f"{NAME}: {', '.join(RUN_SPLITS)} done")"""
 
+# --- K4P (profiling) ---------------------------------------------------------------------
+K4P_DISCOVER = (
+    DISCOVER_HEAD
+    + """
+import torch
+
+if REQUIRE_GPU and not torch.cuda.is_available():
+    raise RuntimeError(
+        "no GPU: set Accelerator = GPU T4 x2 in the notebook sidebar (Settings), then Save "
+        "Version again. (REQUIRE_GPU = False profiles on CPU, which says little about the GPU.)"
+    )
+if torch.cuda.is_available():
+    cap = torch.cuda.get_device_capability()
+    print("torch", torch.__version__, "cuda", torch.version.cuda, "device sm_%d%d" % cap,
+          "arch list", torch.cuda.get_arch_list())
+PROCESSED = find_processed(SIZE, INPUT_ROOT)
+print("processed:", PROCESSED)"""
+)
+
+K4P_WORK = """\
+import sys
+
+PROFILES = Path(OUT, "profile")
+for config in CONFIGS:  # one fresh process per config, as K4 trains them
+    name = Path(config).stem
+    cmd = [
+        sys.executable, f"{REPO}/scripts/profile_train.py", "--processed", PROCESSED,
+        "--config", os.path.join(REPO, config), "--steps", STEPS, "--warmup", WARMUP,
+        "--throughput-steps", THROUGHPUT_STEPS, "--profile-steps", PROFILE_STEPS,
+        "--loader-workers", LOADER_WORKERS, "--out", PROFILES / name,
+    ]
+    for o in OVERRIDES:
+        cmd += ["--override", o]
+    run_logged(cmd, cwd=REPO)
+(PROFILES / "_HOOKREC_PROFILE").write_text("")"""
+
+K4P_SUMMARY = """\
+check_disk(WORK)
+for config in CONFIGS:
+    name = Path(config).stem
+    print("=" * 30, name, "=" * 30)
+    print((PROFILES / name / "summary.txt").read_text())"""
+
 # --- K5 --------------------------------------------------------------------------------
 K5_DISCOVER = (
     DISCOVER_HEAD
@@ -534,8 +585,8 @@ for p in sorted(Path(OUT).rglob("*")):
 
 
 def notebooks(repo_url: str, git_ref: str) -> dict[str, dict]:
-    def nb(md, extra, cells, accel):
-        return _nb(md, [params_cell(repo_url, git_ref, extra), INSTALL, *cells], accel)
+    def nb(md, extra, cells, accel, ref=git_ref, **kw):
+        return _nb(md, [params_cell(repo_url, ref, extra, **kw), INSTALL, *cells], accel)
 
     return {
         "k0_download": nb(
@@ -617,6 +668,37 @@ def notebooks(repo_url: str, git_ref: str) -> dict[str, dict]:
             ],
             [K4_DISCOVER, K4_WORK, K4_SUMMARY],
             GPU,
+        ),
+        "k4p_profile": nb(
+            _md(
+                "K4P: profile the training step (diagnostic)",
+                "**GPU T4 x2**",
+                "the K2 output for SIZE",
+                "~10-15 min (two configs, ~450 steps each, cold start included)",
+                "`profile/<name>/profile.json` and `summary.txt` per config, marker "
+                "`_HOOKREC_PROFILE`",
+                "\nRuns `scripts/profile_train.py` on each CONFIG: per-phase step times (data "
+                "wait, H2D, encode, negatives + item_repr, loss, backward, optimizer), the "
+                "unsynchronised steps/s, a torch.profiler top-25, one timed periodic eval and a "
+                "DataLoader-only sweep (num_workers 0/2/4 x pin_memory). Nothing is trained to "
+                "keep.\n\n**GIT_REF defaults to the branch `hookseq-impl`, not a release tag:** "
+                f"the profiler is newer than the `{DEFAULT_GIT_REF}` tag the K4 runs use. Pin "
+                "GIT_REF to a tag once one contains `scripts/profile_train.py`.",
+            ),
+            [
+                ("CONFIGS", ["configs/sasrec.yaml", "configs/hookseq.yaml"], "profiled in order"),
+                ("STEPS", 300, "phased (synchronised) steps per config"),
+                ("WARMUP", 20, "timed warmup steps (cold start is reported from these)"),
+                ("THROUGHPUT_STEPS", 100, "unsynchronised steps (the real steps/s)"),
+                ("PROFILE_STEPS", 20, "torch.profiler steps"),
+                ("LOADER_WORKERS", "0,2,4", "num_workers values of the DataLoader-only sweep"),
+                ("OVERRIDES", [], 'applied to every config, e.g. ["train.num_workers=2"]'),
+                ("REQUIRE_GPU", True, "fail fast if the GPU accelerator is not on"),
+            ],
+            [K4P_DISCOVER, K4P_WORK, K4P_SUMMARY],
+            GPU,
+            ref=PROFILE_GIT_REF,
+            ref_note="branch or tag to run: the dev branch (the profiler postdates the release tag)",
         ),
         "k5_eval_report": nb(
             _md(

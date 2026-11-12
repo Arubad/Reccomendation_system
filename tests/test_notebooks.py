@@ -22,7 +22,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 NB_DIR = ROOT / "notebooks" / "kaggle"
-NAMES = ["k0_download", "k1_eda", "k2_preprocess", "k3_baselines", "k4_train", "k5_eval_report"]
+NAMES = [
+    "k0_download", "k1_eda", "k2_preprocess", "k3_baselines", "k4_train", "k4p_profile",
+    "k5_eval_report",
+]  # fmt: skip
 CPU_ONLY = {"k0_download", "k1_eda", "k2_preprocess", "k3_baselines"}
 
 
@@ -54,10 +57,10 @@ def test_generated_notebooks_valid(name):
     assert k["isInternetEnabled"] is True
     if name in CPU_ONLY or name == "k5_eval_report":
         assert k["accelerator"] == "none" and k["isGpuEnabled"] is False
-    if name == "k4_train":
+    if name in ("k4_train", "k4p_profile"):
         assert k["accelerator"] != "none" and k["isGpuEnabled"] is True
     src = "\n".join(code)
-    scripts = set(re.findall(r"scripts/(run_\w+\.py)", src))
+    scripts = set(re.findall(r"scripts/((?:run_\w+|profile_train)\.py)", src))
     assert scripts, "notebook calls no script"
     for s in scripts:
         script = ROOT / "scripts" / s
@@ -76,6 +79,49 @@ def test_generated_notebooks_valid(name):
     for p in ("REPO_URL", "GIT_REF", "SIZE", "HOOKREC_SESSION_START"):
         assert p in params
     assert "input(" not in src
+
+
+def test_k4p_tracks_the_dev_branch():
+    """The profiler postdates the release tag: K4P defaults to the branch, whatever --git-ref."""
+    gen = _gen()
+    nbs = gen.notebooks("https://example.invalid/r.git", "some-tag")
+    params = _code(nbs["k4p_profile"])[0]
+    assert re.search(r'^GIT_REF = "hookseq-impl"', params, re.MULTILINE)
+    assert gen.PROFILE_GIT_REF == "hookseq-impl"
+    md = "".join(nbs["k4p_profile"]["cells"][0]["source"])
+    assert "hookseq-impl" in md and gen.DEFAULT_GIT_REF in md
+    assert re.search(r'^GIT_REF = "some-tag"', _code(nbs["k4_train"])[0], re.MULTILINE)
+
+
+def test_k4p_profiles_both_configs(processed_synth, tmp_path):
+    """K4P's own cells (clone skipped) on the synthetic bundle, on CPU with tiny shapes."""
+    inputs = tmp_path / "input"
+    shutil.copytree(processed_synth.path, inputs / "k2" / "processed" / processed_synth.path.name)
+    saved = os.environ.get("HOOKREC_SESSION_START")
+    g = {"__name__": "__notebook__"}
+    code = _code(_nb("k4p_profile"))
+    try:
+        exec(code[0], g)  # noqa: S102
+        assert g["CONFIGS"] == ["configs/sasrec.yaml", "configs/hookseq.yaml"]
+        size = processed_synth.path.name.split("-")[0]
+        tiny = [o for o in TINY_TRAIN if not o.startswith("train.max_steps")]
+        g.update(
+            INPUT_ROOT=str(inputs), WORK=str(tmp_path / "work"), OUT=str(tmp_path / "work/out"),
+            REPO=str(ROOT), SIZE=size, REQUIRE_GPU=False, STEPS=2, WARMUP=1,
+            THROUGHPUT_STEPS=1, PROFILE_STEPS=1, LOADER_WORKERS="0", OVERRIDES=tiny,
+        )  # fmt: skip
+        for cell in code[2:]:
+            exec(cell, g)  # noqa: S102
+    finally:
+        if saved is None:
+            os.environ.pop("HOOKREC_SESSION_START", None)
+        else:
+            os.environ["HOOKREC_SESSION_START"] = saved
+    prof = tmp_path / "work" / "out" / "profile"
+    assert (prof / "_HOOKREC_PROFILE").exists()
+    for name in ("sasrec", "hookseq"):
+        r = json.loads((prof / name / "profile.json").read_text())
+        assert r["config"]["name"] == name and r["phased"]["steps"] == 2
 
 
 def test_notebooks_up_to_date(tmp_path):
