@@ -1,0 +1,21 @@
+# Published baselines from the Yambda paper, arXiv 2505.22238 ("Yambda-5B"), v2.
+# Source: Table 6 "Evaluation Results on Listen+" (Global Temporal Split; Listen+ = listens with
+# >= 50% of the track duration played, Sec. 4.3). Values copied verbatim from the arXiv HTML
+# version (https://arxiv.org/html/2505.22238v2). Table 7 is the Likes setting (not used here).
+# SANSA at 500M is reported as "-" in the paper (computationally intractable); omitted here.
+# Keys: size -> model -> metric. Random is omitted.
+"50m":
+  MostPop:  {ndcg@10: 0.0186, ndcg@100: 0.0249, recall@10: 0.0064, recall@100: 0.0321, coverage@10: 0.0000, coverage@100: 0.0002}
+  DecayPop: {ndcg@10: 0.0260, ndcg@100: 0.0323, recall@10: 0.0122, recall@100: 0.0479, coverage@10: 0.0000, coverage@100: 0.0002}
+  ItemKNN:  {ndcg@10: 0.0781, ndcg@100: 0.0934, recall@10: 0.0373, recall@100: 0.1297, coverage@10: 0.0180, coverage@100: 0.0874}
+  iALS:     {ndcg@10: 0.0407, ndcg@100: 0.0642, recall@10: 0.0128, recall@100: 0.0808, coverage@10: 0.0044, coverage@100: 0.0156}
+  BPR:      {ndcg@10: 0.0389, ndcg@100: 0.0641, recall@10: 0.0139, recall@100: 0.0836, coverage@10: 0.0257, coverage@100: 0.0999}
+  SANSA:    {ndcg@10: 0.0069, ndcg@100: 0.0095, recall@10: 0.0031, recall@100: 0.0137, coverage@10: 0.0114, coverage@100: 0.0730}
+  SASRec:   {ndcg@10: 0.0748, ndcg@100: 0.0764, recall@10: 0.0325, recall@100: 0.1026, coverage@10: 0.0130, coverage@100: 0.0310}
+"500m":
+  MostPop:  {ndcg@10: 0.0173, ndcg@100: 0.0237, recall@10: 0.0060, recall@100: 0.0309, coverage@10: 0.0000, coverage@100: 0.0001}
+  DecayPop: {ndcg@10: 0.0267, ndcg@100: 0.0340, recall@10: 0.0127, recall@100: 0.0505, coverage@10: 0.0000, coverage@100: 0.0001}
+  ItemKNN:  {ndcg@10: 0.0708, ndcg@100: 0.0771, recall@10: 0.0320, recall@100: 0.1049, coverage@10: 0.0257, coverage@100: 0.0917}
+  iALS:     {ndcg@10: 0.0384, ndcg@100: 0.0621, recall@10: 0.0131, recall@100: 0.0811, coverage@10: 0.0022, coverage@100: 0.0067}
+  BPR:      {ndcg@10: 0.0400, ndcg@100: 0.0652, recall@10: 0.0137, recall@100: 0.0861, coverage@10: 0.0244, coverage@100: 0.0758}
+  SASRec:   {ndcg@10: 0.0754, ndcg@100: 0.0884, recall@10: 0.0336, recall@100: 0.1240, coverage@10: 0.0347, coverage@100: 0.0824}
