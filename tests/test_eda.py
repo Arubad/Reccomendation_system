@@ -76,7 +76,9 @@ def test_run_eda_smoke(synth_dir, tmp_path):
     mod = _load_runner()
 
     out = tmp_path / "reports"
-    mod.main(["--raw", str(synth_dir), "--size", "50m", "--out", str(out)])
+    mod.main(
+        ["--raw", str(synth_dir), "--size", "50m", "--out", str(out), "--test-timestamp", "none"]
+    )
     stats = json.loads((out / "eda_stats.json").read_text())
     assert _STAT_KEYS <= set(stats)
     assert {"item_gini", "powerlaw_alpha", "n_items"} <= set(stats["popularity"])
@@ -153,7 +155,9 @@ def test_jsonable_maps_nan_inf_to_null():
 
 def test_run_eda_smoke_substructure(synth_dir, tmp_path):
     out = tmp_path / "r"
-    stats = _load_runner().main(["--raw", str(synth_dir), "--out", str(out)])
+    stats = _load_runner().main(
+        ["--raw", str(synth_dir), "--out", str(out), "--test-timestamp", "none"]
+    )
     assert set(stats["gap"]) == {"n_gaps", "suggested_session_gap_seconds"}
     assert set(stats["repeat"]) == {"relisten_share", "consecutive_dup_share"}
     assert set(stats["seq_length"]) == {"q50", "q90", "q95", "q99", "mean", "max"}

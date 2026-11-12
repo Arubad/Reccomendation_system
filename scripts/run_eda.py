@@ -13,7 +13,7 @@ import numpy as np
 import polars as pl
 
 from hookrec.data.clean import clean_events, clean_report, scan_events
-from hookrec.data.split import global_temporal_split
+from hookrec.data.split import YAMBDA_TEST_TIMESTAMP, global_temporal_split
 from hookrec.eda import plots, stats
 
 KEEP_COLS = ["uid", "item_id", "timestamp", "is_organic", "event_type", "played_ratio_pct"]
@@ -43,6 +43,12 @@ def main(argv: list[str] | None = None) -> dict:
     ap.add_argument("--size", default="50m")
     ap.add_argument("--out", type=Path, default=Path("reports"))
     ap.add_argument("--gap-max-users", type=int, default=None)
+    ap.add_argument(
+        "--test-timestamp",
+        default=None,
+        help="test-window start (seconds); 'none' = max-anchored. Default: the official "
+        "YAMBDA_TEST_TIMESTAMP for real sizes (50m/500m/5b), max-anchored otherwise",
+    )
     args = ap.parse_args(argv)
 
     fig_dir = args.out / "figures"
@@ -106,7 +112,13 @@ def main(argv: list[str] | None = None) -> dict:
     out["like_rate_by_ratio"] = stats.like_rate_by_ratio(lf)
     plots.plot_like_rate(out["like_rate_by_ratio"], fig_dir / "like_rate.png")
 
-    split = global_temporal_split(lf, ts_unit_seconds=stats.TS_UNIT_SECONDS)
+    if args.test_timestamp is None:
+        test_ts = YAMBDA_TEST_TIMESTAMP if args.size in ("50m", "500m", "5b") else None
+    else:
+        test_ts = None if args.test_timestamp.lower() == "none" else int(args.test_timestamp)
+    split = global_temporal_split(
+        lf, ts_unit_seconds=stats.TS_UNIT_SECONDS, test_timestamp=test_ts
+    )
     out["cold_items"] = stats.cold_item_share(split.train, split.test)
     plots.plot_cold_share(out["cold_items"], fig_dir / "cold_items.png")
 

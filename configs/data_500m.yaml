@@ -1,0 +1,3 @@
+extends: data_50m.yaml
+size: 500m
+n_shards: 16

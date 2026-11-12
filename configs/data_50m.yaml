@@ -1,0 +1,15 @@
+size: 50m
+full_threshold: 50            # EDA: played_ratio_pct at/above which a listen counts as LISTEN_FULL
+min_count: 5                  # EDA: min positive train events for an ID embedding
+max_len_store: 512            # EDA: stored history per user (revisit against seq_length quantiles)
+collapse_consecutive_dups: false  # EDA: collapse runs of identical (item, token) if repeats are heavy
+pca_dim: 128
+n_shards: 1
+split:
+  train_days: 300
+  gap_seconds: 1800
+  test_days: 1
+  test_timestamp: 25913600    # official YAMBDA_TEST_TIMESTAMP = 26_000_000 - 86_400; null = max-anchored
+embeddings_file: embeddings.parquet   # K0 may point to a pre-filtered file with an `embed` column
+emb_column: normalized_embed          # `embed` for a pre-filtered file
+include_embedding_only_items: false   # embedding-only items never appear in events
