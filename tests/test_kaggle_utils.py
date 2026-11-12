@@ -153,3 +153,15 @@ def test_has_run(tmp_path):
     assert not kaggle.has_run(tmp_path, "a0_sasrec-test", "50m-aaa")
     assert not kaggle.has_run(tmp_path, "a0_sasrec-val", "50m-zzz")
     assert not kaggle.has_run(tmp_path / "missing", "a0_sasrec-val", "50m-aaa")
+
+
+def test_has_run_requires_the_same_training_hash(tmp_path):
+    """M3: a carried-over record of an older config must not skip the split."""
+    rec = {"run_name": "sasrec-val", "extra": {"processed_dir": "50m-a", "training_hash": "h1"}}
+    (tmp_path / "sasrec-val-1.json").write_text(json.dumps(rec))
+    old = {"run_name": "sasrec-test", "extra": {"processed_dir": "50m-a"}}  # pre-F3: no hash
+    (tmp_path / "sasrec-test-1.json").write_text(json.dumps(old))
+    assert kaggle.has_run(tmp_path, "sasrec-val", "50m-a", "h1")
+    assert not kaggle.has_run(tmp_path, "sasrec-val", "50m-a", "h2")
+    assert not kaggle.has_run(tmp_path, "sasrec-test", "50m-a", "h1")
+    assert kaggle.has_run(tmp_path, "sasrec-test", "50m-a")  # no hash given: as before

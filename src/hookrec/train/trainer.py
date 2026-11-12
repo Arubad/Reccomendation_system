@@ -38,11 +38,12 @@ from torch.utils.data import DataLoader, Dataset, Sampler
 from hookrec.data.label import DISLIKE
 from hookrec.data.processed import ProcessedData
 from hookrec.eval.protocol import evaluate
-from hookrec.models.base import aggregates_for, history_for, input_filter_of
+from hookrec.models.base import aggregates_for, history_for, input_filter_of, listen_plus_items
 from hookrec.models.losses import (
     DEFAULT_CHUNK_ROWS,
     bce_loss,
     make_log_q,
+    sample_from,
     sample_negatives,
     sampled_softmax_loss,
 )
@@ -92,6 +93,7 @@ OPERATIONAL_KEYS = frozenset(
     {
         "max_hours", "num_workers", "device", "log_every_steps", "eval_max_users",
         "eval_batch_size", "ckpt_every_steps", "max_steps", "schedule_steps", "amp",
+        "max_skipped_steps",
     }
 )  # fmt: skip
 
@@ -99,6 +101,7 @@ OPERATIONAL_KEYS = frozenset(
 # loss.* keys that only trade memory for speed (the chunked loss is the same function)
 OPERATIONAL_LOSS_KEYS = frozenset({"chunk_rows"})
 LOSS_TYPES = ("softmax", "bce")
+NEG_CATALOGS = ("all", "listen_plus")
 
 
 def training_hash(cfg: dict) -> str:
@@ -199,9 +202,26 @@ class LossSpec:
     like_weight: float  # 0 unless the model has a like head
     chunk_rows: int  # rows of the [M, S] block per chunk (memory only)
     max_rows: int | None  # optional: valid rows kept per batch (uniform, seeded); None = all
+    neg_catalog: Tensor | None = None  # bce negatives' item ids; None = uniform over 1..N
 
 
-def loss_spec(cfg: dict, model: nn.Module, n_items: int) -> LossSpec:
+def negative_catalog(cfg: dict, data: ProcessedData) -> Tensor | None:
+    """`loss.neg_catalog`: "all" (default, None = 1..N) or "listen_plus" (bce only): the
+    official SASRec's catalog, the items with any Listen+ event (`listen_plus_items`)."""
+    lc = cfg["loss"]
+    kind = lc.get("neg_catalog", "all")
+    if kind not in NEG_CATALOGS:
+        raise ValueError(f"loss.neg_catalog must be one of {NEG_CATALOGS}, got {kind!r}")
+    if kind == "all":
+        return None
+    if lc.get("type", "softmax") != "bce":  # the softmax sampler and its logQ assume 1..N
+        raise ValueError("loss.neg_catalog=listen_plus is only for loss.type=bce")
+    return torch.from_numpy(listen_plus_items(data))
+
+
+def loss_spec(
+    cfg: dict, model: nn.Module, n_items: int, neg_catalog: Tensor | None = None
+) -> LossSpec:
     lc = cfg["loss"]
     kind = lc.get("type", "softmax")
     if kind not in LOSS_TYPES:
@@ -226,6 +246,7 @@ def loss_spec(cfg: dict, model: nn.Module, n_items: int) -> LossSpec:
         like_weight=lc.get("like_weight", 0.0) if getattr(model, "like_head", False) else 0.0,
         chunk_rows=lc.get("chunk_rows", DEFAULT_CHUNK_ROWS),
         max_rows=max_rows,
+        neg_catalog=neg_catalog,
     )
 
 
@@ -249,7 +270,9 @@ def loss_inputs(
         keep = torch.randperm(len(pos_items), generator=gen)[: spec.max_rows].to(device)
         user_vecs, pos_items, like_y = user_vecs[keep], pos_items[keep], like_y[keep]
         rows = rows[keep] if rows is not None else None
-    if spec.type == "bce":
+    if spec.type == "bce" and spec.neg_catalog is not None:
+        neg_items = sample_from(spec.neg_catalog, len(pos_items), gen).to(device)
+    elif spec.type == "bce":
         neg_items = sample_negatives(spec.n_items, len(pos_items), gen).to(device)
     else:
         neg = [sample_negatives(spec.n_items, spec.n_uni, gen).to(device)]
@@ -370,7 +393,7 @@ def train(
     n_items = data.vocab.n_items
     eval_every, ckpt_every = tc["eval_every_steps"], tc["ckpt_every_steps"]
     log_every = tc.get("log_every_steps", 100)
-    spec = loss_spec(cfg, model, n_items)
+    spec = loss_spec(cfg, model, n_items, negative_catalog(cfg, data))
     session_gap = session_gap_from(cfg, data.cfg)
 
     cfg_hash = training_hash(cfg)
@@ -469,6 +492,8 @@ def train(
     seconds_before = st["train_seconds"]
     loss = torch.tensor(float("nan"))
     parts = {"rank": float("nan"), "like": 0.0}  # components of the last step's loss
+    skipped, max_skipped = [0], tc.get("max_skipped_steps", 50)  # consecutive skipped steps
+    min_delta = tc.get("min_delta", 0.0)  # an eval improves only above best + min_delta
 
     def stop_reason() -> str | None:
         if split == "val" and st["bad_evals"] >= tc["patience"]:  # also on re-launch after it
@@ -488,7 +513,7 @@ def train(
         metric = evaluate(rec, eval_truth, n_items, ks=(10,)).metrics["ndcg@10"]
         st["last_eval_step"] = step
         dirty = True
-        if metric > st["best_metric"]:
+        if metric > st["best_metric"] + min_delta:
             st.update(best_metric=metric, best_step=step, bad_evals=0)
             atomic_save({"model": model.state_dict(), "step": step, "metric": metric}, best_path)
         elif step > st["best_step"]:  # replayed evals before an adopted best.pt don't count
@@ -529,6 +554,15 @@ def train(
         scaler.update()
         if scaler.get_scale() >= scale_before:  # a dropped scale = inf/NaN grads, step skipped
             sched.step()
+            skipped[0] = 0
+        else:
+            skipped[0] += 1
+            if skipped[0] >= max_skipped:  # fp16 can no longer represent the gradients
+                raise RuntimeError(
+                    f"GradScaler skipped {skipped[0]} consecutive steps (inf/NaN gradients "
+                    f"under fp16 AMP) up to step {step + 1}: the run is not learning. Resume "
+                    "with --override train.amp=false (fp32), or raise train.max_skipped_steps."
+                )
         return out.detach()
 
     reason = stop_reason()

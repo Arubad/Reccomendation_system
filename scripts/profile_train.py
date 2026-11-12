@@ -73,6 +73,7 @@ from hookrec.train.trainer import (
     loss_inputs,
     loss_spec,
     lr_multiplier,
+    negative_catalog,
     param_groups,
     rank_loss,
 )
@@ -190,7 +191,7 @@ def setup(cfg: dict, data, model: nn.Module, split: str) -> Ctx:
     input_filter = input_filter_of(cfg)
     seqs, _ = history_for(data, split, input_filter)
     n_items = data.vocab.n_items
-    spec = loss_spec(cfg, model, n_items)
+    spec = loss_spec(cfg, model, n_items, negative_catalog(cfg, data))
     session_gap = session_gap_from(cfg, data.cfg)
     schedule_steps = tc.get("schedule_steps") or tc["max_steps"]
 
@@ -557,9 +558,11 @@ def _fmt_summary(r: dict) -> str:
     p = r["phased"]
     L.append(f"phased ({p['steps']} synced steps): {p['step_mean_s'] * 1e3:.1f} ms/step = "
              f"{p['steps_per_sec']:.2f} steps/s, compute/total {p['gpu_util_proxy']:.2f}")  # fmt: skip
+    labels = {"loss_fwd": "loss_fwd (incl. softmax grads)"}  # the chunked loss's own grads
     for name in PHASES:
         q = p["phases"][name]
-        L.append(f"  {name:<20} {q['mean_s'] * 1e3:9.2f} ms  ({q['share'] * 100:5.1f}%)  "
+        L.append(f"  {labels.get(name, name):<31} {q['mean_s'] * 1e3:9.2f} ms  "
+                 f"({q['share'] * 100:5.1f}%)  "
                  f"p95 {q['p95_s'] * 1e3:8.2f} ms  max {q['max_s'] * 1e3:8.2f} ms")  # fmt: skip
     t = r["throughput"]
     L.append(f"throughput ({t['steps']} unsynced steps): {t['steps_per_sec']:.2f} steps/s, "

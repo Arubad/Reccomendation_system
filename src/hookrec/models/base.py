@@ -8,7 +8,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Literal
 
+import numpy as np
+import polars as pl
+
 from hookrec.data.aggregates import PeriodAggregates
+from hookrec.data.label import LISTEN_FULL
 from hookrec.data.processed import ProcessedData, check_input_filter
 from hookrec.data.sequences import PackedSequences
 from hookrec.eval.protocol import Recommender, evaluate
@@ -59,6 +63,30 @@ def history_for(
 def aggregates_for(data: ProcessedData, split: Split) -> PeriodAggregates:
     """Full, untruncated training-period aggregates for `split` (baselines, fallback, logQ)."""
     return data.agg(period_of(split))
+
+
+def listen_plus_items(data: ProcessedData) -> np.ndarray:
+    """Sorted item ids (1..N) with any Listen+ (LISTEN_FULL) event in the bundle: the train
+    period (which holds val_train and the val day) plus the test day.
+
+    The official SASRec catalog: `preprocess` keeps Listen+ events only (yambda
+    benchmarks/models/sasrec/data.py:60-66), then numbers the unique items of that whole frame,
+    before the split, so test-day items included (:68-72; `num_items` = their count, :27-28).
+    Its negatives are uniform over that numbering (:118) and its eval ranks exactly those rows
+    (eval.py `infer_items` = `item_embeddings.weight`). Only the 30-min gap before the test day
+    is not in our bundle.
+    """
+    has = data.agg("train").pop_lp > 0
+    test = (
+        data.test_events()
+        .filter(pl.col("token") == LISTEN_FULL)
+        .select(pl.col("item_idx").unique())
+        .collect(engine="streaming")["item_idx"]
+        .to_numpy()
+    )
+    has[test] = True
+    has[0] = False
+    return np.flatnonzero(has)
 
 
 def evaluate_split(rec: Recommender, data: ProcessedData, split: Split) -> dict:

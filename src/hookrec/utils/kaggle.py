@@ -226,17 +226,26 @@ def env_report(work: str | Path = WORKING) -> dict:
     return rep
 
 
-def has_run(results_dir: str | Path, run_name: str, processed_dir: str) -> bool:
-    """True if `results_dir` holds a `run_name` record for `processed_dir` (bad JSONs ignored)."""
+def has_run(
+    results_dir: str | Path, run_name: str, processed_dir: str, training_hash: str | None = None
+) -> bool:
+    """True if `results_dir` holds a `run_name` record for `processed_dir` (bad JSONs ignored).
+
+    With `training_hash` (`hookrec.train.trainer.training_hash` of the current config), the
+    record must also carry that hash in `extra`: a carried-over record of an older config
+    (or one written before records stored the hash) never counts as done.
+    """
     d = Path(results_dir)
     for p in sorted(d.glob("*.json")) if d.is_dir() else []:
         try:
             r = json.loads(p.read_text())
         except (OSError, ValueError):
             continue
+        extra = r.get("extra") or {}
         if (
             r.get("run_name") == run_name
-            and (r.get("extra") or {}).get("processed_dir") == processed_dir
+            and extra.get("processed_dir") == processed_dir
+            and (training_hash is None or extra.get("training_hash") == training_hash)
         ):
             return True
     return False

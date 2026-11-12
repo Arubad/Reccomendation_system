@@ -1,12 +1,16 @@
-# R28: the paper-faithful SASRec row (success criterion 1). The official Yambda SASRec recipe,
-# HF dataset yandex/yambda, benchmarks/models/sasrec/{model,train,data}.py, mirrored where our
-# pipeline allows. `sasrec.yaml` (sampled softmax, 12K negatives) stays the strong baseline that
-# HookSeq must beat. Each line cites the official file:line it reproduces.
+# R28/R30: the paper-faithful SASRec row (success criterion 1). The official Yambda SASRec
+# recipe, HF dataset yandex/yambda, benchmarks/models/sasrec/{model,train,data}.py, mirrored
+# where our pipeline allows. `sasrec.yaml` (sampled softmax, 12K negatives) stays the strong
+# baseline that HookSeq must beat. Each line cites the official file:line it reproduces.
 extends: sasrec.yaml
 # d_model 64, n_layers 2, n_heads 2, max_len 200 are inherited (train.py:68-71 defaults), as are
 # batch_size 256 (train.py:67), seed 42 (train.py:74), Listen+ input (data.py:60-66) and one
 # last window per user (data.py:89, 116-117).
-model: {dropout: 0.0}  # train.py:73 (--dropout default 0.0)
+model:
+  dropout: 0.0  # train.py:73 (--dropout default 0.0)
+  # model.py:49-153: LayerNorm(eps 1e-9) on item + position embeddings (no sqrt(d)), dropout,
+  # post-LN layers (eps 1e-9), no final LayerNorm, trunc-normal init (:176-188); see sasrec.py
+  arch: official
 train:
   lr: 1.0e-3  # train.py:72; plain Adam (train.py:134) = our AdamW with weight_decay 0
   weight_decay: 0.0  # torch.optim.Adam default
@@ -24,10 +28,16 @@ train:
   # the step is cheap, so fp32 costs little. Operational: not in training_hash.
   amp: false
 loss:
-  type: bce  # model.py:244-265: one uniform negative per position (data.py:118), BCE mean
+  type: bce  # model.py:240-265: one uniform negative per position (data.py:118), BCE mean
+  # data.py:118 draws from 1..num_items, the items of the Listen+-filtered frame before the
+  # split (data.py:60-72): every item with a Listen+ event, test day included
+  neg_catalog: listen_plus
   # logq false, dislike_hard_negatives false and temperature 1.0 are inherited (BCE needs them so)
-# Not mirrored (documented in the F3 report): the official SASRec is post-LN with LayerNorm
-# eps 1e-9 and truncated-normal init (model.py:59-88, 172-188), while ours is pre-LN; it trains
-# 199 (input, target) pairs from the last 200 events (ours: 200 from the last 201); its catalog,
-# for negatives and ranking, is the items seen in Listen+ data (data.py:68-72), ours the full
-# vocab (R4).
+# Not mirrored (documented in the F3 report):
+# - training pairs: data.py:89 keeps each user's last max_seq_len = 200 train events and
+#   data.py:116-117 pairs them as [:-1] -> [1:], 199 (input, target) pairs; our `last` window
+#   is the last max_len + 1 = 201 events, 200 pairs;
+# - evaluation: the official eval ranks only its Listen+ catalog (eval.py: `infer_items` =
+#   item_embeddings.weight, rows 0..num_items, pad row 0 not excluded); ours ranks the full
+#   vocab (R4), as every other row of the results table;
+# - the pad row: ours is zero with padding_idx 0 (left padding); theirs is never used.

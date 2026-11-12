@@ -316,6 +316,51 @@ def test_chunked_loss_fp16_matmul_path_is_close(monkeypatch):
         assert a.dtype == torch.float32 and _rel_err(a, b) < 5e-3
 
 
+def test_chunked_loss_fp16_grad_gemms_do_not_overflow(monkeypatch):
+    """I1: large, aligned u and V with flat scores (e = 1 everywhere). Unscaled, e @ V sums
+    S x 40 = 81,920 and e^T @ U sums C x 40: both overflow fp16 (max 65,504). The scores
+    themselves (u.v = 40 x 40 x 16 = 25,600) still fit."""
+    import hookrec.models.losses as losses_mod
+
+    m = s = 2048
+    u = torch.full((m, 16), 40.0)
+    pv = torch.full((m, 16), 0.5)
+    nv = torch.full((s, 16), 40.0)
+    pos = torch.arange(1, m + 1)
+    neg = torch.arange(m + 1, m + s + 1)  # no hits, no pads
+    case = (u, pos, pv, neg, nv, None, None, None)
+    want, want_g = _loss_and_grads(sampled_softmax_loss, case, False, 1.0, chunk_rows=m)
+    monkeypatch.setattr(losses_mod, "_matmul_dtype", lambda u: torch.float16)
+    got, got_g = _loss_and_grads(sampled_softmax_loss, case, False, 1.0, chunk_rows=m)
+    assert torch.isfinite(got) and _rel_err(got, want) < 1e-3
+    for a, b in zip(got_g, want_g, strict=True):
+        assert torch.isfinite(a).all() and _rel_err(a, b) < 5e-3
+
+
+def test_pad_negatives_are_exactly_the_mask_value(monkeypatch):
+    """M5: a padded negative's logit is exactly -1e4 (as the reference's masked_fill), whatever
+    its vector, and it gets zero gradient."""
+    import hookrec.models.losses as losses_mod
+
+    seen = {}
+    real_addmm = torch.addmm
+
+    def spy(bias, a, b):
+        out = real_addmm(bias, a, b)
+        seen["e"] = out.clone()
+        return out
+
+    monkeypatch.setattr(losses_mod.torch, "addmm", spy)
+    u, pos, pv, _n, _nv, log_q, *_ = _masked_case(6, 5, 0)
+    neg = torch.tensor([0, 11, 12, 0, 13])
+    nv = torch.randn(5, 16) * 5
+    nv_leaf = nv.clone().requires_grad_(True)
+    loss = sampled_softmax_loss(u, pos, pv, neg, nv_leaf, log_q, 0.5)
+    loss.backward()
+    assert (seen["e"][:, neg == 0] == losses_mod._MASK).all()
+    assert (nv_leaf.grad[neg == 0] == 0).all()
+
+
 def test_chunked_loss_matmul_dtype_is_fp32_off_cuda():
     from hookrec.models.losses import _matmul_dtype
 

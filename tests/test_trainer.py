@@ -223,6 +223,10 @@ def test_run_train_smoke(processed_synth, tmp_path):
         n_cold = len(getattr(processed_synth, f"truth_{split}_cold"))
         assert recs[split]["extra"]["n_cold_users"] == n_cold
     best_step = recs["val"]["extra"]["best_step"]
+    from hookrec.train.trainer import training_hash  # M3: has_run matches records on it
+
+    assert recs["val"]["extra"]["training_hash"] == training_hash(tiny_cfg())
+    assert recs["test"]["extra"]["training_hash"] == recs["val"]["extra"]["training_hash"]
     assert recs["test"]["config"]["train"]["max_steps"] == best_step
     assert recs["test"]["config"]["train"]["schedule_steps"] == 20  # the val run's horizon
     assert recs["test"]["extra"]["steps"] == best_step
@@ -560,9 +564,12 @@ def test_configs_eval_cadence_and_loss_defaults():
     for p in ALL_TRAIN_CONFIGS:  # hookseq and a0..a6 inherit sasrec.yaml's cadence
         cfg = load_config(p)
         t, lc = cfg["train"], cfg["loss"]
-        assert (t["eval_every_steps"], t["patience"], t["ckpt_every_steps"]) == (500, 4, 1000), p
+        assert (t["eval_every_steps"], t["patience"], t["ckpt_every_steps"]) == (500, 6, 1000), p
+        assert t["min_delta"] == 0.0 and t["max_skipped_steps"] == 50, p.name
         assert lc["type"] == "softmax" and lc["max_rows"] is None, p.name  # the knob stays off
         assert lc["chunk_rows"] == 8192, p.name
+        # R30 keys default off and stay out of these configs (their hashes are unchanged)
+        assert "arch" not in cfg["model"] and "neg_catalog" not in lc, p.name
 
 
 def test_sasrec_bce_config_is_the_official_recipe():
@@ -573,7 +580,8 @@ def test_sasrec_bce_config_is_the_official_recipe():
     assert (m["name"], m["d_model"], m["n_layers"], m["n_heads"], m["max_len"]) == (
         "sasrec", 64, 2, 2, 200
     )
-    assert m["dropout"] == 0.0
+    assert m["dropout"] == 0.0 and m["arch"] == "official"
+    assert lc["neg_catalog"] == "listen_plus"
     assert (t["batch_size"], t["lr"], t["weight_decay"], t["warmup_steps"]) == (256, 1e-3, 0.0, 0)
     assert t["lr_schedule"] == "constant" and t["max_grad_norm"] is None
     # 100 epochs x 35 batches (9,207 Listen+ users // 256, K4P); one eval, at the end
@@ -682,3 +690,119 @@ def test_lr_schedule_constant_and_no_grad_clipping(processed_synth, tmp_path, mo
                       "train.lr_schedule": "constant", "train.warmup_steps": 0})  # fmt: skip
     r = train(cfg, processed_synth, _fresh(cfg, processed_synth), "test", tmp_path / "b")
     assert len(clips) == 2 and math.isfinite(r.final_loss)
+
+
+# ---- F3 fix round 1: skip guard, min_delta, Listen+ negative catalog ----------------------
+
+
+class _FakeScaler:
+    """A GradScaler whose steps are skipped (scale dropped) where `skips(call)` is True."""
+
+    def __init__(self, skips):
+        self.skips, self.calls, self.s = skips, 0, 65536.0
+
+    def scale(self, x):
+        return x
+
+    def unscale_(self, opt):
+        pass
+
+    def get_scale(self):
+        return self.s
+
+    def step(self, opt):
+        if not self.skips(self.calls + 1):  # this step's update() will keep the scale
+            opt.step()
+
+    def update(self):
+        self.calls += 1
+        self.s = self.s / 2 if self.skips(self.calls) else self.s
+
+    def state_dict(self):
+        return {}
+
+    def load_state_dict(self, d):
+        pass
+
+
+def test_skipped_step_guard_raises_after_consecutive_skips(processed_synth, tmp_path, monkeypatch):
+    import hookrec.train.trainer as trainer_mod
+    from hookrec.train.trainer import OPERATIONAL_KEYS
+
+    assert "max_skipped_steps" in OPERATIONAL_KEYS
+    data = processed_synth
+    monkeypatch.setattr(trainer_mod.torch.amp, "GradScaler", lambda *a, **k: _FakeScaler(
+        lambda c: True))  # fmt: skip
+    cfg = tiny_cfg(**{"train.max_skipped_steps": 3})
+    with pytest.raises(RuntimeError, match=r"3 consecutive.*train\.amp=false"):
+        train(cfg, data, _fresh(cfg, data), "test", tmp_path / "a")
+    # skips that are not consecutive never trip it
+    monkeypatch.setattr(trainer_mod.torch.amp, "GradScaler", lambda *a, **k: _FakeScaler(
+        lambda c: c % 2 == 0))  # fmt: skip
+    cfg = tiny_cfg(**{"train.max_skipped_steps": 2, "train.max_steps": 8})
+    assert train(cfg, data, _fresh(cfg, data), "test", tmp_path / "b").steps == 8
+
+
+def test_min_delta_requires_a_margin_to_count_as_improvement(processed_synth, tmp_path):
+    data = processed_synth
+    over = {"train.max_steps": 20, "train.eval_every_steps": 2, "train.patience": 2}
+    r = train(tiny_cfg(**over, **{"train.min_delta": 1.0}), data,
+              _fresh(tiny_cfg(**over), data), "val", tmp_path / "a")  # fmt: skip
+    # the first eval always improves on -inf; no later one can beat it by 1.0 ndcg
+    assert (r.stopped_reason, r.best_step, r.steps) == ("converged", 2, 6)
+    # a negative margin makes every eval an improvement: never converges (without min_delta
+    # both runs would stop alike, so this pair fails unless the key is honoured)
+    r = train(tiny_cfg(**over, **{"train.min_delta": -1.0}), data,
+              _fresh(tiny_cfg(**over), data), "val", tmp_path / "b")  # fmt: skip
+    assert (r.stopped_reason, r.best_step, r.steps) == ("max_steps", 20, 20)
+
+
+def test_neg_catalog_listen_plus_draws_bce_negatives_from_listen_plus_items(
+    processed_synth, tmp_path, monkeypatch
+):
+    import numpy as np
+    import polars as pl
+
+    import hookrec.train.trainer as trainer_mod
+    from hookrec.data.label import LISTEN_FULL
+    from hookrec.models.base import listen_plus_items
+
+    data = processed_synth
+    lp = set(np.flatnonzero(data.agg("train").pop_lp > 0).tolist())
+    test_lp = data.test_events().filter(pl.col("token") == LISTEN_FULL).collect()
+    want = sorted(lp | set(test_lp["item_idx"].to_list()))
+    assert listen_plus_items(data).tolist() == want
+    assert 0 < len(want) < data.vocab.n_items  # a strict subset of the catalog on the synth
+    draws = []
+    _spy(monkeypatch, trainer_mod, "sample_from", draws)
+    cfg = tiny_cfg(**{"loss.type": "bce", "loss.neg_catalog": "listen_plus",
+                      "train.max_steps": 3})  # fmt: skip
+    r = train(cfg, data, _fresh(cfg, data), "test", tmp_path / "ck")
+    assert r.steps == 3 and len(draws) == 3
+    allowed = set(want)
+    for (catalog, n, _gen), _ in draws:
+        assert catalog.tolist() == want and n > 0
+    # and what the loss saw are catalog items
+    seen = []
+    _spy(monkeypatch, trainer_mod, "bce_loss", seen)
+    neg_ids = []
+    real_inputs = trainer_mod.loss_inputs
+
+    def inputs(*a, **kw):
+        out = real_inputs(*a, **kw)
+        neg_ids.append(out["neg_items"])
+        return out
+
+    monkeypatch.setattr(trainer_mod, "loss_inputs", inputs)
+    train(cfg, data, _fresh(cfg, data), "test", tmp_path / "ck2")
+    assert all(set(n.tolist()) <= allowed for n in neg_ids)
+
+
+@pytest.mark.parametrize("over,match", [
+    ({"loss.neg_catalog": "listen_plus"}, "bce"),  # the softmax sampler assumes 1..N (logQ)
+    ({"loss.type": "bce", "loss.neg_catalog": "likes"}, "neg_catalog"),
+])  # fmt: skip
+def test_neg_catalog_validation(processed_synth, tmp_path, over, match):
+    cfg = tiny_cfg(**over)
+    with pytest.raises(ValueError, match=match):
+        train(cfg, processed_synth, _fresh(cfg, processed_synth), "test", tmp_path / "ck")

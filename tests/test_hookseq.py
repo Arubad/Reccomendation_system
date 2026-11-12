@@ -54,6 +54,12 @@ def idless(data, with_audio):
     return int(np.flatnonzero(mask)[0])
 
 
+def test_hookseq_accepts_only_its_own_arch(processed_synth):
+    assert hook(processed_synth, arch="hookseq").arch == "hookseq"
+    with pytest.raises(ValueError, match="arch"):  # official = the plain SASRec row only
+        hook(processed_synth, arch="official")
+
+
 def test_idless_item_has_finite_repr_from_audio(processed_synth):
     m = hook(processed_synth)
     i = idless(processed_synth, True)

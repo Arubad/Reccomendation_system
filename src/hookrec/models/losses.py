@@ -31,11 +31,14 @@ class _ChunkedSoftmaxCE(torch.autograd.Function):
 
     The [C, S] block is in `mm_dtype` (fp16 on CUDA, so every pass over it moves 2 bytes per
     element); row reductions accumulate in fp32 (u's dtype). Accidental hits are masked with a
-    per-chunk broadcast compare; padded negatives come pre-masked in `neg_bias`. A row whose
-    negatives are all masked gets lse_neg = -1e4 + log S, so weight exp(lse_neg - lse) = 0 and
-    exactly zero gradient, as `masked_fill` gives the reference. For dV the rows w * U are
-    divided by max|w| before the fp16 cast (and multiplied back after), so the operands stay
-    in fp16's normal range whatever the row count.
+    per-chunk broadcast compare. Padded negatives (id 0) get a zero vector in the score matmul
+    and -1e4 in `neg_bias`, so their logit is exactly -1e4, as the reference's masked_fill. A
+    row whose negatives are all masked gets lse_neg = -1e4 + log S, so its weight
+    exp(lse_neg - lse) = 0 and exactly zero gradient, as in the reference.
+
+    Range safety of the fp16 gradient matmuls (each output is a sum of e in [0, 1] times an
+    operand in [-1, 1], so it is bounded by S resp. C <= 65,504): dU uses V / max|V| and is
+    rescaled in fp32; dV uses (w * U) / max|w * U| over the chunk, rescaled in fp32.
     """
 
     @staticmethod
@@ -46,14 +49,17 @@ class _ChunkedSoftmaxCE(torch.autograd.Function):
         n_neg = len(neg_items)
         valid = (pos_items != 0).to(dt)
         row_w = valid / valid.sum().clamp(min=1)  # dL/dlse_i
+        tiny = torch.finfo(dt).tiny
         uh = (u / temperature).to(mm_dtype)
+        v = v.masked_fill((neg_items == 0)[:, None], 0.0)  # pads: logit = bias = -1e4 exactly
         vh = v.to(mm_dtype)
+        v_max = v.abs().amax().clamp_min(tiny) if n_neg else None
+        vn = (v / v_max).to(mm_dtype) if n_neg and need_u else None  # in [-1, 1]
         bias = neg_bias.to(mm_dtype)
         gu = torch.zeros_like(u) if need_u else None
         gv = torch.zeros_like(v) if need_v else None
         gpos = torch.zeros_like(pos_logit) if need_pos else None
         ghard = torch.zeros_like(hard_logit) if need_hard else None
-        tiny = torch.finfo(dt).tiny
         loss = u.new_zeros(())
         for r in range(0, len(u), chunk_rows):
             sl = slice(r, r + chunk_rows)
@@ -78,11 +84,12 @@ class _ChunkedSoftmaxCE(torch.autograd.Function):
                 ghard[sl] = a[:, None] * torch.exp(hard_logit[sl] - lse[:, None])
             if n_neg and (need_u or need_v):
                 w = a * torch.exp(lse_neg - lse) / (temperature * z)
-                if need_u:
-                    gu[sl] = (e @ vh).to(dt).mul_(w[:, None])
-                if need_v:
-                    c = w.abs().amax().clamp_min(tiny)
-                    gv += (e.T @ (u[sl] * (w / c)[:, None]).to(mm_dtype)).to(dt).mul_(c)
+                if need_u:  # |e @ vn| <= S
+                    gu[sl] = (e @ vn).to(dt).mul_((w * v_max)[:, None])
+                if need_v:  # |e^T @ (q / c)| <= C
+                    q = u[sl] * w[:, None]
+                    c = q.abs().amax().clamp_min(tiny)
+                    gv += (e.T @ (q / c).to(mm_dtype)).to(dt).mul_(c)
             if n_neg:
                 del e
         ctx.save_for_backward(gu, gv, gpos, ghard)
@@ -126,6 +133,9 @@ def sampled_softmax_loss(
     if chunk_rows < 1:
         raise ValueError(f"chunk_rows must be >= 1, got {chunk_rows}")
     mm_dtype = _matmul_dtype(user_vecs)
+    fp16_max = torch.finfo(torch.float16).max
+    if mm_dtype == torch.float16 and max(len(neg_items), chunk_rows) > fp16_max:
+        raise ValueError(f"fp16 loss needs S and chunk_rows <= {fp16_max:.0f} (range bound)")
     with torch.autocast(user_vecs.device.type, enabled=False):
         u = user_vecs.float()
         pos_logit = (u * pos_vecs.float()).sum(-1) / temperature
@@ -197,3 +207,8 @@ def make_log_q(
 def sample_negatives(n_items: int, n: int, generator: torch.Generator | None) -> Tensor:
     """n item ids drawn uniformly from 1..n_items."""
     return torch.randint(1, n_items + 1, (n,), generator=generator)
+
+
+def sample_from(catalog: Tensor, n: int, generator: torch.Generator | None) -> Tensor:
+    """n item ids drawn uniformly (with replacement) from the 1-D id tensor `catalog`."""
+    return catalog[torch.randint(len(catalog), (n,), generator=generator)]

@@ -14,8 +14,10 @@ train:
   # F3: an eval costs ~1.6 s on a T4, so a fine cadence is cheap and stops ~2K steps after
   # the val peak (it was 10K with 2000 x 5)
   eval_every_steps: 500
-  patience: 4
+  patience: 6  # 3K steps without improvement
+  min_delta: 0.0  # an eval must beat the best ndcg@10 by more than this (0 = any gain)
   ckpt_every_steps: 1000
+  max_skipped_steps: 50  # consecutive GradScaler-skipped (inf/NaN) steps before failing
   max_grad_norm: 1.0  # null = no clipping
   amp: true  # fp16 autocast + GradScaler on CUDA; false = fp32 on the GPU (NaN fallback)
   # Kaggle sessions die at 9 h. The 1 h margin covers the final checkpoint, the last eval in

@@ -159,6 +159,7 @@ def main(argv: list[str] | None = None) -> Path | None:
     extra = {
         "split": args.split,
         "processed_dir": data.path.name,
+        "training_hash": training_hash(cfg),  # K4's has_run: a stale record never skips a split
         "dataset_size": data.cfg["size"],
         "best_step": res.best_step,
         "steps": res.steps,

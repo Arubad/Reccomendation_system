@@ -45,7 +45,10 @@ class HookSeq(SASRec):
         like_head: bool = False,
         use_time_gap: bool = False,
         n_gap_buckets: int = 8,
+        arch: str = "hookseq",
     ):
+        if arch != "hookseq":  # "official" is the paper-faithful plain SASRec row only (R30)
+            raise ValueError(f"HookSeq supports model.arch 'hookseq' only, got {arch!r}")
         # NB: on HookSeq `self.n_items` is n_id (the ID table size, SASRec's constructor arg);
         # `self.n_catalog` is the catalog size N that item_repr / all_item_repr cover.
         # item_emb is the ID table (n_id + 1 rows), not one row per catalog item.

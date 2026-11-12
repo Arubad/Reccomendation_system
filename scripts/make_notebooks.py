@@ -359,6 +359,15 @@ if REQUIRE_GPU and not torch.cuda.is_available():
     )
 PROCESSED = find_processed(SIZE, INPUT_ROOT)
 NAME = Path(CONFIG).stem
+import yaml
+
+from hookrec.train.trainer import training_hash
+from hookrec.utils.config import load_config
+
+# the training config this version runs (as run_train.py parses OVERRIDES): a carried-over
+# record of another config (another hash, or none) never counts as a finished split
+_over = {k: yaml.safe_load(v) for k, _, v in (o.partition("=") for o in OVERRIDES)}
+THASH = training_hash(load_config(os.path.join(REPO, CONFIG), _over))
 # earlier K4 outputs of this config: their results are carried over, their checkpoints resumed
 PREV_RESULTS = find_inputs(f"_HOOKREC_RESULTS_{NAME}", INPUT_ROOT) if RESUME_INPUTS else []
 PREV_CKPTS = [d for d in find_inputs("_HOOKREC_CKPT", INPUT_ROOT) if d.name == NAME]
@@ -386,10 +395,11 @@ for d in PREV_RESULTS:
 # enough for K5 (test/model_final.pt); outputs that hold the split's record are preferred
 for split in ("val", "test"):
     rec = f"{NAME}-{split}"
-    if not has_run(RESULTS, rec, PROCESSED.name):
+    if not has_run(RESULTS, rec, PROCESSED.name, THASH):
         continue
     homes = sorted(
-        PREV_CKPTS, key=lambda d: not has_run(d.parent.parent / "results", rec, PROCESSED.name)
+        PREV_CKPTS,
+        key=lambda d: not has_run(d.parent.parent / "results", rec, PROCESSED.name, THASH),
     )
     for fname in ("model_final.pt", "best.pt"):
         dest = CKPT / split / fname
@@ -402,7 +412,7 @@ for split in ("val", "test"):
 RESUME_NEEDED = False
 for split in RUN_SPLITS:  # test takes its step count from the val record, so val runs first
     run_name = f"{NAME}-{split}"
-    if has_run(RESULTS, run_name, PROCESSED.name):
+    if has_run(RESULTS, run_name, PROCESSED.name, THASH):
         print(f"{run_name}: a record already exists, skipping")
         continue
     cmd = [
@@ -416,7 +426,8 @@ for split in RUN_SPLITS:  # test takes its step count from the val record, so va
     for o in OVERRIDES:
         cmd += ["--override", o]
     run_logged(cmd, cwd=REPO)
-    if not has_run(RESULTS, run_name, PROCESSED.name):  # exit 0 without a record = max_hours
+    # exit 0 without a record = max_hours
+    if not has_run(RESULTS, run_name, PROCESSED.name, THASH):
         RESUME_NEEDED = True
         BANNER = (
             "=" * 78 + f"\\nRESUME NEEDED: {run_name} stopped on train.max_hours; its checkpoint is "
