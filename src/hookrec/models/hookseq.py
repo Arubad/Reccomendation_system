@@ -90,13 +90,7 @@ class HookSeq(SASRec):
         if use_ratio:
             self.ratio_emb = nn.Embedding(N_RATIO_BUCKETS, d, padding_idx=0)
         # SASRec's own parameters keep their base init (so the all-off model matches it exactly)
-        for name in (
-            "audio_mlp",
-            "artist_emb",
-            "token_emb",
-            "organic_emb",
-            "ratio_emb",
-        ):
+        for name in ("audio_mlp", "artist_emb", "token_emb", "organic_emb", "ratio_emb"):
             if hasattr(self, name):
                 getattr(self, name).apply(self._init_weights)
         with torch.no_grad():
@@ -148,5 +142,5 @@ class HookSeq(SASRec):
         return x
 
     def like_logit(self, hidden: torch.Tensor, target_vecs: torch.Tensor) -> torch.Tensor:
-        """[B, L] bilinear logit that the target event is a like: <hidden, W target_vecs>."""
+        """Bilinear like logit <hidden, W target_vecs>, shape = any leading shape of the inputs."""
         return (hidden * self.like_W(target_vecs)).sum(-1)

@@ -364,9 +364,11 @@ def train(
             )  # fmt: skip
             parts["rank"] = out.detach()
             if like_weight:  # multi-task: does the target event get a like? (positions with target)
+                logits = model.like_logit(user_vecs.float(), pos_vecs.float())
+                # sum / max(n, 1): an empty batch gives 0 (BCE's mean would be NaN)
                 like_loss = F.binary_cross_entropy_with_logits(
-                    model.like_logit(user_vecs.float(), pos_vecs.float()), like_y.float()
-                )
+                    logits, like_y.float(), reduction="sum"
+                ) / max(len(like_y), 1)
                 parts["like"] = like_loss.detach()
                 out = out + like_weight * like_loss
         opt.zero_grad(set_to_none=True)
@@ -392,9 +394,14 @@ def train(
                 sps = steps_session / max(time.monotonic() - t_session, 1e-9)
                 log.info(
                     "step %d loss %.4f (rank %.4f like %.4f) lr %.2e %.2f steps/s ETA %.2f h",
-                    step, float(loss), float(parts["rank"]), float(parts["like"]), sched.get_last_lr()[0], sps,
+                    step,
+                    float(loss),
+                    float(parts["rank"]),
+                    float(parts["like"]),
+                    sched.get_last_lr()[0],
+                    sps,
                     (max_steps - step) / sps / 3600,
-                )  # fmt: skip
+                )
             if split == "val" and step % eval_every == 0:
                 run_eval()
             if step % ckpt_every == 0:

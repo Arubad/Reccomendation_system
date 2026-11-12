@@ -105,9 +105,9 @@ class SeqRecommender:
             a = np.where(valid, np.asarray(getattr(self.seqs, f))[src], 0).astype(np.int64)
             out[f] = torch.from_numpy(a).to(self.device, non_blocking=True)
         # gap to the previous event of the same user, which may lie outside the window
-        ts = np.asarray(self.seqs.ts).astype(np.int64)
+        ts = np.asarray(self.seqs.ts)  # gather first, then cast: O(B*L), not O(T)
         first = src == offsets[rows][:, None]
-        gap = ts[src] - ts[np.maximum(src - 1, 0)]
+        gap = ts[src].astype(np.int64) - ts[np.maximum(src - 1, 0)].astype(np.int64)
         gb = np.where(valid & ~first, gap_buckets(gap, self.session_gap), 0)
         out["gap_bucket"] = torch.from_numpy(gb.astype(np.int64)).to(self.device)
         return out

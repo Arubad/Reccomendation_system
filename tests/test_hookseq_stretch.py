@@ -201,3 +201,40 @@ def test_run_train_smoke_on_a6(processed_synth, tmp_path):
     rec = json.loads(Path(path).read_text())
     assert rec["config"]["model"]["use_time_gap"] and rec["config"]["model"]["like_head"]
     assert "ndcg@10" in rec["metrics"]
+
+
+def test_train_gap_bucket_uses_predecessor_outside_the_window():
+    ts = np.cumsum([10, 10, 100, 1000, 10, 100000, 10, 40, 50, 700, 10, 20]).tolist()
+    seqs = _seqs_with_ts({1: ts})
+    seqs.items[:] = np.arange(1, len(ts) + 1)  # item id = position + 1
+    full = np.concatenate([[0], gap_buckets(np.diff(np.array(ts)))])
+    ds, seen = SeqTrainDataset(seqs, 4, seed=0), set()
+    for e in range(60):
+        ds.set_epoch(e)
+        x = ds[0]
+        s = int(x["items"][0]) - 1  # window start
+        seen.add(s)
+        assert x["gap_bucket"].tolist() == full[s : s + 4].tolist()
+    assert max(seen) > 0 and full[max(seen)] > 0  # a mid-sequence window was exercised
+
+
+def test_time_gap_state_dict_shares_keys_with_flags_off(processed_synth):
+    off = hook(processed_synth).state_dict()
+    gap = hook(processed_synth, use_time_gap=True).state_dict()
+    assert set(gap) - set(off) == {"gap_emb.weight"} and set(off) <= set(gap)
+    assert all(torch.equal(off[k], gap[k]) for k in off)
+
+
+def test_like_loss_finite_when_no_position_has_a_target(processed_synth, tmp_path, monkeypatch):
+    orig = SeqTrainDataset.__getitem__
+
+    def no_targets(self, idx):
+        x = orig(self, idx)
+        x["target"] = torch.zeros_like(x["target"])
+        x["target_is_like"] = torch.zeros_like(x["target_is_like"])
+        return x
+
+    monkeypatch.setattr(SeqTrainDataset, "__getitem__", no_targets)
+    res, model, _ = _train(processed_synth, tmp_path, "empty", True, 0.5)
+    assert np.isfinite(res.final_loss)
+    assert all(torch.isfinite(p).all() for p in model.parameters())
