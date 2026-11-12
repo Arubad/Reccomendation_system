@@ -14,12 +14,19 @@
 **What the user said**
 - Aim for the best version (no hard time cap).
 - Approach B: a sequence-based "what plays / gets liked next" transformer.
-- Training runs on **Kaggle notebooks (GPU)**. Code is written locally on a MacBook Air.
+- **All training runs on Kaggle's free tier.** The MacBook Air is for writing code and running the unit tests on tiny synthetic data only. No model training happens locally. Kaggle is the primary runtime, and every heavy stage is designed around its free limits (Section 9a).
 - Put real weight on **EDA and preprocessing** and use sound ML concepts throughout.
 
 **Assumptions (correct if wrong)**
 - The repo lives in this folder and gets pushed to the user's GitHub.
-- Python 3.10+, PyTorch 2.x. Kaggle T4/P100 GPU (16 GB), ~29 GB RAM, 12 h sessions, ~30 GPU-h/week.
+- Python 3.10+, PyTorch 2.x (whatever the Kaggle image ships; nothing pinned that fights it).
+- Kaggle limits are designed **conservatively**, because published figures vary and the GPU quota "floats":
+  - **9 h max per session** (some sources say 12 h)
+  - **~30 GPU-h/week, but planned around a 20 h budget**
+  - **≤16 GB RAM** (newer GPU instances report ~29 GB)
+  - **20 GB `/kaggle/working`**
+  - 1× P100 16 GB or 2× T4
+  - internet on (requires a phone-verified account)
 - The README and results are the main deliverable a recruiter will see.
 
 **Success criteria**
@@ -157,7 +164,7 @@ Music reccomendation_system/
 │   ├── eval/                 # metrics.py, protocol.py, slices.py, fairness.py, report.py
 │   ├── demo/                 # app.py
 │   └── utils/                # config.py, seed.py, logging.py
-├── notebooks/                # 01_eda, 02_baselines, 03_train_hookseq_kaggle, 04_results
+├── notebooks/kaggle/         # k0_download … k5_eval_report (thin: clone repo, call scripts)
 ├── scripts/                  # run_preprocess.py, run_train.py, run_eval.py
 ├── tests/                    # synthetic-data unit tests per module
 ├── reports/                  # eda_summary.md, figures/
@@ -166,6 +173,59 @@ Music reccomendation_system/
 ```
 
 Large data and checkpoints are git-ignored. Kaggle notebooks run `git clone <repo> && pip install -e .` and then call the scripts.
+
+---
+
+## 9a. Kaggle execution plan (primary runtime)
+
+**Principles**
+1. **Never burn GPU quota on CPU work.** Download, EDA, preprocessing, popularity baselines and iALS (CPU `implicit`) all run in **CPU-only** Kaggle notebooks, which don't draw on the GPU quota. Only transformer training and full-catalog GPU scoring use GPU sessions.
+2. **Chain notebooks through Kaggle Datasets.** Each stage's output is saved as a private Kaggle Dataset (or used as notebook output) and attached as **read-only input** to the next stage. Inputs under `/kaggle/input` don't count against the 20 GB working disk, and work survives session resets.
+3. **Run in the background.** Long jobs use *Save Version → Save & Run All (Commit)*, which keeps running after the browser closes. Interactive sessions are for short debugging only.
+4. **Everything is resumable** within the 9 h limit: checkpoint every N steps (model + optimizer + scheduler + RNG + data-loader position) to `/kaggle/working/checkpoints`. A rerun with the previous version's output attached resumes automatically.
+5. **Memory-safe data handling:**
+   - Polars lazy scans with column projection; compact dtypes (uint32/uint8/float16).
+   - 500M is processed in user shards (via the `sequential/500m` per-user format or parquet row groups) and never fully materialised in RAM.
+   - Audio embeddings are filtered to the subset's items and stored as float16, PCA'd if needed.
+
+**Notebook pipeline**
+
+| # | Notebook | Accelerator | Input | Output (Kaggle Dataset) | Est. time |
+|---|---|---|---|---|---|
+| K0 | `k0_download` | CPU | HF `yandex/yambda` | `yambda-raw-{50m,500m}` (multi_event, embeddings filtered to subset items, artist map) | 0.5–1.5 h |
+| K1 | `k1_eda` | CPU | K0 (50m) | figures + `eda_summary.md` | <1 h |
+| K2 | `k2_preprocess` | CPU | K0 + config | `hookseq-processed-{size}` (split, vocab, packed sequences, item features, popularity) | 50m <0.5 h; 500m 2–4 h (sharded) |
+| K3 | `k3_baselines` | CPU | K2 | results JSONs (MostPop, DecayPop, iALS) | 50m <0.5 h; 500m 1–3 h |
+| K4 | `k4_train` | **GPU** | K2 + config name | checkpoints + results JSON | see budget |
+| K5 | `k5_eval_report` | GPU (scoring) or CPU (50m) | K2 + K4 | slices, fairness, bootstrap CIs, tables | <1 h |
+
+Before K0, check whether Yambda is already mirrored as a public Kaggle Dataset. If it is, attach it instead of downloading.
+
+**GPU budget (planned ≈ 20 h of ~30 h/week)**
+
+| Runs | Size | Est. GPU-h |
+|---|---|---|
+| SASRec reproduction + 1–2 debug runs | 50M | ~2 |
+| Ablation ladder (≈5 configs × ~0.5 h) | 50M | ~3 |
+| Small hyperparameter sweep on the best config (≈4 runs) | 50M | ~2 |
+| SASRec baseline | 500M | ~4–5 |
+| Full HookSeq | 500M | ~5–6 |
+| Scoring / eval | both | ~1–2 |
+| **Total** | | **~17–20** |
+
+These estimates get recalibrated after the first 50M run (time per epoch is logged). If 500M exceeds a session, training is split across chained versions using the checkpoint resume. Each 500M training run gets a hard per-run cap in config (`max_hours: 8.0`).
+
+**GPU efficiency choices:**
+- AMP fp16 (T4/P100 have no bf16 or TF32)
+- pinned memory, DataLoader `num_workers=3–4`
+- sampled softmax (never a full 3M-way softmax in training)
+- chunked top-k scoring
+- optional `DataParallel` on 2× T4 only if it measurably helps (default single GPU)
+
+**Local Mac role:**
+- Write code; `pytest -q` on synthetic fixtures (CPU, <1 min); `ruff` lint.
+- Optional: run the 50M EDA locally if it's comfortable.
+- Push to GitHub; Kaggle pulls the repo by tag/commit, so every run is reproducible: the git SHA is recorded in each results JSON.
 
 ---
 
@@ -189,8 +249,8 @@ Large data and checkpoints are git-ignored. Kaggle notebooks run `git clone <rep
 ## 11. Phases (implementation order)
 
 1. Scaffold, config and synthetic fixtures + tests
-2. Download + load + clean (50M)
-3. **EDA** → decisions recorded in `reports/eda_summary.md`
+2. Download + load + clean (50M): Kaggle K0 (CPU)
+3. **EDA** → decisions recorded in `reports/eda_summary.md`: Kaggle K1 (CPU)
 4. Split, vocab, features, sequences
 5. Metrics + evaluation protocol (tested)
 6. MostPop / DecayPop / iALS baselines on 50M
@@ -207,12 +267,15 @@ Large data and checkpoints are git-ignored. Kaggle notebooks run `git clone <rep
 
 | Risk | Mitigation |
 |---|---|
-| 500M doesn't fit Kaggle RAM/disk | Use the `sequential/500m` format; Polars streaming; process per user shard; fallback: report on 50M + a 500M user subsample, stated clearly |
+| 500M doesn't fit Kaggle RAM/disk | Use the `sequential/500m` format; Polars streaming; process per user shard; outputs to Kaggle Datasets (inputs don't use working disk); fallback: report on 50M + a 500M user subsample, stated clearly |
+| GPU quota runs out mid-project / quota floats down | Plan for 20 of ~30 h; all CPU work in CPU sessions; ablations only on 50M; 500M only for the final 2 configs; quota resets weekly, so 500M runs can move into the next week |
+| Session killed at the time limit | Step-level checkpointing + auto-resume from the previous version's output; `max_hours` guard saves and exits cleanly before the limit |
+| GPU queue / availability delays | Run in the background with Save & Run All; keep CPU stages independent so work continues while waiting |
 | Item vocab too large for GPU (≈3M items) | `min_count` vocab + ID-less audio path; d=64; sampled softmax (no full softmax in training) |
 | Can't reproduce paper numbers | Debug the evaluation first with popularity baselines (cheap, deterministic) and compare against the paper's MostPop/DecayPop rows |
 | Audio embeddings don't help warm items | Still report it; the value is in the cold slice. Ablation results are honest either way |
 | Kaggle 12 h session limit | Checkpoint every epoch; resumable training; cached preprocessing artifacts |
-| Mac sandbox lacks torch | Develop and test locally in a venv on the Mac (CPU/MPS); GPU runs on Kaggle |
+| Mac too weak for training | No training locally by design; the Mac runs only tests on synthetic fixtures (CPU torch in a venv) |
 
 ---
 
