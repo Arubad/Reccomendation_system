@@ -95,7 +95,7 @@ def build_item_features(
     fit_mask = in_train[emb_idx]
 
     dim = mat.shape[1]
-    if pca_dim is not None and pca_dim < dim:
+    if pca_dim is not None and (len(mat) == 0 or pca_dim < dim):
         n_fit = int(fit_mask.sum())
         if n_fit == 0:
             raise ValueError("pca_dim is set but no train item has an audio embedding")
