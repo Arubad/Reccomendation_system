@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import torch
 from torch import Tensor, nn
 
-from hookrec.data.sequences import PackedSequences
-from hookrec.models.popularity import MostPop, fill_cold
 from hookrec.train.datasets import _INPUT_FIELDS, DEFAULT_SESSION_GAP, gap_buckets
+
+if TYPE_CHECKING:
+    from hookrec.data.sequences import PackedSequences
+    from hookrec.models.popularity import MostPop
 
 _TIE_ROWS = 64  # rows per full stable sort when a top-k cut falls inside a tie
 
@@ -132,4 +136,6 @@ class SeqRecommender:
                 out[at] = idx.cpu().numpy()
         finally:
             self.model.train(was_training)
+        from hookrec.models.popularity import fill_cold
+
         return fill_cold(uids, out, self.fallback.top_items(k), known)

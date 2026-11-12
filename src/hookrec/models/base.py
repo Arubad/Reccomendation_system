@@ -79,5 +79,7 @@ def fit_recommender(name: str, data: ProcessedData, cfg: dict, split: Split) -> 
     if split not in ("val", "test"):
         raise ValueError(f"split must be 'val' or 'test', got {split!r}")
     if name not in REGISTRY:
+        from hookrec.models import ials, popularity  # noqa: F401  (registers the baselines)
+    if name not in REGISTRY:
         raise KeyError(f"unknown model {name!r}; registered: {sorted(REGISTRY)}")
     return REGISTRY[name](data, cfg, split)

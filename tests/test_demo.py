@@ -238,3 +238,106 @@ def test_hf_space_app_builds_with_local_bundle(bundle_dir, tmp_path, monkeypatch
     )
     assert mod.resolve_bundle(tmp_path) == bundle_dir
     assert fetched == [{"repo_id": "me/bundle", "repo_type": "model"}]
+
+
+def test_bundle_matches_the_full_sasrec(processed_synth, tiny_ckpts, engine):
+    data = processed_synth
+    cfg = load_config(ROOT / "configs" / "sasrec.yaml", TINY)
+    full = build_model(cfg, data)
+    full.load_state_dict(
+        torch.load(tiny_ckpts["sasrec"] / "model_final.pt", weights_only=True)["model"]
+    )
+    full.eval()
+    sub = data.vocab.encode(engine.raw_ids)
+    with torch.no_grad():
+        want = full.all_item_repr()[torch.from_numpy(sub)]
+    assert torch.allclose(engine._vecs["sasrec"][1:], want, atol=2e-3)  # fp16 storage
+    s = engine.sample_user_session(1, n_last=None)
+    batch = engine._session_batch(s)
+    full_batch = {k: v.clone() for k, v in batch.items()}
+    full_batch["items"] = torch.from_numpy(data.vocab.encode(np.array([i for i, _, _ in s])))[None]
+    with torch.no_grad():
+        assert torch.allclose(
+            full.user_state(full_batch), engine.models["sasrec"].user_state(batch), atol=1e-5
+        )
+
+
+def test_audience_scores_are_state_dot_vector(engine):
+    track = engine.idless_audio_items[0]
+    i = int(np.flatnonzero(engine.raw_ids == track)[0])
+    hs = engine.models["hookseq"]
+    assert int(hs.id_idx[i + 1]) == 0  # no ID row: the vector is audio + artist only
+    with torch.no_grad():
+        idx = torch.tensor([i + 1])
+        audio = hs.audio_mlp(hs.audio[idx].float())
+        want = audio + hs.artist_emb(hs.artist_idx[idx])
+        assert torch.allclose(hs.item_repr(idx), want, atol=1e-6)
+    states = engine._sample_states()
+    aud = engine.new_track_audience(track, k=engine.n_sample_users)
+    assert len(aud) == engine.n_sample_users
+    by_uid = {int(u): j for j, u in enumerate(engine._w["w_uids"])}
+    ref = states @ engine._vecs["hookseq"][i + 1].numpy()
+    for a in aud:
+        assert a["score"] == pytest.approx(float(ref[by_uid[a["uid"]]]), abs=1e-6)
+
+
+def test_subset_rule(processed_synth, engine):
+    data, raw = processed_synth, set(engine.raw_ids.tolist())
+    assert set(engine._w["w_items"].tolist()) <= raw  # every window item is in the subset
+    f, v = data.features, data.vocab
+    idless = np.flatnonzero((v.id_idx == 0) & f.has_audio)
+    idless = idless[idless > 0]
+    assert len(idless) and {int(v.raw_ids[i]) for i in idless[:500]} <= raw
+    assert set(engine.idless_audio_items) >= {int(v.raw_ids[i]) for i in idless[:500]}
+    top = np.argsort(-f.pop_train[1:], kind="stable")[:15] + 1
+    assert {int(v.raw_ids[i]) for i in top} <= raw
+
+
+def test_parse_session_ranges_and_overflow():
+    pytest.importorskip("gradio")
+    from hookrec.demo.app import parse_session
+
+    for bad in (float("inf"), 2**40, -1):
+        with pytest.raises(ValueError, match="track id"):
+            parse_session([[bad, "like", True]])
+
+
+def test_oversized_bundle_is_removed(processed_synth, tiny_ckpts, tmp_path, monkeypatch):
+    import hookrec.demo.bundle as b
+
+    monkeypatch.setattr(b, "SIZE_LIMIT_BYTES", 1)
+    with pytest.raises(RuntimeError, match="limit"):
+        export_demo_bundle(
+            processed_synth, tiny_ckpts["hookseq"], tiny_ckpts["sasrec"], tmp_path / "x", 4, 10
+        )
+    assert list((tmp_path / "x").iterdir()) == []
+
+
+def test_demo_imports_stay_lean():
+    """The Space installs hookrec without its training deps: the demo must not need them."""
+    import subprocess
+
+    code = (
+        "import sys, hookrec.demo.engine, hookrec.demo.app, hookrec.models.hookseq, "
+        "hookrec.models.sasrec\n"
+        "bad = [m for m in ('implicit','sklearn','scipy','matplotlib','pyarrow','polars','yaml') "
+        "if m in sys.modules]\nprint(bad)"
+    )
+    out = subprocess.run(
+        [sys.executable, "-I", "-c", code], check=False, capture_output=True, text=True
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "[]"
+
+
+def test_ensure_hookrec_installs_without_deps(monkeypatch):
+    spec = importlib.util.spec_from_file_location("space_app2", ROOT / "deploy/hf_space/app.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    calls = []
+    monkeypatch.setattr(mod.subprocess, "run", lambda cmd, check: calls.append(cmd))
+    mod.ensure_hookrec("v9")  # hookrec is importable here: nothing to do
+    assert calls == []
+    monkeypatch.setattr(mod.importlib.util, "find_spec", lambda name: None)
+    mod.ensure_hookrec("v9")
+    assert "--no-deps" in calls[0] and calls[0][-1].endswith("Reccomendation_system.git@v9")

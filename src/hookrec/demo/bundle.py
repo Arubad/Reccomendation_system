@@ -23,12 +23,12 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 
-from hookrec.data.features import ItemFeatures
 from hookrec.train.datasets import gap_buckets, session_gap_from
 
 if TYPE_CHECKING:
@@ -120,12 +120,13 @@ def build_models(bundle: Bundle):
 
     a, meta = bundle.arrays, bundle.meta
     m = bundle.n_subset
-    feats = ItemFeatures(
+    # HookSeq reads only these four attributes (a SimpleNamespace avoids importing
+    # `hookrec.data.features`, and with it polars and scikit-learn, on the Space)
+    feats = SimpleNamespace(
         audio=a["audio"],
         has_audio=a["has_audio_full"],
         artist_idx=a["artist_sub"],
         n_artists=int(meta["n_artists_sub"]),
-        pop_train=np.zeros(m + 2, dtype=np.int64),
     )
     # every parameter and persistent buffer is in the state_dict, so loading is strict (the
     # id/audio/artist buffers are non-persistent and rebuilt above from the bundle's arrays)
@@ -259,6 +260,9 @@ def export_demo_bundle(
     total = sum(p.stat().st_size for p in out.iterdir() if p.is_file())
     log.info("demo bundle: %d items, %d sample users, %.1f MB", m, len(win["uids"]), total / 2**20)
     if total >= SIZE_LIMIT_BYTES:
+        for p in out.iterdir():  # leave no oversized bundle behind
+            if p.name in ("meta.json", "arrays.npz", "hookseq.pt", "sasrec.pt"):
+                p.unlink()
         raise RuntimeError(
             f"bundle is {total / 2**20:.0f} MB, over the {SIZE_LIMIT_BYTES // 2**20} MB limit: "
             "lower --n-items"

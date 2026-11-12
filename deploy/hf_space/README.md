@@ -4,6 +4,7 @@ emoji: 🎧
 colorFrom: indigo
 colorTo: purple
 sdk: gradio
+sdk_version: 6.31.0
 app_file: app.py
 python_version: 3.10
 pinned: false
@@ -14,6 +15,9 @@ pinned: false
 Next-track recommendations from a listening session on Yambda: HookSeq (audio, artist, event
 and organic signals) next to a plain SASRec, plus a "new track audience" tab for tracks with
 audio but no ID embedding.
+
+Pinned: torch 2.8.0 (ZeroGPU-supported) and gradio 6.31.0; `hookrec` is installed by `app.py`
+without its training dependencies, at the tag set in `HOOKREC_REF`.
 
 Hardware: this Space is meant for **ZeroGPU** (choose it in Settings, Space hardware). Models
 load on CPU at startup; scoring runs inside `spaces.GPU` calls. It also runs on CPU hardware.

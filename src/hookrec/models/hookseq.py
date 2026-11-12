@@ -11,14 +11,17 @@ bilinear like-prediction head (`like_logit`) for the trainer's auxiliary loss.
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from torch import nn
 
-from hookrec.data.features import ItemFeatures
 from hookrec.data.label import N_RATIO_BUCKETS, N_TOKEN_TYPES
 from hookrec.models.sasrec import SASRec
+
+if TYPE_CHECKING:
+    from hookrec.data.features import ItemFeatures
 
 
 class HookSeq(SASRec):

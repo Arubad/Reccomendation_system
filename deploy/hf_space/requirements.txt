@@ -1,7 +1,9 @@
+# Lean runtime set. hookrec itself is installed without its dependencies by app.py.
 spaces
-gradio
-torch
+# ZeroGPU supports torch 2.8.0 to 2.13.0 (https://huggingface.co/docs/hub/spaces-zerogpu,
+# checked 2026-11-12); 2.8.0 is the oldest supported release and runs on Python 3.10.
+torch==2.8.0
+# the version the demo was tested with locally (Python 3.12); also set as sdk_version in README.md
+gradio==6.31.0
 numpy
-polars
 huggingface_hub
-git+https://github.com/Arubad/Reccomendation_system.git@hookseq-impl

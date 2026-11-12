@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-import polars as pl
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import polars as pl
 
 PAD = 0
 LISTEN_FULL = 1
@@ -19,6 +22,8 @@ def label_events(lf: pl.LazyFrame, full_threshold: int = 50) -> pl.LazyFrame:
     Listens with played_ratio_pct >= full_threshold are LISTEN_FULL, other listens LISTEN_SKIP.
     Positive = LISTEN_FULL or LIKE.
     """
+    import polars as pl  # lazy: the demo imports the token constants without polars
+
     et = pl.col("event_type").cast(pl.String)
     ratio = pl.col("played_ratio_pct").cast(pl.Int32).fill_null(0)  # null listen = skip
     is_listen = et == "listen"

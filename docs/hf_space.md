@@ -17,9 +17,14 @@ only needs the bundle and the `hookrec` package.
 3. **Create a Space**: SDK Gradio, hardware **ZeroGPU**. New free accounts only get ZeroGPU; the
    demo also runs on CPU hardware.
 4. **Set the variable** `HOOKSEQ_BUNDLE_REPO=YOU/hookseq-demo-bundle` (Settings, Variables).
-5. **Push the kit**: copy `deploy/hf_space/{app.py,requirements.txt,README.md}` to the Space repo
-   and push. `requirements.txt` installs `hookrec` from GitHub at the `hookseq-impl` branch; pin
-   a tag for a stable demo.
+5. **Pin the code**: tag the code repo (`git tag v0.1-demo && git push origin v0.1-demo`) and set
+   `HOOKREC_REF` in `app.py` to that tag or a full commit SHA, never a branch. `app.py` installs
+   `hookrec` with `pip --no-deps`, so the Space needs only the packages in `requirements.txt`
+   (torch 2.8.0 is on ZeroGPU's supported list, 2.8.0 to 2.13.0 when checked; gradio is pinned to
+   the tested 6.x, also as `sdk_version` in the README front-matter). Re-check the supported
+   torch list at https://huggingface.co/docs/hub/spaces-zerogpu before bumping.
+6. **Push the kit**: copy `deploy/hf_space/{app.py,requirements.txt,README.md}` to the Space repo
+   and push.
 
 Notes: the engine loads on CPU at startup and never touches CUDA at import. The two scoring
 functions run under `spaces.GPU` and move the model to CUDA only inside the call. Session items

@@ -7,12 +7,16 @@ sequence so a window's first event still gets the true gap to its predecessor.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 from hookrec.data.label import LIKE, LISTEN_FULL
-from hookrec.data.sequences import PackedSequences
+
+if TYPE_CHECKING:
+    from hookrec.data.sequences import PackedSequences
 
 _INPUT_FIELDS = ("items", "tokens", "organic", "ratio")
 DEFAULT_SESSION_GAP = 1800  # seconds; `data.session_gap_seconds` overrides (EDA suggestion)

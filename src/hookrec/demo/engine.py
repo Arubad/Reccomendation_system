@@ -3,14 +3,19 @@
 Nothing touches CUDA at import or construction. The two scoring functions are wrapped with
 `spaces.GPU` only when `spaces` is installed (ZeroGPU); inside them the model and tensors move
 to CUDA if it is available and the result comes back as numpy. Without CUDA they run on CPU.
+They look the model and item vectors up by engine token rather than taking them as arguments.
 """
 
 from __future__ import annotations
 
+import contextlib
+import itertools
+import threading
 from pathlib import Path
 from typing import Literal
 
 # isort: off
+from hookrec.demo import gpu
 from hookrec.demo.gpu import _maybe_gpu  # first: `spaces` must be imported before torch
 
 import numpy as np
@@ -34,38 +39,52 @@ EVENT_RATIO = {"listen_full": 5, "listen_skip": 1, "like": 0, "dislike": 0}  # 0
 SESSION_SPACING_S = 60  # synthesised seconds between the events of a typed-in session
 
 
+# The GPU functions are module level (ZeroGPU wants them decorated at import) and look the
+# model and item matrix up here by engine token, so only the small batch is passed (pickled) per
+# call, never a module or the item matrix.
+_RESIDENT: dict[int, dict] = {}
+_TOKENS = itertools.count()
+_MOVE_LOCK = threading.Lock()  # one move-to-device / score / move-back at a time
+
+
 def _device(device: str | None) -> torch.device:
     return torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
 
-def _encode_impl(model, batch: dict, device: str | None = None) -> np.ndarray:
-    """User states [B, d] of a batch, as numpy."""
+@contextlib.contextmanager
+def _on_device(model, device: str | None):
+    """Model on the scoring device for the block. On ZeroGPU it goes back to CPU afterwards (the
+    GPU is released between calls); elsewhere it stays resident after the first move."""
     dev = _device(device)
-    on_gpu = dev.type != "cpu"
-    if on_gpu:
-        model.to(dev)
-    try:
-        with torch.no_grad():
-            return model.user_state({k: v.to(dev) for k, v in batch.items()}).float().cpu().numpy()
-    finally:
-        if on_gpu:
-            model.to("cpu")
+    with _MOVE_LOCK:
+        if dev.type != "cpu":
+            model.to(dev)
+        try:
+            yield dev
+        finally:
+            if dev.type != "cpu" and _spaces_active():
+                model.to("cpu")
 
 
-def _topk_impl(model, batch: dict, item_vecs, k: int, device: str | None = None):
+def _spaces_active() -> bool:
+    return gpu._spaces is not None
+
+
+def _encode_impl(token: int, name: str, batch: dict, device: str | None = None) -> np.ndarray:
+    """User states [B, d] of a batch under the engine's model `name`, as numpy."""
+    model = _RESIDENT[token]["models"][name]
+    with _on_device(model, device) as dev, torch.no_grad():
+        return model.user_state({k: v.to(dev) for k, v in batch.items()}).float().cpu().numpy()
+
+
+def _topk_impl(token: int, name: str, batch: dict, k: int, device: str | None = None):
     """(scores, item indices) numpy [B, k]: top-k items by dot product, pad excluded."""
-    dev = _device(device)
-    on_gpu = dev.type != "cpu"
-    if on_gpu:
-        model.to(dev)
-    try:
-        with torch.no_grad():
-            users = model.user_state({key: v.to(dev) for key, v in batch.items()})
-            vals, idx = score_topk(users, item_vecs.to(dev), k)
-        return vals.cpu().numpy(), idx.cpu().numpy()
-    finally:
-        if on_gpu:
-            model.to("cpu")
+    res = _RESIDENT[token]
+    model = res["models"][name]
+    with _on_device(model, device) as dev, torch.no_grad():
+        users = model.user_state({key: v.to(dev) for key, v in batch.items()})
+        vals, idx = score_topk(users, res["vecs"][name].to(dev), k)
+    return vals.cpu().numpy(), idx.cpu().numpy()
 
 
 _encode = _maybe_gpu(_encode_impl)
@@ -85,11 +104,13 @@ class DemoEngine:
         self.pop, self.artist = a["item_pop"], a["item_artist"]
         self.has_id, self.has_audio = a["has_id"], a["has_audio"]
         self.models = dict(zip(("hookseq", "sasrec"), build_models(b), strict=True))
+        self._token = next(_TOKENS)
         # rows 0..M: pad + subset. The unknown row is never a candidate.
         self._vecs = {
             "hookseq": torch.from_numpy(a["vec_hookseq"][: self.n_subset + 1].astype(np.float32)),
             "sasrec": torch.from_numpy(a["vec_sasrec"][: self.n_subset + 1].astype(np.float32)),
         }
+        _RESIDENT[self._token] = {"models": self.models, "vecs": self._vecs}
         self._w = {k: a[k] for k in a if k.startswith("w_")}
         self.idless_audio_items = self.raw_ids[~self.has_id & self.has_audio].tolist()
         self._states: np.ndarray | None = None
@@ -135,7 +156,7 @@ class DemoEngine:
             raise ValueError(f"model must be 'hookseq' or 'sasrec', got {model!r}")
         k = max(1, min(int(k), self.n_subset))
         batch = self._session_batch(session)
-        vals, idx = _topk(self.models[model], batch, self._vecs[model], k, self.device)
+        vals, idx = _topk(self._token, model, batch, k, self.device)
         return [
             {
                 "item_id": int(self.raw_ids[i - 1]),
@@ -184,7 +205,7 @@ class DemoEngine:
                 "ratio": pad(w["w_ratio"]),
                 "gap_bucket": pad(w["w_gap_bucket"]),
             }
-            self._states = _encode(self.models["hookseq"], batch, self.device)
+            self._states = _encode(self._token, "hookseq", batch, self.device)
         return self._states
 
     def new_track_audience(self, raw_item_id: int, k: int = 10) -> list[dict]:

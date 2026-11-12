@@ -26,8 +26,10 @@ def parse_session(rows) -> list[tuple[int, str, bool]]:
             continue
         try:
             item_id = int(float(item))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             raise ValueError(f"row {n}: track id {item!r} is not a number") from None
+        if not 0 <= item_id < 2**32:  # raw Yambda item ids are uint32
+            raise ValueError(f"row {n}: track id {item_id} is outside [0, 2^32)")
         event = str(event).strip() if event is not None else ""
         if event not in EVENT_TOKEN:
             raise ValueError(f"row {n}: event must be one of {EVENTS}, got {event!r}")
@@ -85,7 +87,9 @@ def build_app(engine: DemoEngine):
             gr.Markdown(
                 "Edit the session (oldest event first; add rows at the bottom) or load a sample "
                 "user. Events: " + ", ".join(f"`{e}`" for e in EVENTS) + ". Toggle `organic` to "
-                "see HookSeq react to it."
+                "see HookSeq react to it. The editor does not keep real timing or played ratios (also for "
+                "loaded sample users): events are taken as 60 s apart, a full listen as the "
+                "80-100% played bucket and a skip as the under-20% bucket."
             )
             with gr.Row():
                 sample = gr.Slider(
