@@ -1,0 +1,12 @@
+mostpop: {}
+decaypop:
+  grid:
+    half_life_days: [1, 3, 7, 30]
+ials:
+  iterations: 15
+  seed: 0
+  use_gpu: null
+  grid:
+    factors: [64, 128]
+    alpha: [1, 10, 40]
+    regularization: [0.01, 0.1]
