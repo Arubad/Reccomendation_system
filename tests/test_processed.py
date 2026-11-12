@@ -109,9 +109,10 @@ def test_sharded_matches_unsharded(synth_dir, tmp_path, built):
         a, b = ref.agg(period), got.agg(period)
         assert a.t_end == b.t_end and np.array_equal(a.uids, b.uids)
         assert (a.ui != b.ui).nnz == 0 and a.ui.shape == b.ui.shape
-        for f in ("day_items", "day_index", "day_counts", "pop_lp", "pop_pos"):
+        for f in ("day_items", "day_index", "day_counts", "hour_items", "hour_index", "hour_counts",
+                  "pop_lp", "pop_pos"):
             assert np.array_equal(getattr(a, f), getattr(b, f)), (period, f)
-        for f in ("ui", "item_day"):  # the files themselves, too
+        for f in ("ui", "item_day", "item_hour"):  # the files themselves, too
             name = f"{f}_{period}.npz"
             with np.load(ref.path / name) as x, np.load(d / name) as y:
                 assert x.files == y.files
@@ -206,11 +207,49 @@ def test_aggregates_equal_brute_force(synth_dir, built):
             (int(i), int(d)): int(n) for i, d, n in zip(a.day_items, a.day_index, a.day_counts)
         }
         assert got_day == dict(Counter((i, (t_end - t) // 86400) for _, i, t in lp))
+        got_hour = {
+            (int(i), int(h)): int(n) for i, h, n in zip(a.hour_items, a.hour_index, a.hour_counts)
+        }
+        recent = [(i, (t_end - t) // 3600) for _, i, t in lp if t >= t_end - 30 * 86400]
+        assert recent and got_hour == dict(Counter(recent))
+        assert a.hour_index.dtype == np.uint16 and a.hour_index.max() < 720
+        assert a.day_index.dtype == np.int16 and a.day_items.dtype == np.int32
         n1 = v.n_items + 1
         assert a.pop_lp.tolist() == np.bincount([i for _, i, _ in lp], minlength=n1).tolist()
         assert a.pop_pos.tolist() == np.bincount(pos, minlength=n1).tolist()
     # the full-period positive counts are the features' train popularity
     assert np.array_equal(pd_.agg_train.pop_pos, pd_.features.pop_train)
+
+
+@pytest.mark.parametrize("half_life", [0.14, 3.3, 30.0])
+def test_decaypop_binned_matches_per_event_decay(synth_dir, built, half_life):
+    """R26: hourly bins for the last 30 days, daily before. Each event's weight is within a
+    factor 2 ** (0.5 h / half_life) of the exact per-event weight inside 30 days (2 ** (12 h
+    / half_life) before that, where the weights themselves are negligible at short half-lives)."""
+    from hookrec.data.label import LISTEN_FULL
+    from hookrec.models.base import fit_recommender
+
+    _, pd_ = built
+    v = pd_.vocab
+    t_end = pd_.meta["t_val_train_end"]
+    rows = _labeled_train_rows(synth_dir, pd_.cfg, t_end).collect()
+    rows = rows.filter(pl.col("token") == LISTEN_FULL)
+    items = v.encode(rows["item_id"].to_numpy())
+    age_days = (t_end - rows["timestamp"].to_numpy().astype(np.int64)) / 86400
+    exact = np.bincount(items, weights=0.5 ** (age_days / half_life), minlength=v.n_items + 1)
+    got = fit_recommender("decaypop", pd_, {"half_life_days": half_life}, "val").scores
+    recent = np.bincount(items, weights=(age_days < 30) * 0.5 ** (age_days / half_life),
+                         minlength=v.n_items + 1)  # fmt: skip
+    old = exact - recent
+    hour_factor, day_factor = 2 ** (1 / 48 / half_life), 2 ** (0.5 / half_life)
+    upper = recent * hour_factor + old * day_factor
+    lower = recent / hour_factor + old / day_factor
+    assert np.all(got <= upper * (1 + 1e-9)) and np.all(got >= lower * (1 - 1e-9))
+    assert (recent > 0).sum() > 10  # the hourly part is really exercised
+    if half_life == 0.14:  # tight: old events weigh < 1e-60 here, the hourly error is <= 11%
+        np.testing.assert_allclose(got, exact, rtol=hour_factor - 1, atol=1e-30)
+        top = set(np.argsort(-exact, kind="stable")[:10].tolist())
+        assert len(top & set(np.argsort(-got, kind="stable")[:10].tolist())) >= 8
 
 
 def test_listen_plus_sequences(built):

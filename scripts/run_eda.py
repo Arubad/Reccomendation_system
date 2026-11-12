@@ -74,6 +74,8 @@ def main(argv: list[str] | None = None) -> dict:
     out: dict = {"clean_report": report}
     item_c, user_c = counts = stats.entity_counts(lf)
     out["popularity"] = stats.popularity_stats(lf, counts)
+    # min_count evidence (EDA §1); positive = listen >= 50% played (full_threshold) or like
+    out["popularity"]["items_with_ge_k_positives"] = stats.items_with_ge_k_positives(lf)
     plots.plot_event_mix(out["popularity"]["by_event_type"], fig_dir / "event_mix.png")
     plots.plot_loglog_counts(item_c, user_c, fig_dir / "loglog_counts.png")
     plots.plot_lorenz(item_c, user_c, fig_dir / "lorenz.png")

@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_URL = "https://github.com/Arubad/Reccomendation_system.git"
-DEFAULT_GIT_REF = "hookseq-impl"
+DEFAULT_GIT_REF = "v0.2-r2"  # the tag the reported runs use; the maintainer creates it
 POLARS_FLOOR = "2.1"  # = pyproject's `polars>=` floor (tests/test_notebooks.py checks they agree)
 
 CPU = {"accelerator": "none", "isGpuEnabled": False}
@@ -35,7 +35,7 @@ def _py(v) -> str:
 def params_cell(repo_url: str, git_ref: str, extra: list[tuple[str, object, str]]) -> str:
     rows = [
         ("REPO_URL", repo_url, "the HookSeq repo (public: no token needed; GITHUB_TOKEN only for a private fork)"),
-        ("GIT_REF", git_ref, "branch or tag to run (hookseq-impl until merged, then main; pin a tag for reproducible runs)"),
+        ("GIT_REF", git_ref, "branch or tag to run (pinned to the release tag of the reported runs)"),
         ("SIZE", "50m", "Yambda size: '50m' or '500m'"),
         *extra,
     ]

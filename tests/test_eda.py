@@ -82,8 +82,40 @@ def test_run_eda_smoke(synth_dir, tmp_path):
     stats = json.loads((out / "eda_stats.json").read_text())
     assert _STAT_KEYS <= set(stats)
     assert {"item_gini", "powerlaw_alpha", "n_items"} <= set(stats["popularity"])
+    ge = stats["popularity"]["items_with_ge_k_positives"]
+    assert [r["k"] for r in ge] == [1, 2, 5, 10, 20]
+    n_items = [r["n_items"] for r in ge]
+    assert n_items == sorted(n_items, reverse=True)  # monotone in k
     assert 0 <= stats["cold_items"]["share_test_items_unseen"] <= 1
     assert len(list((out / "figures").glob("*.png"))) >= 8
+
+
+def test_items_with_ge_k_positives_known():
+    from hookrec.eda.stats import items_with_ge_k_positives
+
+    # item 1: 3 full listens + 1 like; item 2: 2 full listens + 5 skips; item 3: 1 like;
+    # item 4: 4 skips + 1 null-ratio listen + 1 dislike (no positive)
+    rows = (
+        [(1, "listen", 90)] * 3 + [(1, "like", None)]
+        + [(2, "listen", 50)] * 2 + [(2, "listen", 49)] * 5
+        + [(3, "like", None)]
+        + [(4, "listen", 10)] * 4 + [(4, "listen", None), (4, "dislike", None)]
+    )  # fmt: skip
+    lf = pl.LazyFrame(
+        {
+            "item_id": [r[0] for r in rows],
+            "event_type": pl.Series([r[1] for r in rows]).cast(pl.Categorical),
+            "played_ratio_pct": pl.Series([r[2] for r in rows], dtype=pl.UInt16),
+        }
+    )
+    got = {r["k"]: r for r in items_with_ge_k_positives(lf, ks=(1, 2, 4, 5))}
+    total = len(rows)
+    assert total == 18
+    assert got[1]["n_items"] == 3 and got[1]["event_share"] == pytest.approx(12 / total)
+    assert got[2]["n_items"] == 2 and got[2]["event_share"] == pytest.approx(11 / total)
+    assert got[4]["n_items"] == 1 and got[4]["event_share"] == pytest.approx(4 / total)
+    assert got[5]["n_items"] == 0 and got[5]["event_share"] == 0.0
+    assert got[1]["item_share"] == pytest.approx(3 / 4)
 
 
 def _ladder() -> pl.LazyFrame:

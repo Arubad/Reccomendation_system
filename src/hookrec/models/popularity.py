@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from hookrec.data.aggregates import HOURLY_DAYS, PeriodAggregates
 from hookrec.data.label import LIKE, LISTEN_FULL
 from hookrec.data.processed import ProcessedData
 from hookrec.data.sequences import PackedSequences
@@ -67,9 +68,11 @@ class DecayPop(_ScoredPop):
     `configs/baselines.yaml` grid holds those equivalents (R25). Two differences remain:
     - age is measured from the period end `t_end`, not the last train event; a constant shift
       that multiplies every score equally and so never changes the ranking;
-    - the registry fit (`fit_days`) bins events by day (R18), so every event of a day gets the
-      weight of the day's middle. For half-lives well under a day (the official 0.5-3 h
-      windows) this is a coarse approximation of the per-event decay; `fit` is exact.
+    - the registry fit (`fit_binned`, R26) decays the last 30 days per hour and older events
+      per day, each event weighted at the middle of its bin. Inside 30 days an event's age is
+      off by at most 30 min (weight within a factor 2 ** (1 / (48 * half_life_days))), beyond
+      it by at most 12 h, where the weight of every grid half-life but 30 d is < 2^-4.
+      `fit` (per event) is exact.
     """
 
     def __init__(self, half_life_days: float):
@@ -93,10 +96,26 @@ class DecayPop(_ScoredPop):
         its age differs from the exact per-event age by at most half a day (< 1 day).
         """
         age_days = np.asarray(day, dtype=np.float64) + 0.5
-        w = np.asarray(count, dtype=np.float64) * 0.5 ** (age_days / self.half_life_days)
-        return self._rank(
-            np.bincount(np.asarray(item_idx, dtype=np.int64), weights=w, minlength=n_items + 1)
-        )
+        return self._rank(_decayed(item_idx, age_days, count, self.half_life_days, n_items))
+
+    def fit_binned(self, agg: PeriodAggregates, n_items: int) -> DecayPop:
+        """Fit from a period's aggregates (R26): hourly bins for the last `HOURLY_DAYS` days,
+        daily bins (day >= HOURLY_DAYS) before that. Day d covers hours [24 d, 24 d + 24), so
+        the two sets partition the period exactly."""
+        old = np.asarray(agg.day_index) >= HOURLY_DAYS
+        hl = self.half_life_days
+        scores = _decayed(
+            agg.day_items[old], agg.day_index[old].astype(np.float64) + 0.5,
+            agg.day_counts[old], hl, n_items,
+        )  # fmt: skip
+        hour_age_days = (agg.hour_index.astype(np.float64) + 0.5) / 24
+        scores += _decayed(agg.hour_items, hour_age_days, agg.hour_counts, hl, n_items)
+        return self._rank(scores)
+
+
+def _decayed(items, age_days, counts, half_life_days, n_items) -> np.ndarray:
+    w = np.asarray(counts, dtype=np.float64) * 0.5 ** (age_days / half_life_days)
+    return np.bincount(np.asarray(items, dtype=np.int64), weights=w, minlength=n_items + 1)
 
 
 def fill_cold(
@@ -128,7 +147,6 @@ def _build_mostpop(data: ProcessedData, cfg: dict, split: Split) -> MostPop:
 def _build_decaypop(data: ProcessedData, cfg: dict, split: Split) -> DecayPop:
     if cfg.get("half_life_days") is None:
         raise ValueError("decaypop needs cfg['half_life_days'] (> 0), but it is missing")
-    a = aggregates_for(data, split)
-    return DecayPop(cfg["half_life_days"]).fit_days(
-        a.day_items, a.day_index, a.day_counts, data.vocab.n_items
+    return DecayPop(cfg["half_life_days"]).fit_binned(
+        aggregates_for(data, split), data.vocab.n_items
     )

@@ -8,6 +8,9 @@ untruncated events:
                            they are exactly the period's warm users (official protocol).
     item_day_{period}.npz  sparse (item_idx, day, count) of Listen+ events, day =
                            (t_end - ts) // 86400 (0 = the last day before the period end).
+    item_hour_{period}.npz sparse (item_idx, hour, count) of the Listen+ events of the last
+                           HOURLY_DAYS (30) days only, hour = (t_end - ts) // 3600 < 720.
+                           DecayPop decays these per hour and older events per day (R26).
     pop_lp_{period}.npy    i64[N+1] Listen+ events per item.
     pop_pos_{period}.npy   i64[N+1] positive (LISTEN_FULL or LIKE) events per item.
 
@@ -27,6 +30,8 @@ from hookrec.data.label import LIKE, LISTEN_FULL
 from hookrec.data.vocab import ItemVocab
 
 SECONDS_PER_DAY = 86400
+SECONDS_PER_HOUR = 3600
+HOURLY_DAYS = 30  # hourly bins cover [t_end - 30 d, t_end): hours 0 .. 719 (fit in uint16)
 PERIODS = ("train", "val_train")
 
 
@@ -46,6 +51,9 @@ class PeriodAggregates:
     day_items: np.ndarray  # i32[K]
     day_index: np.ndarray  # i16[K] (t_end - ts) // 86400
     day_counts: np.ndarray  # i32[K]
+    hour_items: np.ndarray  # i32[H] (last HOURLY_DAYS days only)
+    hour_index: np.ndarray  # u16[H] (t_end - ts) // 3600, < 24 * HOURLY_DAYS
+    hour_counts: np.ndarray  # i32[H]
     pop_lp: np.ndarray  # i64[N+1]
     pop_pos: np.ndarray  # i64[N+1]
     t_end: int  # exclusive end of the period (seconds)
@@ -73,6 +81,10 @@ class PeriodAggregates:
             d / f"item_day_{period}.npz",
             item_idx=self.day_items, day=self.day_index, count=self.day_counts,
         )  # fmt: skip
+        np.savez(
+            d / f"item_hour_{period}.npz",
+            item_idx=self.hour_items, hour=self.hour_index, count=self.hour_counts,
+        )  # fmt: skip
         np.save(d / f"pop_lp_{period}.npy", self.pop_lp)
         np.save(d / f"pop_pos_{period}.npy", self.pop_pos)
 
@@ -84,18 +96,45 @@ class PeriodAggregates:
             uids, t_end = z["uids"], int(z["t_end"])
         with np.load(d / f"item_day_{period}.npz") as z:
             day = (z["item_idx"], z["day"], z["count"])
+        with np.load(d / f"item_hour_{period}.npz") as z:
+            hour = (z["item_idx"], z["hour"], z["count"])
         return cls(
             uids=uids, ui=ui, day_items=day[0], day_index=day[1], day_counts=day[2],
+            hour_items=hour[0], hour_index=hour[1], hour_counts=hour[2],
             pop_lp=np.load(d / f"pop_lp_{period}.npy"),
             pop_pos=np.load(d / f"pop_pos_{period}.npy"), t_end=t_end,
         )  # fmt: skip
 
 
+def _binned(
+    vocab: ItemVocab, lf: pl.LazyFrame, bin_expr: pl.Expr
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(item_idx i32, bin, count i32) of `lf`'s events per (item, bin), sorted by (item, bin).
+
+    The bin and the count are typed in polars (the caller picks the narrowest dtype that fits)
+    and sorted there: vocab indices ascend with raw ids, so (item_id, bin) order is (item_idx,
+    bin) order and no numpy re-sort or int64 copy is needed.
+    """
+    df = (
+        lf.group_by("item_id", bin_expr.alias("bin"))
+        .agg(pl.len().cast(pl.Int32).alias("n"))
+        .sort("item_id", "bin")
+        .collect(engine="streaming")
+    )
+    items = vocab.encode(df["item_id"].to_numpy()).astype(np.int32)
+    bins, counts = df["bin"].to_numpy(), df["n"].to_numpy()
+    del df
+    ok = items > 0
+    if not ok.all():  # the catalog covers every event item, so this is normally a no-op
+        items, bins, counts = items[ok], bins[ok], counts[ok]
+    return items, bins, counts
+
+
 def build_period_aggregates(lf: pl.LazyFrame, vocab: ItemVocab, t_end: int) -> PeriodAggregates:
     """Aggregates of one period from its labeled events (uid, item_id, timestamp, token).
 
-    Three streaming group-bys over the whole period (their outputs are bounded by the number of
-    distinct (user, item) / (item, day) pairs and items, not by the event count).
+    Streaming group-bys over the period (their outputs are bounded by the number of distinct
+    (user, item) / (item, day) / recent (item, hour) pairs and items, not by the event count).
     """
     n1 = vocab.n_items + 1
     ev = lf.select("uid", "item_id", "timestamp", "token")
@@ -120,15 +159,9 @@ def build_period_aggregates(lf: pl.LazyFrame, vocab: ItemVocab, t_end: int) -> P
     del ui_df, items
 
     age = pl.lit(t_end, dtype=pl.Int64) - pl.col("timestamp").cast(pl.Int64)
-    d = (
-        lp.group_by("item_id", (age // SECONDS_PER_DAY).alias("day"))
-        .agg(pl.len().alias("n"))
-        .collect(engine="streaming")
-    )
-    d_items = vocab.encode(d["item_id"].to_numpy())
-    ok = d_items > 0
-    d_items, d_day, d_n = d_items[ok], d["day"].to_numpy()[ok], d["n"].to_numpy()[ok]
-    order = np.lexsort((d_day, d_items))
+    d_items, d_day, d_n = _binned(vocab, lp, (age // SECONDS_PER_DAY).cast(pl.Int16))
+    recent = lp.filter(pl.col("timestamp") >= t_end - HOURLY_DAYS * SECONDS_PER_DAY)
+    h_items, h_hour, h_n = _binned(vocab, recent, (age // SECONDS_PER_HOUR).cast(pl.UInt16))
 
     pop = (
         ev.filter(pl.col("token").is_in([LISTEN_FULL, LIKE]))
@@ -145,9 +178,12 @@ def build_period_aggregates(lf: pl.LazyFrame, vocab: ItemVocab, t_end: int) -> P
     return PeriodAggregates(
         uids=uids.astype(np.uint32),
         ui=ui,
-        day_items=d_items[order].astype(np.int32),
-        day_index=d_day[order].astype(np.int16),  # < 2^15 days
-        day_counts=d_n[order].astype(np.int32),
+        day_items=d_items,
+        day_index=d_day,
+        day_counts=d_n,
+        hour_items=h_items,
+        hour_index=h_hour,
+        hour_counts=h_n,
         pop_lp=pop_lp,
         pop_pos=pop_pos,
         t_end=int(t_end),

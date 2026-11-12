@@ -154,6 +154,33 @@ def suggest_session_gap(gaps_log10: np.ndarray) -> float:
     return float(10 ** centers[valley])
 
 
+MIN_COUNT_KS = (1, 2, 5, 10, 20)
+
+
+def items_with_ge_k_positives(
+    lf: pl.LazyFrame, ks: tuple[int, ...] = MIN_COUNT_KS, full_threshold: int = 50
+) -> list[dict]:
+    """Evidence for `min_count`: per k, the items with >= k positive events (a listen with
+    played_ratio_pct >= `full_threshold`, or a like; the vocab's ID-row criterion) and the
+    share of ALL events those items carry. Over the whole input (EDA has no split)."""
+    et = pl.col("event_type").cast(pl.String)
+    positive = (et == "like") | (
+        (et == "listen") & (pl.col("played_ratio_pct").fill_null(0) >= full_threshold)
+    )
+    per = lf.group_by("item_id").agg(n=pl.len(), n_pos=positive.sum()).collect()
+    n, n_pos = per["n"].to_numpy(), per["n_pos"].to_numpy()
+    total = max(int(n.sum()), 1)
+    return [
+        {
+            "k": int(k),
+            "n_items": int((n_pos >= k).sum()),
+            "item_share": float((n_pos >= k).mean()) if len(n) else 0.0,
+            "event_share": float(n[n_pos >= k].sum() / total),
+        }
+        for k in ks
+    ]
+
+
 def _listens(lf: pl.LazyFrame) -> pl.LazyFrame:
     if "event_type" in lf.collect_schema().names():
         return lf.filter(pl.col("event_type") == "listen")
