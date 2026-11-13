@@ -134,7 +134,7 @@ What each notebook does, and the defaults its parameter cell ships with:
 - **K4** runs `scripts/run_train.py --processed <K2> --config CONFIG --split S --ckpt
   out/ckpt/<name>/S --out out/results [--resume <earlier ckpt>/S ...]` for S in `val`, then
   `test`.
-  - `CONFIGS` is a list (default: the five ablations a0-a4). They train one after another in a
+  - `CONFIGS` is a list (default: the follow-up ablations a7 and a8, section 5). They train one after another in a
     single session; the run name is the file stem. `OVERRIDES` apply to every config. A plain
     string `CONFIG = "..."` (add the line) still works and means `CONFIGS = [CONFIG]`.
   - Before each split it checks the budget left (`train.max_hours` from the resolved config,
@@ -217,8 +217,29 @@ runs both val and test stays well under the limit. The disk check at the end war
 
 ## 5. Ablations: one notebook, all configs
 
-The default `CONFIGS` of `k4_train.ipynb` is the ablation ladder a0-a4. Import it once, attach
-K2, and Save Version: all five train in one session (about 5 x 0.5-1 h at 50M). If the budget
+| Config | Changes from `configs/hookseq.yaml` | Question |
+|---|---|---|
+| `a0_sasrec` | every HookSeq flag off, no logQ / dislike negatives | same-code-path SASRec control |
+| `a1_audio` | audio + artist only | do content features help? |
+| `a2_audio_event_organic` | + event / organic / ratio inputs | do the event signals help? |
+| `a3_full_logq` | + logQ correction | |
+| `a4_full_dislike` | + dislike hard negatives (= `hookseq.yaml`) | the full model |
+| `a5_like_head`, `a6_time_gap` | + like head / + time-gap embedding | stretch |
+| `a7_full_no_content` | audio and artist off | the full model minus content features |
+| `a8_full_all_ids` | `model.id_min_count: 1` | an ID for every item with >= 1 train positive, as SASRec has |
+
+`model.id_min_count` (HookSeq only; null = the bundle's table, `data.min_count` = 5) rebuilds the
+ID table when the model is built, from the same train-positive counts preprocessing used, so a8
+uses the same K2 bundle. At 50M (886,174 items, d = 64) its table is at most 227 MB of fp32
+weights, about 0.9 GB with gradients and the two AdamW moments. SASRec already trains a table
+of this size, so it fits a T4. Speed: the sampled softmax looks up the same number of rows per
+step; only the dense embedding gradient and the AdamW update grow to the full table (about 57M
+values per step, as for SASRec), and scoring is unchanged (HookSeq already builds a vector for
+every catalog item). Expect a8 at SASRec-like step times, a little slower than a4.
+
+The ladder a0-a4 is trained at 50M (v0.3.1). The default `CONFIGS` of `k4_train.ipynb` is now
+the two follow-ups a7 and a8: import it, attach K2, and Save Version; both train in one session
+(about 2 x 0.5-1 h at 50M). To retrain the ladder, list a0-a4 in the first cell. If the budget
 runs out part-way, the RESUME NEEDED banner lists what is pending; attach that version's output
 and save again (section 4). To train other configs, change the list in the first cell, for
 example `["configs/hookseq.yaml"]` or `["configs/ablations/a5_like_head.yaml", ...]`.

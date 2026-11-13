@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -84,3 +84,30 @@ def build_vocab(
     n_id = int(eligible.sum())
     id_idx[eligible] = np.arange(1, n_id + 1, dtype=np.int32)
     return ItemVocab(raw_ids=raw_ids, id_idx=id_idx, n_items=len(catalog), n_id=n_id)
+
+
+def id_index_from_counts(pos_counts: np.ndarray, min_count: int) -> tuple[np.ndarray, int]:
+    """(id_idx i32 [N+1], n_id): items with >= `min_count` positive train events get IDs
+    1..n_id in item-index order, the assignment `build_vocab` makes from the same counts.
+
+    `pos_counts` is i64 [N+1]: positive (LISTEN_FULL or LIKE) events per item over the
+    vocab's training period `split.train`, i.e. `ProcessedData.agg("train").pop_pos`.
+    """
+    if isinstance(min_count, bool) or not isinstance(min_count, (int, np.integer)):
+        raise TypeError(f"min_count must be an int, got {min_count!r}")
+    if min_count < 1:
+        raise ValueError(f"min_count must be >= 1, got {min_count}")
+    eligible = np.asarray(pos_counts) >= min_count
+    eligible[0] = False  # index 0 is the pad
+    id_idx = np.zeros(len(eligible), dtype=np.int32)
+    n_id = int(eligible.sum())
+    id_idx[eligible] = np.arange(1, n_id + 1, dtype=np.int32)
+    return id_idx, n_id
+
+
+def with_id_min_count(vocab: ItemVocab, pos_counts: np.ndarray, min_count: int) -> ItemVocab:
+    """`vocab` with its ID table rebuilt at `min_count` (same catalog and raw ids)."""
+    if len(pos_counts) != vocab.n_items + 1:
+        raise ValueError(f"pos_counts has {len(pos_counts)} rows, expected {vocab.n_items + 1}")
+    id_idx, n_id = id_index_from_counts(pos_counts, min_count)
+    return replace(vocab, id_idx=id_idx, n_id=n_id)

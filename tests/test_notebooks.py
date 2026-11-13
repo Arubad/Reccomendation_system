@@ -383,11 +383,10 @@ def k2_ready(kaggle_fs):
 def test_k4_params_default_to_the_ablation_list():
     g = {}
     exec(_code(_nb("k4_train"))[0], g)  # noqa: S102
-    assert g["CONFIGS"] == [
-        "configs/ablations/a0_sasrec.yaml", "configs/ablations/a1_audio.yaml",
-        "configs/ablations/a2_audio_event_organic.yaml", "configs/ablations/a3_full_logq.yaml",
-        "configs/ablations/a4_full_dislike.yaml",
+    assert g["CONFIGS"] == [  # F5: the follow-up ablations (a0-a4 are trained)
+        "configs/ablations/a7_full_no_content.yaml", "configs/ablations/a8_full_all_ids.yaml",
     ]  # fmt: skip
+    assert all((ROOT / c).exists() for c in g["CONFIGS"])
     assert g["MIN_START_MINUTES"] == 40 and "CONFIG" not in g
     md = "".join(_nb("k4_train")["cells"][0]["source"])
     assert "CONFIG =" in md and "MIN_START_MINUTES" in md and "at most 2" in md
@@ -500,8 +499,10 @@ def test_k4_500m_disk_projection_fails_fast_before_training(kaggle_fs):
 
 def test_k4_50m_disk_projection_only_warns(kaggle_fs, capsys):
     """50m never refuses (5 configs ~3.5 GB), and the projection is printed."""
+    ladder = [f"configs/ablations/{n}.yaml" for n in (
+        "a0_sasrec", "a1_audio", "a2_audio_event_organic", "a3_full_logq", "a4_full_dislike")]
     with pytest.raises(FileNotFoundError, match="processed bundle"):  # past the disk check
-        kaggle_fs("k4_train", REQUIRE_GPU=False)
+        kaggle_fs("k4_train", REQUIRE_GPU=False, CONFIGS=ladder)
     assert "projected disk use at the end: ~3.5 GB for 5 config(s)" in capsys.readouterr().out
 
 

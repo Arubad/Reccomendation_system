@@ -72,11 +72,14 @@ def _load_ckpt(path: Path, expect: str) -> tuple[dict, dict]:
     return payload["model"], payload["cfg"]
 
 
-def _pick_subset(data: ProcessedData, windows_items: np.ndarray, n_items: int) -> np.ndarray:
-    """Sorted vocab indices of the subset (see module docstring)."""
+def _pick_subset(
+    data: ProcessedData, windows_items: np.ndarray, n_items: int, id_idx: np.ndarray
+) -> np.ndarray:
+    """Sorted vocab indices of the subset (see module docstring); `id_idx` is HookSeq's own
+    ID table (`effective_vocab`), so the ID-less items are the ones that model has no ID for."""
     pop = data.features.pop_train
     top = np.argsort(-pop[1:], kind="stable")[:n_items] + 1  # ties -> lower index
-    idless = np.flatnonzero((data.vocab.id_idx == 0) & data.features.has_audio)
+    idless = np.flatnonzero((id_idx == 0) & data.features.has_audio)
     idless = idless[idless > 0]
     idless = idless[np.argsort(-pop[idless], kind="stable")][:N_IDLESS]
     return np.unique(np.concatenate([top, windows_items, idless]))
@@ -146,12 +149,14 @@ def build_models(bundle: Bundle):
     )
     # every parameter and persistent buffer is in the state_dict, so loading is strict (the
     # id/audio/artist buffers are non-persistent and rebuilt above from the bundle's arrays)
+    # model.id_min_count only chose the ID table at export time: id_idx_sub already holds it
+    hs_kw = {k: x for k, x in meta["hookseq_model"].items() if k != "id_min_count"}
     hs = HookSeq(
         n_items=m + 1,
         features=feats,
         n_id=int(meta["n_id_sub"]),
         id_idx=a["id_idx_sub"],
-        **meta["hookseq_model"],
+        **hs_kw,
     )
     hs.load_state_dict(bundle.hookseq_state)
     sas = SASRec(n_items=m + 1, **meta["sasrec_model"])
@@ -185,9 +190,12 @@ def export_demo_bundle(
                 f"{full['loss']['neg_catalog']!r}: its never-trained item rows would be ranked "
                 "unmasked in the demo; export a neg_catalog=all model (sasrec or hookseq)"
             )
+    from hookrec.models.base import effective_vocab
+
     hs_cfg = {k: x for k, x in hs_full_cfg["model"].items() if k != "name"}
     sas_cfg = {k: x for k, x in sas_full_cfg["model"].items() if k != "name"}
-    v, f = data.vocab, data.features
+    # HookSeq's own ID table (model.id_min_count), exactly as build_model built it in training
+    v, f = effective_vocab(data, hs_full_cfg["model"]), data.features
     n_id_rows, n_sas_rows = (
         hs_state["item_emb.weight"].shape[0],
         sas_state["item_emb.weight"].shape[0],
@@ -195,7 +203,8 @@ def export_demo_bundle(
     if n_id_rows != v.n_id + 1:
         raise ValueError(
             f"hookseq checkpoint has {n_id_rows - 1} ID rows but the processed data has "
-            f"n_id={v.n_id}: wrong checkpoint or processed dir"
+            f"n_id={v.n_id} (model.id_min_count={hs_cfg.get('id_min_count')}): wrong "
+            "checkpoint or processed dir"
         )
     if n_sas_rows != v.n_items + 1:
         raise ValueError(
@@ -207,7 +216,7 @@ def export_demo_bundle(
     win = _sample_windows(
         data, n_users, max_len, seed, input_filter_of(hs_full_cfg), session_gap
     )
-    sub = _pick_subset(data, win["items_vocab"], n_items)  # vocab indices, ascending
+    sub = _pick_subset(data, win["items_vocab"], n_items, v.id_idx)  # vocab indices, ascending
     m = len(sub)
 
     def rows(x: np.ndarray) -> np.ndarray:

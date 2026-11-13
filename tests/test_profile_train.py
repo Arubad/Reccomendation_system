@@ -72,8 +72,9 @@ def test_profile_tool_runs_and_emits_every_key(processed_synth, tmp_path):
         ("hookseq.yaml", HOOKSEQ),
         ("hookseq.yaml", [*HOOKSEQ, "loss.max_rows=6", "loss.chunk_rows=5"]),
         ("sasrec_bce.yaml", ["train.warmup_steps=0"]),
+        ("ablations/a8_full_all_ids.yaml", HOOKSEQ),  # F5: rebuilt ID table (id_min_count: 1)
     ],
-    ids=["sasrec", "hookseq", "hookseq_max_rows", "sasrec_bce"],
+    ids=["sasrec", "hookseq", "hookseq_max_rows", "sasrec_bce", "a8_all_ids"],
 )
 def test_profiled_step_matches_the_trainer(processed_synth, tmp_path, config, extra):
     """The tool's phase-annotated step is the trainer's step: same weights after k steps."""

@@ -130,6 +130,18 @@ def ablation_table(
 
 
 SLICE_KEYS = ("ndcg@10", "recall@10", "ndcg@100", "recall@100", "coverage@10")
+# eval records written before F5 call idless_items "cold_items" (the same definition)
+LEGACY_SLICE_NAMES = {"cold_items": "idless_items"}
+SLICE_FOOTNOTE = (
+    "_Slices._ `organic` / `served`: truth items with an organic / recommender-served test "
+    "event. `idless_items`: truth items without an ID in the data vocab (fewer than "
+    "`data.min_count` train positives) or out of vocabulary; the same items for every model, "
+    "whatever its own ID table (`model.id_min_count`); records before F5 named it "
+    "`cold_items`. `new_items`: truth items with no train-period event of any kind (first "
+    "seen on the test day), a subset of `idless_items`; only content features can score them. "
+    "`warm_items`: truth items with a data-vocab ID. `users_low/mid/high`: terciles of the "
+    "users' Listen+ train events."
+)
 
 
 def slice_table(eval_run: dict | None) -> str:
@@ -148,7 +160,8 @@ def slice_table(eval_run: dict | None) -> str:
         return _table(header, [[NOT_RUN, "-", "-", "-", "-", "-", "-"]])
     rows = []
     for name, m in sl.items():
-        rows.append([name, int(m.get("n_users", 0)), *(_fmt(m.get(c)) for c in SLICE_KEYS)])
+        label = LEGACY_SLICE_NAMES.get(name, name)
+        rows.append([label, int(m.get("n_users", 0)), *(_fmt(m.get(c)) for c in SLICE_KEYS)])
     cold = eval_run["extra"].get("metrics_cold") or {}
     if cold:
         rows.append(
@@ -211,25 +224,71 @@ PAIRED_BASELINES = (
 )
 
 
+# Runs that stand in for HookSeq in the paired section, preferred first: a run named `hookseq`,
+# then a4_full_dislike (its config equals configs/hookseq.yaml), then the best HookSeq-model
+# eval by test ndcg@10 (see `_hookseq_run`).
+HOOKSEQ_RUNS = (
+    ("hookseq", "the run named hookseq"),
+    ("a4_full_dislike", "no run named hookseq; a4_full_dislike's config equals hookseq.yaml"),
+)
+
+
+def _hookseq_run(by: dict[str, dict]) -> tuple[str, str, dict] | None:
+    """(run name, why it was chosen, eval record) of the run standing in for HookSeq.
+
+    `by` maps eval run names (`{run}-test-eval`) to records of one size. Without a `hookseq`
+    or `a4_full_dislike` eval, the best test ndcg@10 among the evals whose `config.model.name`
+    is hookseq, the paired baselines excluded (a0_sasrec is a HookSeq model with every flag
+    off); ties break by name.
+    """
+    for name, why in HOOKSEQ_RUNS:
+        if f"{name}-test-eval" in by:
+            return name, why, by[f"{name}-test-eval"]
+    skip = {n for n, _ in PAIRED_BASELINES}
+    cands = []
+    for run_name, r in by.items():
+        name = run_name.removesuffix("-test-eval")
+        model = ((r.get("config") or {}).get("model") or {}).get("name")
+        if name == run_name or name in skip or model != "hookseq":
+            continue
+        v = (r.get("metrics") or {}).get("ndcg@10")
+        if isinstance(v, (int, float)) and not math.isnan(v):
+            cands.append((v, name, r))
+    if not cands:
+        return None
+    _, name, r = max(cands, key=lambda c: (c[0], c[1]))
+    why = "no hookseq or a4_full_dislike run; best test ndcg@10 among HookSeq-model runs"
+    return name, why, r
+
+
+def _peruser_file(results_dir: Path, rec: dict, name: str, size: str) -> Path:
+    """The eval record's per-user npz (`extra.peruser_file`, else run_eval's naming)."""
+    fname = (rec.get("extra") or {}).get("peruser_file") or f"{name}-test-{size}-eval-peruser.npz"
+    return results_dir / fname
+
+
 def _paired_section(evals: list[dict], results_dir: Path, size: str) -> str:
     """HookSeq vs SASRec paired diffs for one size, against every evaluated baseline of
-    `PAIRED_BASELINES` (`sasrec` first); each needs the same processed_dir as HookSeq."""
-    header = ["baseline", "metric", "mean diff", "95% CI"]
+    `PAIRED_BASELINES` (`sasrec` first); each needs the same processed_dir as HookSeq.
+
+    The HookSeq side is `_hookseq_run`'s choice, named in every row and in a caption line."""
+    header = ["comparison", "metric", "mean diff", "95% CI"]
     by = {r["run_name"]: r for r in evals if r.get("extra", {}).get("dataset_size") == size}
-    a_rec = by.get("hookseq-test-eval")
+    hs = _hookseq_run(by)
     found = [
         (n, label, by[f"{n}-test-eval"]) for n, label in PAIRED_BASELINES if f"{n}-test-eval" in by
     ]
-    if a_rec is None or not found:
+    if hs is None or not found:
         return _table(header, [[f"HookSeq vs SASRec: {NOT_RUN}", "-", "-", "-"]])
-    a = results_dir / f"hookseq-test-{size}-eval-peruser.npz"
+    hs_name, why, a_rec = hs
+    a = _peruser_file(results_dir, a_rec, hs_name, size)
     rows = []
     for name, label, b_rec in found:
-        base = f"{name} ({label})"
+        base = f"HookSeq ({hs_name}) vs {name} ({label})"
         if a_rec["extra"].get("processed_dir") != b_rec["extra"].get("processed_dir"):
             rows.append([base, "not available (processed_dir mismatch)", "-", "-"])
             continue
-        b = results_dir / f"{name}-test-{size}-eval-peruser.npz"
+        b = _peruser_file(results_dir, b_rec, name, size)
         for m in ("ndcg@10", "recall@100"):
             try:
                 mean, lo, hi = paired_diff_ci(a, b, m)
@@ -237,9 +296,10 @@ def _paired_section(evals: list[dict], results_dir: Path, size: str) -> str:
                 log.warning("paired diff %s vs %s unavailable: %s", m, name, e)
                 rows.append([base, f"{m}: not available", "-", "-"])
                 continue
-            diff = [f"{m} (HookSeq - {name})", f"{mean:+.4f}", f"[{lo:+.4f}, {hi:+.4f}]"]
+            diff = [f"{m} ({hs_name} - {name})", f"{mean:+.4f}", f"[{lo:+.4f}, {hi:+.4f}]"]
             rows.append([base, *diff])
-    return _table(header, rows)
+    caption = f"_HookSeq = `{hs_name}` ({why})._"
+    return caption + "\n\n" + _table(header, rows)
 
 
 def _safe_load_runs(results_dir: Path) -> list[dict]:
@@ -292,7 +352,7 @@ def write_readme_tables(results_dir, out_md) -> Path:
             _section(lambda s=size: ablation_table(runs, size=s)),
             "",
         ]
-    parts += ["## Slices", ""]
+    parts += ["## Slices", "", SLICE_FOOTNOTE, ""]
     for size in sizes:
         evals = [r for r in evals_all if r["extra"].get("dataset_size") == size]
         if not evals:

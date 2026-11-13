@@ -163,8 +163,14 @@ def test_ablation_ladder():
         flags = tuple(c["model"][f] for f in FLAGS)
         got[p.stem] = (flags, c["loss"]["logq"], c["loss"]["dislike_hard_negatives"])
     off, on = (False,) * 5, (True,) * 5
-    assert len(got) == 7
+    assert len(got) == 9
     assert got["a0_sasrec"] == (off, False, False)
+    # F5: a7 = full minus content features, a8 = full with an ID for every trained item
+    assert got["a7_full_no_content"] == ((False, False, True, True, True), True, True)
+    assert got["a8_full_all_ids"] == (on, True, True)
+    a8_path = ROOT / "configs" / "ablations" / "a8_full_all_ids.yaml"
+    assert load_config(a8_path)["model"]["id_min_count"] == 1
+    assert all("id_min_count" not in load_config(p)["model"] for p in ABLATIONS if p != a8_path)
     assert got["a1_audio"] == ((True, True, False, False, False), False, False)
     assert got["a2_audio_event_organic"] == (on, False, False)
     assert got["a3_full_logq"] == (on, True, False)

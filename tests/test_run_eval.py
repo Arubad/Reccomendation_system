@@ -37,9 +37,9 @@ def _check(path, data, out, name, run_json):
     ex = rec["extra"]
     assert ex["n_eval_users"] == len(data.truth_test)
     assert ex["n_cold_users"] == len(data.truth_test_cold)
-    assert {"all", "organic", "served", "cold_items", "warm_items", "users_low"} <= set(
-        ex["slices"]
-    )
+    names = {"all", "organic", "served", "idless_items", "new_items", "warm_items", "users_low"}
+    assert names <= set(ex["slices"]) and "cold_items" not in ex["slices"]
+    assert ex["new_items_share"]["slice"] == ex["new_items_share"]["meta"]
     assert ex["slices"]["all"]["ndcg@10"] == rec["metrics"]["ndcg@10"]
     for k in (10, 100):
         for f in ("artist_gini", "artist_coverage", "long_tail_share"):

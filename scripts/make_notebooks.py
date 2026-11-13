@@ -343,12 +343,10 @@ for p in sorted(RESULTS.glob("*.json")):
     print(p.name)
 print(results_table(load_runs(RESULTS), split="test", size=SIZE))"""
 
+# Default: the F5 follow-up ablations (the ladder a0-a4 is trained; list it here to retrain it)
 K4_CONFIGS = [
-    "configs/ablations/a0_sasrec.yaml",
-    "configs/ablations/a1_audio.yaml",
-    "configs/ablations/a2_audio_event_organic.yaml",
-    "configs/ablations/a3_full_logq.yaml",
-    "configs/ablations/a4_full_dislike.yaml",
+    "configs/ablations/a7_full_no_content.yaml",
+    "configs/ablations/a8_full_all_ids.yaml",
 ]
 
 # --- K4 --------------------------------------------------------------------------------
@@ -807,7 +805,7 @@ def notebooks(repo_url: str, git_ref: str) -> dict[str, dict]:
                 "**GPU T4 x2**",
                 "the K2 output for SIZE; to resume or continue, also the output of the earlier "
                 "version(s) of this notebook (detected automatically)",
-                "50m ~0.5-1 h per config (the five ablations in one session), 500m up to 8 h "
+                "50m ~0.5-1 h per config (several configs in one session), 500m up to 8 h "
                 "per session (then resume)",
                 "`results/<name>-{val,test}-*.json`, `ckpt/<name>/{val,test}/`, markers "
                 "`_HOOKREC_RESULTS_<name>`, `_HOOKREC_CKPT`",

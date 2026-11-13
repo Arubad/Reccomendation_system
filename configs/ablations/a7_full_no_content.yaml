@@ -1,0 +1,6 @@
+extends: ../hookseq.yaml
+# Full HookSeq minus the content features (no audio, no artist): event / organic / ratio
+# inputs, logQ and dislike hard negatives stay on. The control for "do audio and artist help
+# the full model" (F5: a1 vs a0 was -10% on warm items).
+model: {use_audio: false, use_artist: false, use_event: true, use_organic: true, use_ratio: true}
+loss: {logq: true, dislike_hard_negatives: true}

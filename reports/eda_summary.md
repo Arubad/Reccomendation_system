@@ -15,6 +15,7 @@ Cleaning (`clean_report`, `hookrec.data.clean`) reconciles unlike/undislike agai
 - **Figure:** `figures/event_mix.png`, `figures/loglog_counts.png`, `figures/lorenz.png`
 - **Decision -> config key:**
   - `min_count: 5`: an ID embedding only for items with at least 5 positive train events. The long tail is reached through audio and artist instead.
+  - `model.id_min_count` (HookSeq, default null = `min_count`) tests this choice without re-preprocessing: ablation a8 sets it to 1, so every item with a train positive gets an ID, as in SASRec (the 50M results showed the audio models below SASRec on ID-less items).
   - `loss.logq: true` (HookSeq): sampled-softmax popularity correction. Given this concentration, in-batch negatives are heavily popularity-biased.
   - The fairness metrics' long-tail share uses this train popularity.
 
@@ -117,4 +118,4 @@ Cleaning (`clean_report`, `hookrec.data.clean`) reconciles unlike/undislike agai
 - **Figure:** `figures/cold_items.png`
 - **Decision -> config key:**
   - Unknown test items stay in the truth as misses (`meta.share_unknown_test_items`, `n_oov_test_items`).
-  - The `cold_items` / `warm_items` slices (`slice_truth`) report the audio path's effect on items without an ID embedding. These slices have no config key.
+  - Two item slices (`slice_truth`) report the audio path's effect. `new_items` are the test-truth items with no train event at all (the 3.0% above; only content features can score them). `idless_items` are the items without an ID in the data vocab (below `min_count`, which includes the new ones), against `warm_items`. Both are defined on the data vocab, so they are the same items for every model. Eval records before F5 call `idless_items` `cold_items`. These slices have no config key.

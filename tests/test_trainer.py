@@ -373,8 +373,8 @@ def test_amp_false_trains_on_cpu_unchanged(processed_synth, tmp_path):
 def test_configs_input_filter():
     assert tiny_cfg()["data"]["input_filter"] == "listen_plus"  # the paper-comparable sasrec
     cfgs = [ROOT / "configs" / "hookseq.yaml", *sorted((ROOT / "configs" / "ablations").glob("*"))]
-    assert len(cfgs) == 8
-    for p in cfgs:  # hookseq and a0..a6 read every event type (a0 = same-code-path control)
+    assert len(cfgs) == 10
+    for p in cfgs:  # hookseq and a0..a8 read every event type (a0 = same-code-path control)
         assert input_filter_of(load_config(p)) == "all", p.name
 
 

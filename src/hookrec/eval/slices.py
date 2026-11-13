@@ -7,6 +7,7 @@ import polars as pl
 
 from hookrec.data.aggregates import PeriodAggregates
 from hookrec.data.features import ItemFeatures
+from hookrec.data.sequences import PackedSequences
 from hookrec.data.vocab import ItemVocab
 from hookrec.eval.metrics import coverage, ndcg_per_user, recall_full_per_user, recall_per_user
 from hookrec.eval.protocol import target_filter
@@ -44,6 +45,31 @@ def _restrict(truth: Truth, allowed: Truth) -> Truth:
     return out
 
 
+def train_seen_items(seqs_train: PackedSequences, history: PeriodAggregates) -> np.ndarray:
+    """bool [N+1]: item has >= 1 event of any kind in the training period (index 0 = False).
+
+    The items of the all-event train sequences (`ProcessedData.seqs("train")`, every event
+    type) plus every item with a train positive or Listen+ event (`history` = the full-period
+    train aggregates). Exact when the bundle stores full histories (`max_len_store: null`, as
+    at 50m); with a cap (500m: 1024) an item whose only train events were truncated away from
+    every user's history counts as unseen, so `new_items` can only grow, never miss an item.
+    """
+    seen = (np.asarray(history.pop_pos) > 0) | (np.asarray(history.pop_lp) > 0)
+    items = np.asarray(seqs_train.items)
+    seen[items[(items > 0) & (items < len(seen))]] = True
+    seen[0] = False
+    return seen
+
+
+def _split_items(truth: Truth, keep_fn) -> Truth:
+    out: Truth = {}
+    for u, items in truth.items():
+        keep = items[keep_fn(items)]
+        if len(keep):
+            out[u] = keep
+    return out
+
+
 def slice_truth(
     truth: Truth,
     test_events_lf: pl.LazyFrame,
@@ -51,30 +77,40 @@ def slice_truth(
     features: ItemFeatures,
     history: PeriodAggregates,
     target: str = "listen_plus",
+    *,
+    seqs_train: PackedSequences,
 ) -> dict[str, Truth]:
     """Named sub-truths; users whose slice is empty are dropped from that slice.
 
     organic / served: truth items with >= 1 organic / non-organic test event of the truth's
-    `target` kind (`eval.target`; an item may be in both). cold_items: OOV (idx > N) or no ID
-    embedding; warm_items: the rest. users_low/mid/high: terciles of the users' Listen+ event
-    count over the full training period (`history`, untruncated; ties by uid).
-    `features` is part of the interface but unused (cold is defined by the vocab's id_idx).
+    `target` kind (`eval.target`; an item may be in both).
+    idless_items: OOV (idx > N) or no ID under the *data* vocab (< `data.min_count` train
+    positives); warm_items: the rest (a data-vocab ID). Both are fixed by the bundle's vocab,
+    so they are the same truth items for every model, whatever its own ID table
+    (`model.id_min_count`). Called `cold_items` in eval records before F5 (same definition).
+    new_items: OOV or no event of any kind in the training period (`train_seen_items` over
+    `seqs_train` and `history`), e.g. items first seen on the test day: never seen by any
+    model, a subset of idless_items.
+    users_low/mid/high: terciles of the users' Listen+ event count over the full training
+    period (`history`, untruncated; ties by uid).
+    `features` is part of the interface but unused.
     """
     n = vocab.n_items
     out: dict[str, Truth] = {"all": {u: t for u, t in truth.items() if len(t)}}
     out["organic"] = _restrict(truth, _target_items_by_user(test_events_lf, True, target))
     out["served"] = _restrict(truth, _target_items_by_user(test_events_lf, False, target))
 
-    def is_cold(items: np.ndarray) -> np.ndarray:
+    def is_idless(items: np.ndarray) -> np.ndarray:
         return (items > n) | (vocab.id_idx[np.minimum(items, n)] == 0)
 
-    for name, want_cold in (("cold_items", True), ("warm_items", False)):
-        sl: Truth = {}
-        for u, items in truth.items():
-            keep = items[is_cold(items) == want_cold]
-            if len(keep):
-                sl[u] = keep
-        out[name] = sl
+    seen = train_seen_items(seqs_train, history)
+
+    def is_new(items: np.ndarray) -> np.ndarray:
+        return (items > n) | ~seen[np.minimum(items, n)]
+
+    out["idless_items"] = _split_items(truth, is_idless)
+    out["new_items"] = _split_items(truth, is_new)
+    out["warm_items"] = _split_items(truth, lambda items: ~is_idless(items))
 
     uids = np.array(sorted(truth), dtype=np.int64)
     counts = history.user_counts(uids)

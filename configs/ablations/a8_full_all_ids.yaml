@@ -1,0 +1,6 @@
+extends: ../hookseq.yaml
+# Full HookSeq with an ID for every item with >= 1 train positive (model.id_min_count: 1; the
+# bundle's own table, data.min_count = 5 per EDA §1, is the default). Audio and artist then add
+# to an ID instead of replacing it for the 1..4-positive tail, as SASRec has an ID row for
+# every catalog item. Same processed bundle: the table is rebuilt at model-build time.
+model: {id_min_count: 1}

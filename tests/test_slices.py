@@ -1,14 +1,29 @@
+import importlib.util
+from pathlib import Path
+
 import numpy as np
 import polars as pl
 
+from hookrec.data.clean import clean_events
 from hookrec.data.label import LISTEN_FULL
 from hookrec.eval.protocol import evaluate
-from hookrec.eval.slices import evaluate_slices, slice_truth
+from hookrec.eval.slices import evaluate_slices, slice_truth, train_seen_items
 from hookrec.models.popularity import MostPop
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_script(script):
+    spec = importlib.util.spec_from_file_location(script, ROOT / "scripts" / f"{script}.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _slices(d):
-    return slice_truth(d.truth_test, d.test_events(), d.vocab, d.features, d.agg_train)
+    return slice_truth(
+        d.truth_test, d.test_events(), d.vocab, d.features, d.agg_train, seqs_train=d.seqs("train")
+    )
 
 
 def test_slices_partition_organic_served(processed_synth):
@@ -38,17 +53,61 @@ def test_organic_served_come_from_labeled_events(processed_synth):
     assert sum(len(v) for v in sl["served"].values()) > 0
 
 
-def test_cold_slice_only_idless_or_unknown(processed_synth):
+def test_idless_slice_only_idless_or_unknown(processed_synth):
     d = processed_synth
     n, idx = d.vocab.n_items, d.vocab.id_idx
     sl = _slices(d)
-    for items in sl["cold_items"].values():
+    assert "cold_items" not in sl
+    for items in sl["idless_items"].values():
         assert all(i > n or idx[i] == 0 for i in items)
     for items in sl["warm_items"].values():
         assert all(i <= n and idx[i] != 0 for i in items)
     for u, items in d.truth_test.items():
-        got = len(sl["cold_items"].get(u, [])) + len(sl["warm_items"].get(u, []))
+        got = len(sl["idless_items"].get(u, [])) + len(sl["warm_items"].get(u, []))
         assert got == len(items)
+
+
+def _train_items_brute(synth, d) -> set[int]:
+    """Vocab indices of every item with a cleaned train-period event of any kind, from the raw
+    synthetic events (the preprocessing path: clean, then ts < t_train_end)."""
+    ev = (
+        clean_events(synth["multi_event"].lazy())
+        .filter(pl.col("timestamp") < d.meta["t_train_end"])
+        .select(pl.col("item_id").unique())
+        .collect()
+    )
+    idx = d.vocab.encode(ev["item_id"].to_numpy())
+    return set(idx[idx > 0].tolist())
+
+
+def test_new_items_slice_brute_force(processed_synth, synth):
+    d = processed_synth
+    n = d.vocab.n_items
+    seen = _train_items_brute(synth, d)
+    assert np.flatnonzero(train_seen_items(d.seqs("train"), d.agg_train)).tolist() == sorted(seen)
+    sl = _slices(d)
+    want = {}
+    for u, items in d.truth_test.items():
+        keep = [int(i) for i in items if i > n or int(i) not in seen]
+        if keep:
+            want[u] = keep
+    assert {u: v.tolist() for u, v in sl["new_items"].items()} == want
+    assert sum(len(v) for v in want.values()) > 0, "synthetic test truth should have new items"
+    for u, items in sl["new_items"].items():  # never seen -> no ID either
+        assert set(items.tolist()) <= set(sl["idless_items"][u].tolist())
+    # an item whose only events are in the test day is new
+    test_only = {int(i) for i in d.test_events().collect()["item_idx"].unique()} - seen
+    truth_items = {int(i) for v in d.truth_test.values() for i in v}
+    assert test_only & truth_items
+    assert test_only & truth_items <= {int(i) for v in sl["new_items"].values() for i in v}
+
+
+def test_new_items_share_matches_preprocessing(processed_synth):
+    d = processed_synth
+    run_eval = _load_script("run_eval")
+    got = run_eval.new_item_share(d, train_seen_items(d.seqs("train"), d.agg_train))
+    assert got["meta"] == d.meta["share_unknown_test_items"]
+    assert abs(got["slice"] - got["meta"]) < 1e-12  # full histories at 50m: exact
 
 
 def test_activity_terciles_balanced(processed_synth):

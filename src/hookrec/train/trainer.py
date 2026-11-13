@@ -111,13 +111,18 @@ NEG_CATALOGS = ("all", "listen_plus")
 
 
 def training_hash(cfg: dict) -> str:
-    """Config hash ignoring OPERATIONAL_KEYS (train.*) and OPERATIONAL_LOSS_KEYS (loss.*):
-    resume compatibility and the val<->test match."""
+    """Config hash ignoring OPERATIONAL_KEYS (train.*), OPERATIONAL_LOSS_KEYS (loss.*) and a
+    null `model.id_min_count`: resume compatibility and the val<->test match."""
     c = copy.deepcopy(cfg)
     for k in OPERATIONAL_KEYS:
         c.get("train", {}).pop(k, None)
     for k in OPERATIONAL_LOSS_KEYS:
         c.get("loss", {}).pop(k, None)
+    # model.id_min_count: null means the bundle's own ID table, the same as the key's absence,
+    # so every run recorded before the key existed (F5) keeps its hash
+    model = c.get("model") or {}
+    if "id_min_count" in model and model["id_min_count"] is None:
+        del model["id_min_count"]
     return config_hash(c)
 
 

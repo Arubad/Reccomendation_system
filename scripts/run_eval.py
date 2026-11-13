@@ -24,7 +24,7 @@ from hookrec.data.processed import ProcessedData, load_processed
 from hookrec.eval.bootstrap import bootstrap_ci
 from hookrec.eval.fairness import artist_coverage, artist_exposure_gini, long_tail_share
 from hookrec.eval.protocol import Recommender, evaluate
-from hookrec.eval.slices import evaluate_slices, slice_truth
+from hookrec.eval.slices import evaluate_slices, slice_truth, train_seen_items
 from hookrec.models import fit_recommender
 from hookrec.models.base import build_model, eval_catalog_of
 from hookrec.models.popularity import mostpop_fallback
@@ -68,6 +68,25 @@ def build_recommender(run: dict, data: ProcessedData, ckpt: Path | None) -> Reco
     if model_name not in BASELINES:
         raise SystemExit(f"cannot rebuild run {name!r}: not a neural run or a known baseline")
     return fit_recommender(model_name, data, cfg, "test")
+
+
+def new_item_share(data: ProcessedData, seen: np.ndarray) -> dict:
+    """Share of distinct test-truth items (warm and cold users) that are new (no train event,
+    or OOV) under the `new_items` slice definition, next to preprocessing's own exact count
+    (`meta.share_unknown_test_items`, from the raw train events). They agree when the bundle
+    stores full histories; a gap means truncated histories made the slice a superset."""
+    n = data.vocab.n_items
+    parts = [*data.truth_test.values(), *data.truth_test_cold.values()]
+    items = np.unique(np.concatenate(parts)) if parts else np.zeros(0, dtype=np.int64)
+    new = (items > n) | ~seen[np.minimum(items, n)]
+    got = float(new.mean()) if len(items) else 0.0
+    ref = data.meta.get("share_unknown_test_items")
+    if ref is not None and abs(got - ref) > 1e-9:
+        log.warning(
+            "new_items: %.6f of test items are new by the slice definition vs %.6f in meta "
+            "(truncated histories make the slice a superset)", got, ref,
+        )  # fmt: skip
+    return {"slice": got, "meta": ref}
 
 
 def check_drift(run: dict, ndcg10: float) -> None:
@@ -125,11 +144,13 @@ def main(argv: list[str] | None = None) -> Path:
     if not args.no_drift_check:
         check_drift(run, warm.metrics["ndcg@10"])
 
+    seqs_train = data.seqs("train", "all")  # every event type: the new_items definition
     slices = slice_truth(
         data.truth_test, data.test_events(), data.vocab, data.features, data.agg_train,
-        target=data.meta.get("eval_target", "listen_plus"),
+        target=data.meta.get("eval_target", "listen_plus"), seqs_train=seqs_train,
     )  # fmt: skip
     slice_metrics = evaluate_slices(warm.topk, warm.uids, slices, n)
+    new_share = new_item_share(data, train_seen_items(seqs_train, data.agg_train))
 
     fairness: dict[str, float] = {}
     feat = data.features
@@ -162,6 +183,7 @@ def main(argv: list[str] | None = None) -> Path:
         "n_cold_users": len(data.truth_test_cold),
         "metrics_cold": cold,
         "slices": slice_metrics,
+        "new_items_share": new_share,
         "fairness": fairness,
         "ci": ci,
     }

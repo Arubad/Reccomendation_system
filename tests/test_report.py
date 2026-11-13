@@ -170,17 +170,17 @@ def test_paired_section_prefers_sasrec_and_renders_both(tmp_path):
     _peruser(res, "hookseq", "50m", 0.1)
     _peruser(res, "a0_sasrec", "50m", 0.05)
     only_a0 = write_readme_tables(res, tmp_path / "o.md").read_text().split("## Paired")[1]
-    assert "a0 control" in only_a0 and "+0.0500" in only_a0 and "| sasrec (" not in only_a0
+    assert "a0 control" in only_a0 and "+0.0500" in only_a0 and "vs sasrec (" not in only_a0
 
     _write(res, _eval_rec("sasrec", 0.25, "2026-01-05"), 3)
     _peruser(res, "sasrec", "50m", 0.0)
     paired = write_readme_tables(res, tmp_path / "o.md").read_text().split("## Paired")[1]
-    i_sas = paired.index("| sasrec (SASRec, Listen+ input (paper setting))")
-    i_a0 = paired.index("| a0_sasrec (a0 control")
+    i_sas = paired.index("| HookSeq (hookseq) vs sasrec (SASRec, Listen+ input (paper setting))")
+    i_a0 = paired.index("vs a0_sasrec (a0 control")
     assert i_sas < i_a0  # the paper-comparable baseline comes first
-    assert "ndcg@10 (HookSeq - sasrec) | +0.1000" in paired
-    assert "ndcg@10 (HookSeq - a0_sasrec) | +0.0500" in paired
-    assert "recall@100 (HookSeq - sasrec)" in paired
+    assert "ndcg@10 (hookseq - sasrec) | +0.1000" in paired
+    assert "ndcg@10 (hookseq - a0_sasrec) | +0.0500" in paired
+    assert "recall@100 (hookseq - sasrec)" in paired
 
 
 def test_quick_records_excluded_from_tables():
@@ -269,3 +269,103 @@ def test_readme_has_recall_footnote(tmp_path):
     (res / "a.json").write_text(json.dumps(_run("hookseq", 0.1, "2026-01-01")))
     md = write_readme_tables(res, tmp_path / "R.md").read_text()
     assert "recall_paper@k" in md and "hits@k / |T|" in md
+
+
+# ---- F5: the HookSeq stand-in of the paired section, slice names -----------------------------
+
+
+def _hs_eval(name, v, model="hookseq", peruser=None):
+    r = _eval_rec(name, v, "2026-01-05")
+    r["config"] = {"model": {"name": model}}
+    if peruser:
+        r["extra"]["peruser_file"] = peruser
+    return r
+
+
+def _write_cfg(d: Path, rec: dict, i: int):  # keeps rec["config"] (`_write` blanks it)
+    rec = {**rec, "git_sha": "x", "config_hash": "x"}
+    (d / f"{rec['run_name']}-{i}.json").write_text(json.dumps(rec))
+
+
+def _paired(res, tmp_path):
+    return write_readme_tables(res, tmp_path / "o.md").read_text().split("## Paired")[1]
+
+
+def test_paired_falls_back_to_a4_and_labels_it(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    # no run named hookseq: a4_full_dislike stands in, even though a3 scores higher
+    _write_cfg(res, _hs_eval("a4_full_dislike", 0.30), 1)
+    _write_cfg(res, _hs_eval("a3_full_logq", 0.35), 2)
+    _write_cfg(res, _hs_eval("a0_sasrec", 0.20), 3)
+    _write_cfg(res, _hs_eval("sasrec", 0.25, model="sasrec"), 4)
+    _peruser(res, "a4_full_dislike", "50m", 0.1)
+    _peruser(res, "a3_full_logq", "50m", 0.3)
+    _peruser(res, "a0_sasrec", "50m", 0.05)
+    _peruser(res, "sasrec", "50m", 0.0)
+    p = _paired(res, tmp_path)
+    assert "not yet run" not in p
+    assert "_HookSeq = `a4_full_dislike` (no run named hookseq" in p
+    assert "| HookSeq (a4_full_dislike) vs sasrec (SASRec, Listen+ input" in p
+    assert "ndcg@10 (a4_full_dislike - sasrec) | +0.1000" in p
+    assert "ndcg@10 (a4_full_dislike - a0_sasrec) | +0.0500" in p
+    assert "a3_full_logq" not in p
+
+
+def test_paired_exact_hookseq_run_wins(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    _write_cfg(res, _hs_eval("hookseq", 0.1), 1)
+    _write_cfg(res, _hs_eval("a4_full_dislike", 0.9), 2)
+    _write_cfg(res, _hs_eval("sasrec", 0.1, model="sasrec"), 3)
+    _peruser(res, "hookseq", "50m", 0.2)
+    _peruser(res, "a4_full_dislike", "50m", 0.9)
+    _peruser(res, "sasrec", "50m", 0.0)
+    p = _paired(res, tmp_path)
+    assert "_HookSeq = `hookseq` (the run named hookseq)" in p
+    assert "ndcg@10 (hookseq - sasrec) | +0.2000" in p
+
+
+def test_paired_best_hookseq_model_run_and_peruser_file(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    # neither hookseq nor a4: the best hookseq-model eval. a0_sasrec (a paired baseline) and
+    # non-hookseq models are never candidates, however well they score
+    _write_cfg(res, _hs_eval("a1_audio", 0.20), 1)
+    _write_cfg(res, _hs_eval("a7_full_no_content", 0.30, peruser="custom.npz"), 2)
+    _write_cfg(res, _hs_eval("a0_sasrec", 0.90), 3)
+    _write_cfg(res, _hs_eval("other", 0.95, model="sasrec"), 4)
+    _write_cfg(res, _hs_eval("sasrec", 0.10, model="sasrec"), 5)
+    base = np.random.default_rng(1).random(40)
+    _npz(res / "custom.npz", np.arange(40), **{"ndcg@10": base + 0.3, "recall@100": base})
+    _peruser(res, "sasrec", "50m", 0.0)
+    _peruser(res, "a0_sasrec", "50m", 0.0)
+    p = _paired(res, tmp_path)
+    assert "_HookSeq = `a7_full_no_content` (no hookseq or a4_full_dislike run; best" in p
+    assert "ndcg@10 (a7_full_no_content - sasrec) | +0.3000" in p
+    assert "recall@100 (a7_full_no_content - sasrec) | +0.0000" in p
+
+
+def test_paired_no_hookseq_family_run_is_not_yet_run(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    _write_cfg(res, _hs_eval("a0_sasrec", 0.2), 1)
+    _write_cfg(res, _hs_eval("sasrec", 0.1, model="sasrec"), 2)
+    _peruser(res, "a0_sasrec", "50m", 0.0)
+    _peruser(res, "sasrec", "50m", 0.0)
+    assert "HookSeq vs SASRec: not yet run" in _paired(res, tmp_path)
+
+
+def test_slice_table_renames_legacy_cold_items_and_footnote(tmp_path):
+    r = _eval_rec("a4_full_dislike", 0.3, "2026-01-05")
+    r["extra"]["slices"] = {
+        "all": {"n_users": 3, "ndcg@10": 0.3},
+        "cold_items": {"n_users": 1, "ndcg@10": 0.01},
+    }
+    t = slice_table(r)
+    assert "| idless_items | 1 |" in t and "cold_items" not in t
+    res = tmp_path / "results"
+    res.mkdir()
+    _write(res, r, 1)
+    text = write_readme_tables(res, tmp_path / "o.md").read_text()
+    assert "`new_items`" in text and "`idless_items`" in text

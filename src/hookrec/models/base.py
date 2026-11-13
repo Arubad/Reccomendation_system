@@ -15,6 +15,7 @@ from hookrec.data.aggregates import PeriodAggregates
 from hookrec.data.label import LISTEN_FULL
 from hookrec.data.processed import ProcessedData, check_input_filter
 from hookrec.data.sequences import PackedSequences
+from hookrec.data.vocab import ItemVocab, with_id_min_count
 from hookrec.eval.protocol import Recommender, evaluate
 
 Split = Literal["val", "test"]
@@ -132,10 +133,39 @@ def evaluate_split(rec: Recommender, data: ProcessedData, split: Split) -> dict:
     }
 
 
+# model.* key that sets HookSeq's ID table at model-build time (not a constructor argument)
+ID_MIN_COUNT = "id_min_count"
+
+
+def effective_vocab(data: ProcessedData, model_cfg: dict) -> ItemVocab:
+    """The vocab whose ID table a model with `model_cfg` (a cfg's `model` section) uses.
+
+    `model.id_min_count` null or absent (every run before F5): the bundle's own vocab, with IDs
+    for items with >= `data.min_count` train positives. An int k (HookSeq only): IDs 1..n_id'
+    for the items with >= k train positives, in item-index order, rebuilt from the counts
+    `build_vocab` used: positives (LISTEN_FULL or LIKE) over the full train period
+    (`split.train`, `agg("train").pop_pos`), for val and test runs alike. So
+    k = data.min_count reproduces the stored `id_idx`; catalog and bundle stay the same.
+    Every path that builds a HookSeq model (`build_model`: run_train, the trainer's periodic
+    eval, run_eval, profile_train; and the demo export) goes through this function, so a
+    checkpoint is always loaded with the ID table it was trained with.
+    """
+    model_cfg = model_cfg or {}
+    k = model_cfg.get(ID_MIN_COUNT)
+    if k is None:
+        return data.vocab
+    if model_cfg.get("name") != "hookseq":
+        raise ValueError(
+            f"model.{ID_MIN_COUNT} is a HookSeq option, got model.name={model_cfg.get('name')!r}"
+        )
+    return with_id_min_count(data.vocab, data.agg("train").pop_pos, k)
+
+
 def build_model(cfg: dict, data: ProcessedData):
     """Untrained neural sequence model for `cfg["model"]` (torch is imported lazily)."""
-    m = {k: v for k, v in cfg["model"].items() if k != "name"}
+    m = {k: v for k, v in cfg["model"].items() if k not in ("name", ID_MIN_COUNT)}
     name = cfg["model"]["name"]
+    vocab = effective_vocab(data, cfg["model"])  # raises on id_min_count outside HookSeq
     if name == "sasrec":
         from hookrec.models.sasrec import SASRec
 
@@ -146,8 +176,8 @@ def build_model(cfg: dict, data: ProcessedData):
         return HookSeq(
             n_items=data.vocab.n_items,
             features=data.features,
-            n_id=data.vocab.n_id,
-            id_idx=data.vocab.id_idx,
+            n_id=vocab.n_id,
+            id_idx=vocab.id_idx,
             **m,
         )
     raise KeyError(f"unknown neural model {name!r}")
