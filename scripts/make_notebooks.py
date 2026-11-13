@@ -343,6 +343,14 @@ for p in sorted(RESULTS.glob("*.json")):
     print(p.name)
 print(results_table(load_runs(RESULTS), split="test", size=SIZE))"""
 
+K4_CONFIGS = [
+    "configs/ablations/a0_sasrec.yaml",
+    "configs/ablations/a1_audio.yaml",
+    "configs/ablations/a2_audio_event_organic.yaml",
+    "configs/ablations/a3_full_logq.yaml",
+    "configs/ablations/a4_full_dislike.yaml",
+]
+
 # --- K4 --------------------------------------------------------------------------------
 K4_DISCOVER = (
     DISCOVER_HEAD
@@ -355,22 +363,66 @@ if REQUIRE_GPU and not torch.cuda.is_available():
         "Version again. (REQUIRE_GPU = False trains on CPU, which is far too slow for Yambda.)"
     )
 PROCESSED = find_processed(SIZE, INPUT_ROOT)
-NAME = Path(CONFIG).stem
 import yaml
 
-from hookrec.train.trainer import training_hash
+from hookrec.train.trainer import session_elapsed_seconds, training_hash
 from hookrec.utils.config import load_config
+from hookrec.utils.kaggle import dir_size_bytes, find_run
 
-# the training config this version runs (as run_train.py parses OVERRIDES): a carried-over
-# record of another config (another hash, or none) never counts as a finished split
+# CONFIGS is a list, trained in order. A plain string CONFIG (the older single-config form:
+# add a line `CONFIG = "configs/..."`) means CONFIGS = [CONFIG].
+_legacy = globals().get("CONFIG")
+if _legacy:
+    CONFIGS = [_legacy] if isinstance(_legacy, (str, os.PathLike)) else list(_legacy)
+elif isinstance(CONFIGS, (str, os.PathLike)):
+    CONFIGS = [CONFIGS]
+CONFIGS = [str(c) for c in CONFIGS]
+if not CONFIGS:
+    raise RuntimeError("CONFIGS is empty: list at least one config file, e.g. configs/hookseq.yaml")
+
+# the training config each run uses (as run_train.py parses OVERRIDES): a carried-over record of
+# another config (another hash, or none) never counts as a finished split
 _over = {k: yaml.safe_load(v) for k, _, v in (o.partition("=") for o in OVERRIDES)}
-THASH = training_hash(load_config(os.path.join(REPO, CONFIG), _over))
-# earlier K4 outputs of this config: their results are carried over, their checkpoints resumed
-PREV_RESULTS = find_inputs(f"_HOOKREC_RESULTS_{NAME}", INPUT_ROOT) if RESUME_INPUTS else []
-PREV_CKPTS = [d for d in find_inputs("_HOOKREC_CKPT", INPUT_ROOT) if d.name == NAME]
-PREV_CKPTS = PREV_CKPTS if RESUME_INPUTS else []
+PLAN = []  # one entry per config, in order
+for _c in CONFIGS:
+    _cfg = load_config(os.path.join(REPO, _c), _over)
+    PLAN.append(
+        {
+            "name": Path(_c).stem,
+            "config": _c,
+            "thash": training_hash(_cfg),
+            "max_hours": float(_cfg.get("train", {}).get("max_hours", 8.0)),
+        }
+    )
+_names = [p["name"] for p in PLAN]
+if len(set(_names)) != len(_names):
+    raise RuntimeError(f"CONFIGS has two files with the same name (file stem): {_names}")
+
+# earlier K4 outputs: their results are carried over, their checkpoints resumed (per config)
+for _p in PLAN:
+    _n = _p["name"]
+    _p["prev_results"] = find_inputs(f"_HOOKREC_RESULTS_{_n}", INPUT_ROOT) if RESUME_INPUTS else []
+    _p["prev_ckpts"] = (
+        [d for d in find_inputs("_HOOKREC_CKPT", INPUT_ROOT) if d.name == _n]
+        if RESUME_INPUTS
+        else []
+    )
+
+# disk: each config leaves ~3 final/best checkpoints (0.23 GB each at 50m, 2.3 GB at 500m);
+# step checkpoints are pruned once a split's record is written
+PROJECTED_GB = dir_size_bytes(WORK) / 1e9 + len(PLAN) * 3 * (0.23 if SIZE == "50m" else 2.3)
+print(f"projected disk use at the end: ~{PROJECTED_GB:.1f} GB for {len(PLAN)} config(s)")
+if PROJECTED_GB > 18:
+    print(
+        f"WARNING: projected {PROJECTED_GB:.1f} GB exceeds 18 GB of Kaggle's 20 GB working disk. "
+        "Train fewer configs per notebook (at 500m: at most 2)."
+    )
 print("processed:", PROCESSED)
-print("run:", NAME, "| earlier results:", PREV_RESULTS, "| earlier checkpoints:", PREV_CKPTS)"""
+for _p in PLAN:
+    print(
+        f"run: {_p['name']} | max_hours {_p['max_hours']} | earlier results: "
+        f"{_p['prev_results']} | earlier checkpoints: {_p['prev_ckpts']}"
+    )"""
 )
 
 K4_WORK = """\
@@ -378,77 +430,159 @@ import shutil
 import sys
 
 RESULTS = Path(OUT, "results")
-CKPT = Path(OUT, "ckpt", NAME)
 RESULTS.mkdir(parents=True, exist_ok=True)
-CKPT.mkdir(parents=True, exist_ok=True)
-(RESULTS / f"_HOOKREC_RESULTS_{NAME}").write_text("")
-(CKPT / "_HOOKREC_CKPT").write_text("")
-for d in PREV_RESULTS:
-    for p in sorted(d.glob("*.json")):
-        if not (RESULTS / p.name).exists():
-            shutil.copyfile(p, RESULTS / p.name)
-            print("carried over", p.name)
-# a finished (carried-over) split brings its weights along, so the newest K4 output alone is
-# enough for K5 (test/model_final.pt); outputs that hold the split's record are preferred
-for split in ("val", "test"):
-    rec = f"{NAME}-{split}"
-    if not has_run(RESULTS, rec, PROCESSED.name, THASH):
-        continue
-    homes = sorted(
-        PREV_CKPTS,
-        key=lambda d: not has_run(d.parent.parent / "results", rec, PROCESSED.name, THASH),
-    )
-    for fname in ("model_final.pt", "best.pt"):
-        dest = CKPT / split / fname
-        src = next((d / split / fname for d in homes if (d / split / fname).exists()), None)
-        if src is not None and not dest.exists():
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(src, dest)
-            print("carried over", dest.relative_to(OUT))
 
-RESUME_NEEDED = False
-for split in RUN_SPLITS:  # test takes its step count from the val record, so val runs first
-    run_name = f"{NAME}-{split}"
-    if has_run(RESULTS, run_name, PROCESSED.name, THASH):
-        print(f"{run_name}: a record already exists, skipping")
-        continue
-    cmd = [
-        sys.executable, f"{REPO}/scripts/run_train.py", "--processed", PROCESSED,
-        "--config", os.path.join(REPO, CONFIG), "--split", split, "--ckpt", CKPT / split,
-        "--out", RESULTS,
-    ]
-    for d in PREV_CKPTS:
-        if (d / split).is_dir():
-            cmd += ["--resume", d / split]
-    for o in OVERRIDES:
-        cmd += ["--override", o]
-    run_logged(cmd, cwd=REPO)
-    # exit 0 without a record = max_hours
-    if not has_run(RESULTS, run_name, PROCESSED.name, THASH):
-        RESUME_NEEDED = True
-        BANNER = (
-            "=" * 78 + f"\\nRESUME NEEDED: {run_name} stopped on train.max_hours; its checkpoint is "
-            f"in out/ckpt/{NAME}/{split}.\\nThis version is fine. Save a NEW version of this "
-            "notebook with THIS version's output attached\\n(Add Input -> Your Work -> this "
-            "notebook): it resumes automatically.\\n" + "=" * 78
+# 1. carry over every config's earlier results and finished weights, so the newest K4 output
+#    alone is enough for K5 even if this version stops early. A finished split brings its
+#    weights along (test/model_final.pt); outputs that hold the split's record are preferred.
+for P in PLAN:
+    NAME = P["name"]
+    for d in P["prev_results"]:
+        for p in sorted(d.glob("*.json")):
+            if not (RESULTS / p.name).exists():
+                shutil.copyfile(p, RESULTS / p.name)
+                print("carried over", p.name)
+    for split in ("val", "test"):
+        rec = f"{NAME}-{split}"
+        if not has_run(RESULTS, rec, PROCESSED.name, P["thash"]):
+            continue
+        homes = sorted(
+            P["prev_ckpts"],
+            key=lambda d: not has_run(d.parent.parent / "results", rec, PROCESSED.name, P["thash"]),
         )
-        print(BANNER)
-        break
-    # the record exists: step checkpoints (resume state, ~2.3 GB each at 500M) are not needed
-    # any more; best.pt / model_final.pt stay (K5 loads model_final.pt)
-    for p in sorted((CKPT / split).glob("ckpt-*")):
-        p.unlink()
-    print(f"{run_name}: done; removed its step checkpoints")"""
+        for fname in ("model_final.pt", "best.pt"):
+            dest = Path(OUT, "ckpt", NAME, split, fname)
+            src = next((d / split / fname for d in homes if (d / split / fname).exists()), None)
+            if src is not None and not dest.exists():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, dest)
+                print("carried over", dest.relative_to(OUT))
+    # markers (how a later version / K5 finds this config) for what is carried over
+    if any(has_run(RESULTS, f"{NAME}-{s}", PROCESSED.name, P["thash"]) for s in ("val", "test")):
+        (RESULTS / f"_HOOKREC_RESULTS_{NAME}").write_text("")
+        Path(OUT, "ckpt", NAME).mkdir(parents=True, exist_ok=True)
+        Path(OUT, "ckpt", NAME, "_HOOKREC_CKPT").write_text("")
+
+
+def pending_runs():
+    return [
+        f"{P['name']}-{s}"
+        for P in PLAN
+        for s in RUN_SPLITS
+        if not has_run(RESULTS, f"{P['name']}-{s}", PROCESSED.name, P["thash"])
+    ]
+
+
+def resume_banner(why):
+    return (
+        "=" * 78 + f"\\nRESUME NEEDED: {why}\\nStill pending: {', '.join(pending_runs())}\\n"
+        "This version is fine. Save a NEW version of this notebook with THIS version's output "
+        "attached\\n(Add Input -> Your Work -> this notebook): finished configs are skipped and "
+        "an in-progress\\nconfig resumes from its checkpoint (out/ckpt/<name>/<split>).\\n"
+        + "=" * 78
+    )
+
+
+# 2. train the configs in order: val, then test (test takes its step count from the val record)
+RESUME_NEEDED = False
+BANNER = ""
+FAILED = None  # (run name, error) of the config that failed: the version fails after the summary
+for P in PLAN:
+    NAME, THASH = P["name"], P["thash"]
+    CKPT = Path(OUT, "ckpt", NAME)
+    for split in RUN_SPLITS:
+        run_name = f"{NAME}-{split}"
+        if has_run(RESULTS, run_name, PROCESSED.name, THASH):
+            print(f"{run_name}: a record already exists, skipping")
+            continue
+        # max_hours counts from the session start, so a later config may have little time left
+        left_min = (P["max_hours"] * 3600 - session_elapsed_seconds()) / 60
+        if MIN_START_MINUTES > 0 and left_min < MIN_START_MINUTES:
+            RESUME_NEEDED = True
+            BANNER = resume_banner(
+                f"{run_name} not started: {max(left_min, 0):.0f} min of the "
+                f"{P['max_hours']} h budget left (< MIN_START_MINUTES = {MIN_START_MINUTES})."
+            )
+            break
+        (CKPT / split).mkdir(parents=True, exist_ok=True)
+        (RESULTS / f"_HOOKREC_RESULTS_{NAME}").write_text("")
+        (CKPT / "_HOOKREC_CKPT").write_text("")
+        cmd = [
+            sys.executable, f"{REPO}/scripts/run_train.py", "--processed", PROCESSED,
+            "--config", os.path.join(REPO, P["config"]), "--split", split, "--ckpt", CKPT / split,
+            "--out", RESULTS,
+        ]
+        for d in P["prev_ckpts"]:
+            if (d / split).is_dir():
+                cmd += ["--resume", d / split]
+        for o in OVERRIDES:
+            cmd += ["--override", o]
+        try:
+            run_logged(cmd, cwd=REPO)
+        except RuntimeError as e:  # a failure fails the version, but keeps what is done
+            FAILED = (run_name, str(e))
+            break
+        # exit 0 without a record = max_hours
+        if not has_run(RESULTS, run_name, PROCESSED.name, THASH):
+            RESUME_NEEDED = True
+            BANNER = resume_banner(
+                f"{run_name} stopped on train.max_hours; its checkpoint is in "
+                f"out/ckpt/{NAME}/{split}."
+            )
+            break
+        # the record exists: step checkpoints (resume state, ~2.3 GB each at 500M) are not
+        # needed any more; best.pt / model_final.pt stay (K5 loads model_final.pt)
+        for p in sorted((CKPT / split).glob("ckpt-*")):
+            p.unlink()
+        print(f"{run_name}: done; removed its step checkpoints")
+    if RESUME_NEEDED or FAILED:
+        break  # never start the next config
+if RESUME_NEEDED:
+    print(BANNER)"""
 
 K4_SUMMARY = """\
 from hookrec.eval.report import results_table
 from hookrec.utils.results import load_runs
 
-check_disk(WORK)
-for p in sorted(CKPT.rglob("*.pt")):
-    print(f"{p.stat().st_size / 1e9:8.3f} GB  {p.relative_to(OUT)}")
+ROWS = []
+for P in PLAN:
+    recs = {s: find_run(RESULTS, f"{P['name']}-{s}", PROCESSED.name, P["thash"]) for s in RUN_SPLITS}
+    if FAILED and FAILED[0].startswith(P["name"] + "-"):
+        status = "failed"
+    else:
+        status = "done" if all(recs.values()) else "pending"
+    ndcg = {s: (r or {}).get("metrics", {}).get("ndcg@10") for s, r in recs.items()}
+    gpu_h = sum(((r or {}).get("extra") or {}).get("gpu_hours") or 0 for r in recs.values())
+    ROWS.append((P["name"], status, ndcg.get("val"), ndcg.get("test"), gpu_h))
+    if status == "done":
+        print(f"{P['name']}: {', '.join(RUN_SPLITS)} done")
+
+
+def _f(x):
+    return "-" if x is None else f"{x:.4f}"
+
+
+TABLE = "\\n".join(
+    ["| config | status | val ndcg@10 | test ndcg@10 | GPU h |", "|---|---|---|---|---|"]
+    + [f"| {n} | {s} | {_f(v)} | {_f(t)} | {g:.2f} |" for n, s, v, t, g in ROWS]
+)
+for n, s, v, t, g in ROWS:
+    print(f"{n}: {s}; val ndcg@10 {_f(v)}, test ndcg@10 {_f(t)}, GPU {g:.2f} h")
+print(TABLE)
 print(results_table(load_runs(RESULTS), split="test", size=SIZE))
-print(BANNER if RESUME_NEEDED else f"{NAME}: {', '.join(RUN_SPLITS)} done")"""
+for p in sorted(Path(OUT, "ckpt").rglob("*.pt")):
+    print(f"{p.stat().st_size / 1e9:8.3f} GB  {p.relative_to(OUT)}")
+check_disk(WORK)
+if RESUME_NEEDED:
+    print(BANNER)
+if FAILED:
+    raise RuntimeError(
+        f"K4 failed on {FAILED[0]}: {FAILED[1]}\\nEverything finished before it is kept in "
+        f"out/results and out/ckpt; the configs after it were not started. Pending: "
+        f"{', '.join(pending_runs())}. Fix the cause, then save a new version with this "
+        "version's output attached to continue."
+    )"""
+
 
 # --- K4P (profiling) ---------------------------------------------------------------------
 K4P_DISCOVER = (
@@ -657,20 +791,39 @@ def notebooks(repo_url: str, git_ref: str) -> dict[str, dict]:
         ),
         "k4_train": nb(
             _md(
-                "K4: train a sequence model",
+                "K4: train a list of sequence models (one session)",
                 "**GPU T4 x2**",
                 "the K2 output for SIZE; to resume or continue, also the output of the earlier "
-                "K4 version(s) of the same CONFIG (detected automatically)",
-                "50m ~0.5-1 h per config, 500m up to 8 h per session (then resume)",
+                "version(s) of this notebook (detected automatically)",
+                "50m ~0.5-1 h per config (the five ablations in one session), 500m up to 8 h "
+                "per session (then resume)",
                 "`results/<name>-{val,test}-*.json`, `ckpt/<name>/{val,test}/`, markers "
                 "`_HOOKREC_RESULTS_<name>`, `_HOOKREC_CKPT`",
-                "\nIf the log ends with **RESUME NEEDED**, the version still succeeded: save a new "
-                "version with this version's output attached and it continues from the checkpoint.",
+                "\n`CONFIGS` is a list; the configs train one after another in a single headless "
+                "session (run name = file stem). `OVERRIDES` apply to every config. For backward "
+                "compatibility a plain string `CONFIG = \"configs/...\"` (add the line yourself) "
+                "is treated as `CONFIGS = [CONFIG]`.\n\n"
+                "- **Time budget:** `train.max_hours` is measured from the session start, so a "
+                "later config has less time. Before each split the notebook checks the budget "
+                "left; below `MIN_START_MINUTES` (default 40; 0 disables the check) it does not "
+                "start, and a split cut by `max_hours` stops the loop. Either way it prints "
+                "**RESUME NEEDED** with the pending configs and ends cleanly (the version "
+                "succeeds): save a new version with this version's output attached. Finished "
+                "configs are skipped, an in-progress one resumes from its checkpoint, the rest "
+                "start fresh.\n"
+                "- **Failure:** a config that fails fails the version (after the summary); what "
+                "finished is kept and the later configs are not started.\n"
+                "- **Disk:** five configs at 50m use about 3 GB of final/best checkpoints (step "
+                "checkpoints are pruned). At 500m each config keeps about 7 GB, so train at most "
+                "2 configs per notebook; a warning prints when the projection exceeds 18 GB.\n"
+                "- **Summary:** status, val/test ndcg@10 and GPU hours per config, as a table. "
+                "Per-config notebooks (one config in `CONFIGS`) still work.",
             ),
             [
-                ("CONFIG", "configs/ablations/a0_sasrec.yaml", "run name = file stem"),
+                ("CONFIGS", K4_CONFIGS, "trained in order; run name = file stem"),
                 ("RUN_SPLITS", ["val", "test"], "val (early stopping), then the test refit"),
-                ("OVERRIDES", [], 'e.g. ["train.lr=3e-4"] (key=value, YAML values)'),
+                ("OVERRIDES", [], 'applied to every config, e.g. ["train.lr=3e-4"] (key=value)'),
+                ("MIN_START_MINUTES", 40, "do not start a split with less budget left; 0 = never refuse"),
                 ("RESUME_INPUTS", True, "resume from / carry over attached earlier K4 outputs"),
                 ("REQUIRE_GPU", True, "fail fast if the GPU accelerator is not on"),
             ],

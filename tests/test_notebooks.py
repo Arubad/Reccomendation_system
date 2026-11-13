@@ -311,7 +311,10 @@ def test_pipeline_end_to_end(kaggle_fs, tmp_path, capsys):
 
     # K4 session 1 is cut by max_hours: no record, a clean RESUME NEEDED, a checkpoint saved
     cut = TINY_TRAIN + ["train.max_hours=0"]
-    g, out = kaggle_fs("k4_train", attach_as="k4-v1", REQUIRE_GPU=False, OVERRIDES=cut)
+    g, out = kaggle_fs(
+        "k4_train", attach_as="k4-v1", REQUIRE_GPU=False, OVERRIDES=cut,
+        CONFIG="configs/ablations/a0_sasrec.yaml", MIN_START_MINUTES=0,
+    )  # a plain string CONFIG still works (older single-config notebooks)
     assert g["RESUME_NEEDED"] is True
     assert "RESUME NEEDED" in capsys.readouterr().out
     assert not _runs(out / "results", "a0_sasrec-")
@@ -319,7 +322,10 @@ def test_pipeline_end_to_end(kaggle_fs, tmp_path, capsys):
     assert list((out / "ckpt" / "a0_sasrec" / "val").glob("ckpt-*.pt"))
 
     # session 2 has v1 attached: it resumes val, then trains test
-    g, out = kaggle_fs("k4_train", attach_as="k4-v2", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN)
+    g, out = kaggle_fs(
+        "k4_train", attach_as="k4-v2", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN,
+        CONFIGS=["configs/ablations/a0_sasrec.yaml"],
+    )
     assert g["RESUME_NEEDED"] is False
     log = capsys.readouterr().out
     assert "--resume" in log and "resumed from" in log  # the v1 checkpoint was loaded
@@ -332,7 +338,10 @@ def test_pipeline_end_to_end(kaggle_fs, tmp_path, capsys):
 
     # session 3 with v1 + v2 attached: both records exist, so nothing is retrained, but the
     # finished splits' weights are carried forward with the records
-    g, out = kaggle_fs("k4_train", attach_as="k4-v3", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN)
+    g, out = kaggle_fs(
+        "k4_train", attach_as="k4-v3", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN,
+        CONFIGS=["configs/ablations/a0_sasrec.yaml"],
+    )
     assert "skip" in capsys.readouterr().out.lower()
     assert len(_runs(out / "results", "a0_sasrec-test")) == 1
     ck = out / "ckpt" / "a0_sasrec"
@@ -349,6 +358,108 @@ def test_pipeline_end_to_end(kaggle_fs, tmp_path, capsys):
     md = (out / "reports" / "results.md").read_text()
     assert "a0_sasrec" in md and "mostpop" in md
     assert "# Results" in capsys.readouterr().out
+
+
+# --- K4 trains a list of configs ----------------------------------------------------------
+
+A0 = "configs/ablations/a0_sasrec.yaml"
+
+
+def _tiny_cfg(tmp_path, stem, max_hours):
+    """A config that inherits a0 (absolute `extends`) with its own train.max_hours."""
+    p = tmp_path / "cfgs" / f"{stem}.yaml"
+    p.parent.mkdir(exist_ok=True)
+    p.write_text(f"extends: {ROOT / A0}\ntrain: {{max_hours: {max_hours}}}\n")
+    return str(p)
+
+
+@pytest.fixture
+def k2_ready(kaggle_fs):
+    kaggle_fs("k0_download", attach_as="k0")
+    kaggle_fs("k2_preprocess", attach_as="k2", OVERRIDES=["min_count=2", "split.test_timestamp=null"])
+    return kaggle_fs
+
+
+def test_k4_params_default_to_the_ablation_list():
+    g = {}
+    exec(_code(_nb("k4_train"))[0], g)  # noqa: S102
+    assert g["CONFIGS"] == [
+        "configs/ablations/a0_sasrec.yaml", "configs/ablations/a1_audio.yaml",
+        "configs/ablations/a2_audio_event_organic.yaml", "configs/ablations/a3_full_logq.yaml",
+        "configs/ablations/a4_full_dislike.yaml",
+    ]  # fmt: skip
+    assert g["MIN_START_MINUTES"] == 40 and "CONFIG" not in g
+    md = "".join(_nb("k4_train")["cells"][0]["source"])
+    assert "CONFIG =" in md and "MIN_START_MINUTES" in md and "at most 2" in md
+
+
+def test_k4_list_budget_cut_then_resume_across_versions(k2_ready, tmp_path, capsys):
+    a, b, c = (_tiny_cfg(tmp_path, n, h) for n, h in (("tiny_a", 8), ("tiny_b", 0), ("tiny_c", 8)))
+    kw = {"REQUIRE_GPU": False, "OVERRIDES": TINY_TRAIN, "MIN_START_MINUTES": 0}
+    # v1: tiny_a completes; tiny_b is cut by max_hours (RESUME NEEDED); tiny_c is never started
+    g, out = k2_ready("k4_train", attach_as="k4-v1", CONFIGS=[a, b, c], **kw)
+    log = capsys.readouterr().out
+    assert g["RESUME_NEEDED"] is True and "RESUME NEEDED" in log
+    assert "Still pending: tiny_b-val, tiny_b-test, tiny_c-val, tiny_c-test" in log
+    assert "tiny_a: val, test done" in log
+    assert "| tiny_a | done |" in log and "| tiny_b | pending |" in log
+    assert len(_runs(out / "results", "tiny_a-")) == 2 and not _runs(out / "results", "tiny_b-")
+    assert list((out / "ckpt" / "tiny_b" / "val").glob("ckpt-*.pt"))
+    assert not (out / "ckpt" / "tiny_c").exists()
+    assert (out / "ckpt" / "tiny_a" / "test" / "model_final.pt").exists()
+
+    # v2 (v1 attached, tiny_b now has budget): tiny_a skipped and carried forward, tiny_b
+    # resumes from its checkpoint, tiny_c starts fresh
+    _tiny_cfg(tmp_path, "tiny_b", 8)
+    g, out = k2_ready("k4_train", attach_as="k4-v2", CONFIGS=[a, b, c], **kw)
+    log = capsys.readouterr().out
+    assert g["RESUME_NEEDED"] is False
+    assert "tiny_a-val: a record already exists, skipping" in log
+    assert "resumed from" in log
+    for n in ("tiny_a", "tiny_b", "tiny_c"):
+        assert len(_runs(out / "results", f"{n}-val")) == 1, n
+        assert len(_runs(out / "results", f"{n}-test")) == 1, n
+        assert (out / "ckpt" / n / "test" / "model_final.pt").exists(), n
+        assert not list((out / "ckpt" / n).rglob("ckpt-*")), n
+        assert f"{n}: val, test done" in log
+    assert _runs(out / "results", "tiny_b-val")[0]["extra"]["steps"] == 6
+    assert "| tiny_c | done |" in log
+
+
+def test_k4_guard_skips_start_when_budget_is_nearly_spent(k2_ready, monkeypatch, capsys):
+    from hookrec.train import trainer
+
+    # 7.5 h into the default 8 h budget: 30 min left < MIN_START_MINUTES (40)
+    monkeypatch.setattr(trainer, "session_elapsed_seconds", lambda: 7.5 * 3600)
+    g, out = k2_ready(
+        "k4_train", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN, CONFIGS=[A0, "configs/ablations/a1_audio.yaml"]
+    )
+    log = capsys.readouterr().out
+    assert g["RESUME_NEEDED"] is True and "RESUME NEEDED" in log
+    assert "30 min" in log and "MIN_START_MINUTES" in log
+    assert "Still pending: a0_sasrec-val, a0_sasrec-test, a1_audio-val, a1_audio-test" in log
+    assert not _runs(out / "results", "a0_sasrec")
+    assert not list((out / "ckpt").rglob("*.pt"))
+
+
+def test_k4_plain_string_config_is_a_one_item_list(k2_ready, monkeypatch):
+    from hookrec.train import trainer
+
+    monkeypatch.setattr(trainer, "session_elapsed_seconds", lambda: 8 * 3600)
+    g, _ = k2_ready("k4_train", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN, CONFIG=A0)
+    assert g["CONFIGS"] == [A0] and [p["name"] for p in g["PLAN"]] == ["a0_sasrec"]
+
+
+def test_k4_failure_fails_the_version_and_stops_the_loop(k2_ready, tmp_path, capsys):
+    a, b = _tiny_cfg(tmp_path, "tiny_a", 8), _tiny_cfg(tmp_path, "tiny_b", 8)
+    with pytest.raises(RuntimeError, match=r"(?s)K4 failed on tiny_a-val.*not started"):
+        k2_ready(
+            "k4_train", REQUIRE_GPU=False, CONFIGS=[a, b], MIN_START_MINUTES=0,
+            OVERRIDES=[*TINY_TRAIN, "train.device=bogus"],
+        )  # fmt: skip
+    log = capsys.readouterr().out
+    assert "| tiny_a | failed |" in log and "| tiny_b | pending |" in log
+    assert "tiny_b-val" not in log.split("$ ")[-1] and not list(tmp_path.rglob("tiny_b-val-*.json"))
 
 
 def test_k3_sets_single_thread_blas():

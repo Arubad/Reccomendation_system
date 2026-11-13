@@ -59,8 +59,8 @@ records the commit SHA it ran at.
 ## 2. Import -> attach -> Save Version (every notebook)
 
 1. **Import.** Kaggle -> Create -> New Notebook -> File -> Import Notebook, then upload
-   `notebooks/kaggle/kN_*.ipynb`. Keep one Kaggle notebook per file (for K4, one per config;
-   see section 5).
+   `notebooks/kaggle/kN_*.ipynb`. Keep one Kaggle notebook per file (K4 trains a list of configs, or
+   one config per notebook; see section 5).
 2. **Attach inputs.** In the right sidebar, use Input -> **+ Add Input**. There are two ways to
    attach an earlier stage's output:
    - **(a) Directly, as notebook output:** Add Input -> **Your Work** -> pick the earlier
@@ -93,7 +93,7 @@ with a disk check that warns above 18 GB.
 | K1 | `k1_eda` | None (CPU) | K0 (50m) | `reports/`: figures, `eda_stats.json` | `reports/_HOOKREC_EDA` | < 1 h |
 | K2 | `k2_preprocess` | None (CPU) | K0 (same size) | `processed/<size>-<hash>/` | `_DONE` | 50m < 0.5 h, 500m 2-4 h |
 | K3 | `k3_baselines` | None (CPU) | K2 | `results/*.json` (MostPop, DecayPop, iALS: val grid + test refit) | `results/_HOOKREC_RESULTS_baselines` | 50m < 0.5 h, 500m 1-3 h |
-| K4 | `k4_train` | **GPU T4 x2** | K2 (+ earlier K4 outputs of the same config, to resume) | `results/<name>-{val,test}-*.json`, `ckpt/<name>/{val,test}/` | `results/_HOOKREC_RESULTS_<name>`, `ckpt/<name>/_HOOKREC_CKPT` | see section 6 |
+| K4 | `k4_train` | **GPU T4 x2** | K2 (+ earlier outputs of this K4 notebook, to resume) | `results/<name>-{val,test}-*.json`, `ckpt/<name>/{val,test}/` | `results/_HOOKREC_RESULTS_<name>`, `ckpt/<name>/_HOOKREC_CKPT` | see section 6 |
 | K5 | `k5_eval_report` | None at 50m, **GPU at 500m** (fails fast without it) | K2 + K3 + K4 output(s) | `results/*-eval-*.json`, `*-peruser.npz`, `reports/results.md` | - | < 1 h |
 
 What each notebook does, and the defaults its parameter cell ships with:
@@ -134,7 +134,17 @@ What each notebook does, and the defaults its parameter cell ships with:
 - **K4** runs `scripts/run_train.py --processed <K2> --config CONFIG --split S --ckpt
   out/ckpt/<name>/S --out out/results [--resume <earlier ckpt>/S ...]` for S in `val`, then
   `test`.
-  - Default `CONFIG = configs/ablations/a0_sasrec.yaml` (run name `a0_sasrec`).
+  - `CONFIGS` is a list (default: the five ablations a0-a4). They train one after another in a
+    single session; the run name is the file stem. `OVERRIDES` apply to every config. A plain
+    string `CONFIG = "..."` (add the line) still works and means `CONFIGS = [CONFIG]`.
+  - Before each split it checks the budget left (`train.max_hours` from the resolved config,
+    minus the time since the session start). Under `MIN_START_MINUTES` (default 40, 0 disables)
+    it does not start and prints RESUME NEEDED. A split cut by `max_hours` also prints
+    RESUME NEEDED and **stops the loop**. A config that fails fails the version (after the
+    summary); finished configs stay in the output and the later ones are not started.
+  - The end summary lists each config's status (done / pending / failed), val and test ndcg@10
+    and GPU hours as a table, then the disk check, plus a `<name>: val, test done` line per
+    finished config.
   - It skips any split whose record already exists, so a re-run is a no-op.
   - When it carries a finished split's record over from an earlier output, it also copies that
     split's `model_final.pt` and `best.pt`. So the newest K4 output alone is always enough for
@@ -153,11 +163,13 @@ What each notebook does, and the defaults its parameter cell ships with:
 ## 4. Resuming K4 (sessions longer than one run)
 
 `train.max_hours: 8.0` (in `configs/sasrec.yaml`) is measured from the notebook's first cell
-(`HOOKREC_SESSION_START`). That leaves about 1 h of the 9 h session for the final checkpoint and
-saving the output. When training hits the limit:
+(`HOOKREC_SESSION_START`), for the whole session, not per config. That leaves about 1 h of the
+9 h session for the final checkpoint and saving the output. When the budget runs out:
 
-- `run_train` writes a checkpoint and exits 0 **without** a results record.
-- The notebook prints a **`RESUME NEEDED`** banner and ends cleanly.
+- `run_train` writes a checkpoint and exits 0 **without** a results record (or, if less than
+  `MIN_START_MINUTES` of the budget is left, the notebook does not start the split at all).
+- The notebook prints a **`RESUME NEEDED`** banner naming the configs and splits still pending,
+  does not start any later config, and ends cleanly.
 - The version shows as **successful**. That is intended, because a successful version saves
   its output.
 
@@ -167,11 +179,12 @@ To continue:
    the output of the version that printed RESUME NEEDED; check that it is that version.
    Alternatively, make a Dataset from that output and attach it.
 2. Keep the K2 input attached, then **Save Version -> Save & Run All** again.
-3. The notebook finds the earlier `ckpt/<name>/_HOOKREC_CKPT` and passes `--resume
-   <earlier>/ckpt/<name>/<split>`. It also copies the earlier `results/*.json` first, so a
-   finished `val` record is kept and `val` is skipped. Training continues from the last good
-   checkpoint, with the same RNG and data-loader position.
-4. Repeat until the log ends with `<name>: val, test done`. For the next round, attach only
+3. The notebook finds each config's earlier `ckpt/<name>/_HOOKREC_CKPT` and passes `--resume
+   <earlier>/ckpt/<name>/<split>`. It also copies the earlier `results/*.json` first, so
+   finished splits (and whole finished configs, with their `model_final.pt`) are skipped.
+   The config that was in progress continues from its last good checkpoint, with the same RNG
+   and data-loader position; configs not started yet start fresh.
+4. Repeat until the log shows `<name>: val, test done` for every config. For the next round, attach only
    the newest version: each version carries the results, `best.pt` and the finished splits'
    `model_final.pt` forward.
 
@@ -184,19 +197,32 @@ set `RESUME_INPUTS=False`.** `training_hash` covers every hashed config key (for
 and an old results record no longer counts as done (K4 matches records on the hash), so
 attaching the earlier output only gets in the way.
 
-**Disk:** at 500M a step checkpoint (model + optimizer) is about 2.3 GB. A split in progress
+**Disk, several configs:** five configs at 50M leave about 3 x 0.23 GB of final/best
+checkpoints each (about 3.5 GB; step checkpoints are pruned once a split's record is written).
+At 500M each config leaves about 3 x 2.3 GB, so **run at most 2 configs per notebook** there. K4
+prints the projected disk use and warns above 18 GB.
+
+**Disk, one split:** at 500M a step checkpoint (model + optimizer) is about 2.3 GB. A split in progress
 keeps 2 step checkpoints, plus `best.pt` and `model_final.pt`, which is about 9 GB of the 20 GB
 working disk. Once a split's record is written, K4 deletes that split's step checkpoints
 (`ckpt-*`), because only `best.pt` and `model_final.pt` are needed afterwards. So a version that
 runs both val and test stays well under the limit. The disk check at the end warns above 18 GB.
 
-## 5. Other configs (ablations, HookSeq)
+## 5. Ablations: one notebook, all configs
 
-Make one Kaggle notebook per config: import `k4_train.ipynb` again, name it after the config
-(for example `k4_hookseq`), and change only `CONFIG` in the first cell, for example to
-`configs/hookseq.yaml` or `configs/ablations/a1_audio.yaml`. Each config then has its own
-version history and resume chain. Results, markers and checkpoints are keyed by the run name
-(the config's file stem), so K5 can take several K4 outputs at once.
+The default `CONFIGS` of `k4_train.ipynb` is the ablation ladder a0-a4. Import it once, attach
+K2, and Save Version: all five train in one session (about 5 x 0.5-1 h at 50M). If the budget
+runs out part-way, the RESUME NEEDED banner lists what is pending; attach that version's output
+and save again (section 4). To train other configs, change the list in the first cell, for
+example `["configs/hookseq.yaml"]` or `["configs/ablations/a5_like_head.yaml", ...]`.
+Results, markers and checkpoints are keyed by the run name (the config's file stem), so K5 can
+take one K4 output for all of them.
+
+At 500M keep the list to at most 2 configs per notebook (disk, section 4).
+
+**Alternative: one notebook per config.** Import `k4_train.ipynb` again, name it after the
+config (for example `k4_hookseq`) and set `CONFIGS` to that one file. Each config then has its
+own version history and resume chain.
 
 ## 6. GPU budget (spec section 9a)
 

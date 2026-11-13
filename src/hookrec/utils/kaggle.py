@@ -226,10 +226,10 @@ def env_report(work: str | Path = WORKING) -> dict:
     return rep
 
 
-def has_run(
+def find_run(
     results_dir: str | Path, run_name: str, processed_dir: str, training_hash: str | None = None
-) -> bool:
-    """True if `results_dir` holds a `run_name` record for `processed_dir` (bad JSONs ignored).
+) -> dict | None:
+    """The first `run_name` record in `results_dir` for `processed_dir` (bad JSONs ignored).
 
     With `training_hash` (`hookrec.train.trainer.training_hash` of the current config), the
     record must also carry that hash in `extra`: a carried-over record of an older config
@@ -247,5 +247,12 @@ def has_run(
             and extra.get("processed_dir") == processed_dir
             and (training_hash is None or extra.get("training_hash") == training_hash)
         ):
-            return True
-    return False
+            return r
+    return None
+
+
+def has_run(
+    results_dir: str | Path, run_name: str, processed_dir: str, training_hash: str | None = None
+) -> bool:
+    """True if `find_run` finds a record (see there for the hash rule)."""
+    return find_run(results_dir, run_name, processed_dir, training_hash) is not None
