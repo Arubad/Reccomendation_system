@@ -362,7 +362,6 @@ if REQUIRE_GPU and not torch.cuda.is_available():
         "no GPU: set Accelerator = GPU T4 x2 in the notebook sidebar (Settings), then Save "
         "Version again. (REQUIRE_GPU = False trains on CPU, which is far too slow for Yambda.)"
     )
-PROCESSED = find_processed(SIZE, INPUT_ROOT)
 import yaml
 
 from hookrec.train.trainer import session_elapsed_seconds, training_hash
@@ -408,15 +407,19 @@ for _p in PLAN:
         else []
     )
 
-# disk: each config leaves ~3 final/best checkpoints (0.23 GB each at 50m, 2.3 GB at 500m);
-# step checkpoints are pruned once a split's record is written
+# disk: each config keeps 3 checkpoints (val best.pt + val model_final.pt + test model_final.pt;
+# 0.23 GB each at 50m, 2.3 GB at 500m); step checkpoints are pruned once a split's record exists
 PROJECTED_GB = dir_size_bytes(WORK) / 1e9 + len(PLAN) * 3 * (0.23 if SIZE == "50m" else 2.3)
 print(f"projected disk use at the end: ~{PROJECTED_GB:.1f} GB for {len(PLAN)} config(s)")
 if PROJECTED_GB > 18:
-    print(
-        f"WARNING: projected {PROJECTED_GB:.1f} GB exceeds 18 GB of Kaggle's 20 GB working disk. "
-        "Train fewer configs per notebook (at 500m: at most 2)."
+    _msg = (
+        f"projected {PROJECTED_GB:.1f} GB for {len(PLAN)} config(s) exceeds 18 GB of Kaggle's "
+        "20 GB working disk. Split CONFIGS across notebooks (at 500m: at most 2 per notebook)."
     )
+    if SIZE == "500m":
+        raise RuntimeError("K4 not started: " + _msg)
+    print("WARNING:", _msg)
+PROCESSED = find_processed(SIZE, INPUT_ROOT)
 print("processed:", PROCESSED)
 for _p in PLAN:
     print(
@@ -487,6 +490,7 @@ def resume_banner(why):
 RESUME_NEEDED = False
 BANNER = ""
 FAILED = None  # (run name, error) of the config that failed: the version fails after the summary
+TRAINED = False  # something finished in this session (the budget guard only applies after that)
 for P in PLAN:
     NAME, THASH = P["name"], P["thash"]
     CKPT = Path(OUT, "ckpt", NAME)
@@ -497,7 +501,14 @@ for P in PLAN:
             continue
         # max_hours counts from the session start, so a later config may have little time left
         left_min = (P["max_hours"] * 3600 - session_elapsed_seconds()) / 60
-        if MIN_START_MINUTES > 0 and left_min < MIN_START_MINUTES:
+        if MIN_START_MINUTES > 0 and not TRAINED and P["max_hours"] * 60 <= MIN_START_MINUTES:
+            raise RuntimeError(
+                f"{run_name} could never start: train.max_hours = {P['max_hours']} h is "
+                f"{P['max_hours'] * 60:.0f} min, not more than MIN_START_MINUTES = "
+                f"{MIN_START_MINUTES}. Raise train.max_hours or lower MIN_START_MINUTES "
+                "(0 disables the check)."
+            )
+        if MIN_START_MINUTES > 0 and TRAINED and left_min < MIN_START_MINUTES:
             RESUME_NEEDED = True
             BANNER = resume_banner(
                 f"{run_name} not started: {max(left_min, 0):.0f} min of the "
@@ -522,6 +533,7 @@ for P in PLAN:
         except RuntimeError as e:  # a failure fails the version, but keeps what is done
             FAILED = (run_name, str(e))
             break
+        TRAINED = True
         # exit 0 without a record = max_hours
         if not has_run(RESULTS, run_name, PROCESSED.name, THASH):
             RESUME_NEEDED = True
@@ -547,7 +559,7 @@ from hookrec.utils.results import load_runs
 ROWS = []
 for P in PLAN:
     recs = {s: find_run(RESULTS, f"{P['name']}-{s}", PROCESSED.name, P["thash"]) for s in RUN_SPLITS}
-    if FAILED and FAILED[0].startswith(P["name"] + "-"):
+    if FAILED and FAILED[0] in {f"{P['name']}-{s}" for s in RUN_SPLITS}:
         status = "failed"
     else:
         status = "done" if all(recs.values()) else "pending"

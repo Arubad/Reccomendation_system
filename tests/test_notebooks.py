@@ -365,11 +365,11 @@ def test_pipeline_end_to_end(kaggle_fs, tmp_path, capsys):
 A0 = "configs/ablations/a0_sasrec.yaml"
 
 
-def _tiny_cfg(tmp_path, stem, max_hours):
+def _tiny_cfg(tmp_path, stem, max_hours, extra=""):
     """A config that inherits a0 (absolute `extends`) with its own train.max_hours."""
     p = tmp_path / "cfgs" / f"{stem}.yaml"
     p.parent.mkdir(exist_ok=True)
-    p.write_text(f"extends: {ROOT / A0}\ntrain: {{max_hours: {max_hours}}}\n")
+    p.write_text(f"extends: {ROOT / A0}\ntrain: {{max_hours: {max_hours}}}\n{extra}")
     return str(p)
 
 
@@ -425,41 +425,84 @@ def test_k4_list_budget_cut_then_resume_across_versions(k2_ready, tmp_path, caps
     assert _runs(out / "results", "tiny_b-val")[0]["extra"]["steps"] == 6
     assert "| tiny_c | done |" in log
 
+    # K5 over the one multi-config K4 output (v1 detached: v2 carries everything forward)
+    shutil.rmtree(tmp_path / "input" / "k4-v1")
+    _, out5 = k2_ready("k5_eval_report")
+    evals = {r["extra"]["source_run"] for r in _runs(out5 / "results", "")
+             if r["extra"].get("kind") == "eval"}  # fmt: skip
+    assert evals == {"tiny_a-test", "tiny_b-test", "tiny_c-test"}
 
-def test_k4_guard_skips_start_when_budget_is_nearly_spent(k2_ready, monkeypatch, capsys):
+
+def test_k4_guard_applies_once_something_trained(k2_ready, tmp_path, monkeypatch, capsys):
     from hookrec.train import trainer
 
-    # 7.5 h into the default 8 h budget: 30 min left < MIN_START_MINUTES (40)
-    monkeypatch.setattr(trainer, "session_elapsed_seconds", lambda: 7.5 * 3600)
-    g, out = k2_ready(
-        "k4_train", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN, CONFIGS=[A0, "configs/ablations/a1_audio.yaml"]
-    )
+    a, b = _tiny_cfg(tmp_path, "tiny_a", 8), _tiny_cfg(tmp_path, "tiny_b", 8)
+
+    def elapsed():  # a fresh session until tiny_a has finished, then 7.5 h in (30 min < 40 left)
+        return 7.5 * 3600 if list(tmp_path.rglob("tiny_a-test-*.json")) else 0.0
+
+    monkeypatch.setattr(trainer, "session_elapsed_seconds", elapsed)
+    g, out = k2_ready("k4_train", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN, CONFIGS=[a, b])
     log = capsys.readouterr().out
     assert g["RESUME_NEEDED"] is True and "RESUME NEEDED" in log
-    assert "30 min" in log and "MIN_START_MINUTES" in log
-    assert "Still pending: a0_sasrec-val, a0_sasrec-test, a1_audio-val, a1_audio-test" in log
-    assert not _runs(out / "results", "a0_sasrec")
-    assert not list((out / "ckpt").rglob("*.pt"))
+    assert "tiny_b-val not started: 30 min" in log and "MIN_START_MINUTES" in log
+    assert "Still pending: tiny_b-val, tiny_b-test" in log
+    assert len(_runs(out / "results", "tiny_a-")) == 2 and not _runs(out / "results", "tiny_b")
+    assert not (out / "ckpt" / "tiny_b").exists()
+    assert "| tiny_a | done |" in log and "| tiny_b | pending |" in log
 
 
-def test_k4_plain_string_config_is_a_one_item_list(k2_ready, monkeypatch):
-    from hookrec.train import trainer
-
-    monkeypatch.setattr(trainer, "session_elapsed_seconds", lambda: 8 * 3600)
-    g, _ = k2_ready("k4_train", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN, CONFIG=A0)
-    assert g["CONFIGS"] == [A0] and [p["name"] for p in g["PLAN"]] == ["a0_sasrec"]
-
-
-def test_k4_failure_fails_the_version_and_stops_the_loop(k2_ready, tmp_path, capsys):
-    a, b = _tiny_cfg(tmp_path, "tiny_a", 8), _tiny_cfg(tmp_path, "tiny_b", 8)
-    with pytest.raises(RuntimeError, match=r"(?s)K4 failed on tiny_a-val.*not started"):
+def test_k4_budget_not_above_min_start_is_a_hard_error(k2_ready, tmp_path):
+    """max_hours = 0.5 h = 30 min <= MIN_START_MINUTES: it can never start, so fail visibly."""
+    with pytest.raises(RuntimeError, match=r"could never start.*MIN_START_MINUTES"):
         k2_ready(
-            "k4_train", REQUIRE_GPU=False, CONFIGS=[a, b], MIN_START_MINUTES=0,
-            OVERRIDES=[*TINY_TRAIN, "train.device=bogus"],
+            "k4_train", REQUIRE_GPU=False, CONFIGS=[A0],
+            OVERRIDES=[*TINY_TRAIN, "train.max_hours=0.5"],
+        )  # fmt: skip
+    assert not list(tmp_path.rglob("a0_sasrec-*.json"))
+
+
+def test_k4_plain_string_config_is_a_one_item_list(k2_ready, tmp_path):
+    g, out = k2_ready(
+        "k4_train", REQUIRE_GPU=False, OVERRIDES=TINY_TRAIN, CONFIG=_tiny_cfg(tmp_path, "tiny_a", 8)
+    )
+    assert [p["name"] for p in g["PLAN"]] == ["tiny_a"] and g["CONFIGS"] == [g["CONFIG"]]
+    assert len(_runs(out / "results", "tiny_a-")) == 2
+
+
+def test_k4_failure_keeps_finished_configs_and_stops_the_loop(k2_ready, tmp_path, capsys):
+    a = _tiny_cfg(tmp_path, "tiny_a", 8)
+    b = _tiny_cfg(tmp_path, "tiny_b", 8, "loss: {type: nonsense}\n")  # rejected by the trainer
+    c = _tiny_cfg(tmp_path, "tiny_c", 8)
+    with pytest.raises(RuntimeError, match=r"(?s)K4 failed on tiny_b-val.*not started"):
+        k2_ready(
+            "k4_train", REQUIRE_GPU=False, CONFIGS=[a, b, c], MIN_START_MINUTES=0,
+            OVERRIDES=TINY_TRAIN,
         )  # fmt: skip
     log = capsys.readouterr().out
-    assert "| tiny_a | failed |" in log and "| tiny_b | pending |" in log
-    assert "tiny_b-val" not in log.split("$ ")[-1] and not list(tmp_path.rglob("tiny_b-val-*.json"))
+    assert "| tiny_a | done |" in log and "| tiny_b | failed |" in log
+    assert "| tiny_c | pending |" in log
+    (out,) = tmp_path.glob("work-k4_train-*/out")
+    ck = out / "ckpt"
+    assert len(_runs(out / "results", "tiny_a-")) == 2  # kept
+    assert (ck / "tiny_a" / "test" / "model_final.pt").exists()
+    assert (ck / "tiny_a" / "val" / "best.pt").exists()
+    assert not (ck / "tiny_a" / "test" / "best.pt").exists()  # the 3 kept checkpoints per config
+    assert not _runs(out / "results", "tiny_b-") and not _runs(out / "results", "tiny_c-")
+    assert not (ck / "tiny_c").exists() and not list(ck.glob("tiny_b/**/*.pt"))
+
+
+def test_k4_500m_disk_projection_fails_fast_before_training(kaggle_fs):
+    three = [A0, "configs/ablations/a1_audio.yaml", "configs/ablations/a2_audio_event_organic.yaml"]
+    with pytest.raises(RuntimeError, match=r"K4 not started.*at most 2"):
+        kaggle_fs("k4_train", SIZE="500m", REQUIRE_GPU=False, CONFIGS=three)
+
+
+def test_k4_50m_disk_projection_only_warns(kaggle_fs, capsys):
+    """50m never refuses (5 configs ~3.5 GB), and the projection is printed."""
+    with pytest.raises(FileNotFoundError, match="processed bundle"):  # past the disk check
+        kaggle_fs("k4_train", REQUIRE_GPU=False)
+    assert "projected disk use at the end: ~3.5 GB for 5 config(s)" in capsys.readouterr().out
 
 
 def test_k3_sets_single_thread_blas():

@@ -184,6 +184,9 @@ To continue:
    finished splits (and whole finished configs, with their `model_final.pt`) are skipped.
    The config that was in progress continues from its last good checkpoint, with the same RNG
    and data-loader position; configs not started yet start fresh.
+   Step checkpoints are not carried forward, so when a run ended in RESUME NEEDED with a config
+   in progress, keep attaching the older output(s) that hold its `ckpt/<name>/` as well as the
+   newest one.
 4. Repeat until the log shows `<name>: val, test done` for every config. For the next round, attach only
    the newest version: each version carries the results, `best.pt` and the finished splits'
    `model_final.pt` forward.
@@ -200,7 +203,11 @@ attaching the earlier output only gets in the way.
 **Disk, several configs:** five configs at 50M leave about 3 x 0.23 GB of final/best
 checkpoints each (about 3.5 GB; step checkpoints are pruned once a split's record is written).
 At 500M each config leaves about 3 x 2.3 GB, so **run at most 2 configs per notebook** there. K4
-prints the projected disk use and warns above 18 GB.
+prints the projected disk use (3 kept checkpoints per config); above 18 GB it warns at 50M and
+**refuses to start at 500M**: split `CONFIGS` across notebooks. The budget check
+(`MIN_START_MINUTES`) only applies once something has trained in the session; if
+`train.max_hours` is itself not above `MIN_START_MINUTES` the notebook fails with a clear error
+instead of silently training nothing.
 
 **Disk, one split:** at 500M a step checkpoint (model + optimizer) is about 2.3 GB. A split in progress
 keeps 2 step checkpoints, plus `best.pt` and `model_final.pt`, which is about 9 GB of the 20 GB
