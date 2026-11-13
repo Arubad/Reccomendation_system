@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO_URL = "https://github.com/Arubad/Reccomendation_system.git"
-DEFAULT_GIT_REF = "v0.3"  # the tag the reported runs (and K4P) use; the maintainer creates it
+DEFAULT_GIT_REF = "v0.3.1"  # the tag the reported runs (and K4P) use; the maintainer creates it
 POLARS_FLOOR = "2.1"  # = pyproject's `polars>=` floor (tests/test_notebooks.py checks they agree)
 
 CPU = {"accelerator": "none", "isGpuEnabled": False}
