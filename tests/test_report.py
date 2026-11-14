@@ -444,3 +444,106 @@ def test_paired_extra_run_processed_dir_mismatch_row(tmp_path):
     assert "| a7_full_no_content vs sasrec (strong SASRec, Listen+ input) | not available " \
         "(processed_dir mismatch) |" in p
     assert "ndcg@10 (a4_full_dislike - sasrec) | +0.1000" in p
+
+
+# ---- F6: seed replicates ----------------------------------------------------------------------
+
+
+def _seed_setup(res, ndcg, shifts, missing_npz=()):
+    """sasrec / a8_full_all_ids seeds 1..3: test records (ndcg@10 from `ndcg`), eval records
+    (a8 per-user ndcg@10 = sasrec's + shifts[seed])."""
+    for n in (1, 2, 3):
+        for j, base in enumerate(("sasrec", "a8_full_all_ids")):
+            name = base if n == 1 else f"{base}_s{n}"
+            _write(res, _run(name, ndcg[base][n - 1], "2026-01-01"), 10 * n + j)
+            _write_cfg(res, _hs_eval(name, ndcg[base][n - 1]), 100 + 10 * n + j)
+            shift = shifts[n] if base == "a8_full_all_ids" else 0.0
+            if name not in missing_npz:
+                _peruser(res, name, "50m", shift)
+
+
+def _seeds(res, tmp_path):
+    text = write_readme_tables(res, tmp_path / "o.md").read_text()
+    return text.split("## Seed replicates")[1]
+
+
+NDCG = {"sasrec": [0.10, 0.20, 0.30], "a8_full_all_ids": [0.40, 0.50, 0.60]}
+
+
+def test_seed_replicates_grouping_mean_std(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    _seed_setup(res, NDCG, {1: 0.1, 2: 0.2, 3: 0.3})
+    s = _seeds(res, tmp_path)
+    row = next(ln for ln in s.splitlines() if ln.startswith("| sasrec |"))
+    assert "| 3 |" in row
+    assert "0.2000 ± 0.1000" in row and "0.1000, 0.2000, 0.3000" in row
+    assert "0.5000 ± 0.1000" in next(ln for ln in s.splitlines() if ln.startswith("| a8_full"))
+    assert "eval records" in s  # caption names its source
+
+
+def test_seed_replicates_use_eval_metrics_and_long_tail(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    for n, v in ((1, 0.1), (2, 0.3)):
+        name = "sasrec" if n == 1 else "sasrec_s2"
+        _write(res, _run(name, 0.9, "2026-01-01"), n)  # test record: must lose to the eval
+        ev = _hs_eval(name, v)
+        ev["extra"]["fairness"] = {"long_tail_share@10": v / 10}
+        _write_cfg(res, ev, 10 + n)
+    s = _seeds(res, tmp_path)
+    row = next(ln for ln in s.splitlines() if ln.startswith("| sasrec |"))
+    assert "0.2000 ± 0.1414" in row and "0.9000" not in row
+    assert "0.0200 ± 0.0141" in row  # long_tail_share@10 from extra.fairness
+
+
+def test_seed_replicates_excluded_from_headline_and_ablations(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    names = ("a0_sasrec", "a8_full_all_ids", "a8_full_all_ids_s2", "sasrec", "sasrec_s2")
+    for name in names:
+        _write(res, _run(name, 0.2, "2026-01-01"), 1)
+    runs = [_run(n, 0.2, "2026-01-01") for n in names]
+    assert "sasrec_s2" not in results_table(runs, size="50m")
+    assert "| sasrec |" in results_table(runs, size="50m")
+    assert "a8_full_all_ids_s2" not in ablation_table(runs)
+    assert "| a8_full_all_ids |" in ablation_table(runs)
+    text = write_readme_tables(res, tmp_path / "o.md").read_text()
+    head, rest = text.split("## Ablations")
+    assert "| sasrec_s2" not in head and "| a8_full_all_ids_s2" not in rest.split("## Slices")[0]
+    assert "seed replicates" in head.lower() and "below" in head
+
+
+def test_seed_replicates_paired_by_seed(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    _seed_setup(res, NDCG, {1: 0.1, 2: 0.2, 3: 0.3})
+    s = _seeds(res, tmp_path)
+    assert "a8_full_all_ids - sasrec" in s
+    for n, d in ((1, "+0.1000"), (2, "+0.2000"), (3, "+0.3000")):
+        line = next(ln for ln in s.splitlines() if f"| seed {n} |" in ln and "ndcg@10" in ln)
+        assert d in line and f"[{d}, {d}]" in line
+    summ = next(ln for ln in s.splitlines() if "summary" in ln and "ndcg@10" in ln)
+    assert "+0.2000 ± 0.1000" in summ and "+0.1000" in summ and "+0.3000" in summ
+    assert "a7_full_no_content" not in s
+
+
+def test_seed_replicates_paired_skips_missing_npz(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    _seed_setup(res, NDCG, {1: 0.1, 2: 0.2, 3: 0.3}, missing_npz=("a8_full_all_ids_s3",))
+    s = _seeds(res, tmp_path)
+    assert "seed 3" in s and "not available" in s
+    assert not any("| seed 3 |" in ln and "+0.3000" in ln for ln in s.splitlines())
+    summ = next(ln for ln in s.splitlines() if "summary" in ln and "ndcg@10" in ln)
+    assert "+0.1500 ± 0.0707" in summ  # only seeds 1 and 2 count
+
+
+def test_no_seed_section_without_replicates(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    for n in ("sasrec", "a8_full_all_ids", "a0_sasrec"):
+        _write(res, _run(n, 0.2, "2026-01-01"), 1)
+        _write_cfg(res, _hs_eval(n, 0.2), 2)
+    text = write_readme_tables(res, tmp_path / "o.md").read_text()
+    assert "Seed replicates" not in text

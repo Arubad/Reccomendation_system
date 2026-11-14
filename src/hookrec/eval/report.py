@@ -47,6 +47,19 @@ def _table(header: list[str], rows: list[list]) -> str:
     return "\n".join([_row(header), "|" + "---|" * len(header), *(_row(r) for r in rows)])
 
 
+_REPLICATE = re.compile(r"(.+)_s(\d+)")
+
+
+def _replicate(name: str) -> tuple[str, int] | None:
+    """(base, N) when `name` (no `-test` / `-test-eval` suffix) is seed replicate N >= 2."""
+    m = _REPLICATE.fullmatch(name)
+    return (m.group(1), int(m.group(2))) if m and int(m.group(2)) >= 2 else None
+
+
+def _is_replicate_run(run_name: str) -> bool:
+    return _replicate(run_name.removesuffix("-eval").removesuffix("-test")) is not None
+
+
 def _is_eval(r: dict) -> bool:
     return r["run_name"].endswith("-eval") or r.get("extra", {}).get("kind") == "eval"
 
@@ -96,6 +109,8 @@ def results_table(
     for (name, _), r in sorted(
         _latest(runs, split, size).items(), key=lambda kv: (kv[0][0], str(kv[0][1]))
     ):
+        if _is_replicate_run(name):  # seed replicates are summarized in their own section
+            continue
         label = name.removesuffix(f"-{split}")
         rows.append([label, *(_fmt(r["metrics"].get(m)) for m in metrics)])
     if not rows:
@@ -112,7 +127,7 @@ def ablation_table(
     pat = re.compile(rf"^{re.escape(prefix)}(\d+)_")
     found = {}
     for (name, _), r in _latest(runs, split, size).items():
-        m = pat.match(name)
+        m = None if _is_replicate_run(name) else pat.match(name)
         if m:
             found[int(m.group(1))] = (name, r)
     header = ["run", "ndcg@10", "d ndcg@10", "recall@100", "d recall@100"]
@@ -331,6 +346,130 @@ def _paired_section(evals: list[dict], results_dir: Path, size: str) -> str:
     return caption + "\n\n" + _table(header, rows)
 
 
+SEED_METRICS = ("ndcg@10", "recall@100", "coverage@10", "long_tail_share@10")
+SEED_CAPTION = (
+    "_Replicate 1 is the un-suffixed run (`train.seed: 42`); `<base>_sN` is replicate N. Values "
+    "come from the eval records (`-test-eval`: metrics, and `long_tail_share@10` from the "
+    "fairness block), falling back to the training test records when a run has no eval record "
+    "(the headline table above uses the training test records). Cells are mean ± sample std, "
+    "then the per-seed values in seed order._"
+)
+
+
+def _val(x) -> float | None:
+    return float(x) if isinstance(x, (int, float)) and not math.isnan(x) else None
+
+
+def _mean_std(vals: list[float]) -> tuple[float, float | None]:
+    sd = float(np.std(vals, ddof=1)) if len(vals) > 1 else None
+    return float(np.mean(vals)), sd
+
+
+def _seed_metric(test: dict | None, ev: dict | None, metric: str) -> float | None:
+    for rec in (ev, test):
+        if rec is None:
+            continue
+        v = _val((rec.get("metrics") or {}).get(metric))
+        if v is None:
+            v = _val(((rec.get("extra") or {}).get("fairness") or {}).get(metric))
+        if v is not None:
+            return v
+    return None
+
+
+def _seed_groups(runs: list[dict], size: str) -> dict[str, dict[int, dict]]:
+    """base -> seed N -> {"test": record, "eval": record, "name": run name}, for bases with
+    at least one replicate N >= 2 (the un-suffixed run is replicate 1)."""
+    groups: dict[str, dict[int, dict]] = {}
+    for kind, evals in (("test", False), ("eval", True)):
+        for (name, _), r in _latest(runs, "test", size, evals=evals).items():
+            name = name.removesuffix("-eval").removesuffix("-test")
+            base, n = _replicate(name) or (name, 1)
+            groups.setdefault(base, {}).setdefault(n, {"name": name})[kind] = r
+    return {b: g for b, g in groups.items() if any(n >= 2 for n in g)}
+
+
+def _spread(vals: list[float], signed: bool = False) -> str:
+    """mean ± sample std (just the mean for a single value)."""
+    if not vals:
+        return "-"
+    mean, sd = _mean_std(vals)
+    if signed:
+        return f"{mean:+.4f}" if sd is None else f"{mean:+.4f} ± {sd:.4f}"
+    return _fmt(mean) if sd is None else f"{_fmt(mean)} ± {_fmt(sd)}"
+
+
+def _seed_rows(groups: dict[str, dict[int, dict]]) -> list[list]:
+    rows = []
+    for base in sorted(groups):
+        g = groups[base]
+        cells = [base, len(g)]
+        for m in SEED_METRICS:
+            per = [_seed_metric(g[n].get("test"), g[n].get("eval"), m) for n in sorted(g)]
+            vals = [v for v in per if v is not None]
+            cells.append(f"{_spread(vals)} ({', '.join(_fmt(v) for v in per)})" if vals else "-")
+        rows.append(cells)
+    return rows
+
+
+def _seed_paired_rows(
+    groups: dict[str, dict[int, dict]], results_dir: Path, size: str
+) -> tuple[list[list], list[str]]:
+    """Per-seed paired diffs (HookSeq-side replicated base minus each replicated baseline of
+    `PAIRED_BASELINES`, matched by seed N), a summary row per metric, and notes for skips."""
+    rows, notes = [], []
+    baselines = [(n, lbl) for n, lbl in PAIRED_BASELINES if n in groups]
+    for base in sorted(b for b in groups if b not in {n for n, _ in PAIRED_BASELINES}):
+        for bname, _ in baselines:
+            label = f"{base} - {bname}"
+            diffs: dict[str, list[tuple[float, float, float]]] = {m: [] for m in PAIRED_METRICS}
+            for n in sorted(set(groups[base]) & set(groups[bname])):
+                a, b = groups[base][n].get("eval"), groups[bname][n].get("eval")
+                if a is None or b is None:
+                    notes.append(f"{label}, seed {n}: no eval record for one side, skipped")
+                    continue
+                if a["extra"].get("processed_dir") != b["extra"].get("processed_dir"):
+                    notes.append(f"{label}, seed {n}: processed_dir mismatch, skipped")
+                    continue
+                fa = _peruser_file(results_dir, a, groups[base][n]["name"], size)
+                fb = _peruser_file(results_dir, b, groups[bname][n]["name"], size)
+                for m in PAIRED_METRICS:
+                    try:
+                        mean, lo, hi = paired_diff_ci(fa, fb, m)
+                    except Exception as e:  # noqa: BLE001  # missing / corrupt npz
+                        log.warning("seed paired diff %s seed %d unavailable: %s", label, n, e)
+                        notes.append(
+                            f"{label}, seed {n}: {m} not available (per-user file), skipped"
+                        )
+                        continue
+                    diffs[m].append((mean, lo, hi))
+                    rows.append([label, f"seed {n}", m, f"{mean:+.4f}", f"[{lo:+.4f}, {hi:+.4f}]"])
+            for m, d in diffs.items():
+                if d:
+                    summ = f"{_spread([x[0] for x in d], signed=True)} (n={len(d)})"
+                    bounds = f"[{min(x[1] for x in d):+.4f}, {max(x[2] for x in d):+.4f}]"
+                    rows.append([label, "summary", m, summ, f"min lo / max hi {bounds}"])
+    return rows, notes
+
+
+PAIRED_METRICS = ("ndcg@10", "recall@100")
+
+
+def _seed_section(runs: list[dict], results_dir: Path, size: str) -> str | None:
+    """Per-base mean ± std over seed replicates and per-seed paired diffs; None if no replicates."""
+    groups = _seed_groups(runs, size)
+    if not groups:
+        return None
+    out = [SEED_CAPTION, "", _table(["base", "n seeds", *SEED_METRICS], _seed_rows(groups))]
+    prows, notes = _seed_paired_rows(groups, results_dir, size)
+    if prows:
+        header = ["comparison", "seed", "metric", "mean diff (summary: mean ± std)", "95% CI"]
+        out += ["", "_Paired by seed: same seed N on both sides, per-user diffs over shared users._",
+                "", _table(header, prows)]  # fmt: skip
+    out += ["", *(f"- {n}" for n in notes)] if notes else []
+    return "\n".join(out)
+
+
 def _safe_load_runs(results_dir: Path) -> list[dict]:
     """Run records that parse and have the keys the tables need; bad files are logged."""
     runs = []
@@ -364,16 +503,20 @@ def write_readme_tables(results_dir, out_md) -> Path:
     runs = _safe_load_runs(results_dir)
     sizes = sorted({r["extra"].get("dataset_size") for r in runs} - {None}) or ["50m"]
     evals_all = list(_latest(runs, "test", None, evals=True).values())
+    evals_main = [r for r in evals_all if not _is_replicate_run(r["run_name"])]
     parts = ["# Results", ""]
+    seeds = {size: _section(_seed_section, runs, results_dir, size) for size in sizes}
+    seeds = {k: v for k, v in seeds.items() if v is not None}
     for size in sizes:
         parts += [
             f"## Headline ({size}, test split, Listen+ truth and warm users)",
             "",
             _section(lambda s=size: results_table(runs, size=s)),
             "",
-            RECALL_FOOTNOTE,
-            "",
         ]
+        if size in seeds:
+            parts += ["_Seed replicates (`<run>_sN`) are summarized below, not listed here._", ""]
+        parts += [RECALL_FOOTNOTE, ""]
     for size in sizes:
         parts += [
             f"## Ablations ({size})",
@@ -395,7 +538,11 @@ def write_readme_tables(results_dir, out_md) -> Path:
         parts += [f"### {size}", "", _section(fairness_table, evals), ""]
     parts += ["## Paired difference: HookSeq vs SASRec", ""]
     for size in sizes:
-        parts += [f"### {size}", "", _section(_paired_section, evals_all, results_dir, size), ""]
+        parts += [f"### {size}", "", _section(_paired_section, evals_main, results_dir, size), ""]
+    if seeds:
+        parts += ["## Seed replicates", ""]
+        for size, body in seeds.items():
+            parts += [f"### {size}", "", body, ""]
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text("\n".join(parts))
     return out_md
