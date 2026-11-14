@@ -14,9 +14,9 @@ Official definitions, with `target_mask[u, j] = 1` iff the item ranked j for use
 
 Recall denominator, and the paper table: the official code divides by min(|T|, k), but the repo
 has a later commit "Fix yet another bug in metrics (#24)" and a leftover comment suggesting the
-denominator used to be |T|. The paper's Recall column matches hits@k / |T| (our NDCG agrees with
-the paper within 7% while min(|T|, k) recall is 2-3x higher). So `recall_per_user` is the official
-definition (`recall@k`) and `recall_full_per_user` is the paper-comparable one (`recall_paper@k`);
+denominator used to be |T|. The paper's Recall column is much closer to hits@k / |T|, though not
+equal to it (our NDCG agrees with the paper within 7%; min(|T|, k) recall is 2.0-3.1x the paper's
+at k=10, hits / |T| 12-38% above it). So `recall_per_user` is the official definition (`recall@k`) and `recall_full_per_user` is the paper-comparable one (`recall_paper@k`);
 both are always reported.
 
 Binary gains, IDCG over min(|truth|, k): identical to the brief's assumptions. One deliberate

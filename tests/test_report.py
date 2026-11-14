@@ -175,7 +175,7 @@ def test_paired_section_prefers_sasrec_and_renders_both(tmp_path):
     _write(res, _eval_rec("sasrec", 0.25, "2026-01-05"), 3)
     _peruser(res, "sasrec", "50m", 0.0)
     paired = write_readme_tables(res, tmp_path / "o.md").read_text().split("## Paired")[1]
-    i_sas = paired.index("| HookSeq (hookseq) vs sasrec (SASRec, Listen+ input (paper setting))")
+    i_sas = paired.index("| HookSeq (hookseq) vs sasrec (strong SASRec, Listen+ input)")
     i_a0 = paired.index("vs a0_sasrec (a0 control")
     assert i_sas < i_a0  # the paper-comparable baseline comes first
     assert "ndcg@10 (hookseq - sasrec) | +0.1000" in paired
@@ -306,7 +306,7 @@ def test_paired_falls_back_to_a4_and_labels_it(tmp_path):
     p = _paired(res, tmp_path)
     assert "not yet run" not in p
     assert "_HookSeq = `a4_full_dislike` (no run named hookseq" in p
-    assert "| HookSeq (a4_full_dislike) vs sasrec (SASRec, Listen+ input" in p
+    assert "| HookSeq (a4_full_dislike) vs sasrec (strong SASRec, Listen+ input" in p
     assert "ndcg@10 (a4_full_dislike - sasrec) | +0.1000" in p
     assert "ndcg@10 (a4_full_dislike - a0_sasrec) | +0.0500" in p
     assert "a3_full_logq" not in p
@@ -391,7 +391,7 @@ def test_paired_adds_a7_a8_rows_against_both_baselines(tmp_path):
     p = _paired(res, tmp_path)
     assert "_HookSeq = `a4_full_dislike`" in p
     assert "ndcg@10 (a4_full_dislike - sasrec) | +0.1000" in p
-    assert "| a7_full_no_content vs sasrec (SASRec, Listen+ input" in p
+    assert "| a7_full_no_content vs sasrec (strong SASRec, Listen+ input" in p
     assert "ndcg@10 (a7_full_no_content - sasrec) | +0.3000" in p
     assert "ndcg@10 (a7_full_no_content - a0_sasrec) | +0.2500" in p
     assert "recall@100 (a8_full_all_ids - sasrec) | +0.2000" in p
@@ -415,3 +415,32 @@ def test_paired_extra_rows_skip_missing_npz_and_chosen_run(tmp_path):
     assert "_HookSeq = `a8_full_all_ids`" in p
     assert p.count("ndcg@10 (a8_full_all_ids - sasrec)") == 1
     assert "a7_full_no_content" not in p
+
+
+def test_paired_caption_names_the_only_hookseq_run(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    # a single HookSeq-model run at the size: the caption says so instead of "best of"
+    _write_cfg(res, _hs_eval("a8_full_all_ids", 0.35), 1)
+    _write_cfg(res, _hs_eval("sasrec", 0.25, model="sasrec"), 2)
+    _peruser(res, "a8_full_all_ids", "50m", 0.2)
+    _peruser(res, "sasrec", "50m", 0.0)
+    p = _paired(res, tmp_path)
+    assert "_HookSeq = `a8_full_all_ids` (the only HookSeq-model run at this size)._" in p
+    assert "best test ndcg@10" not in p
+
+
+def test_paired_extra_run_processed_dir_mismatch_row(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    _write_cfg(res, _hs_eval("a4_full_dislike", 0.30), 1)
+    a7 = _hs_eval("a7_full_no_content", 0.40)
+    a7["extra"]["processed_dir"] = "other"
+    _write_cfg(res, a7, 2)
+    _write_cfg(res, _hs_eval("sasrec", 0.25, model="sasrec"), 3)
+    for name, shift in (("a4_full_dislike", 0.1), ("a7_full_no_content", 0.3), ("sasrec", 0.0)):
+        _peruser(res, name, "50m", shift)
+    p = _paired(res, tmp_path)
+    assert "| a7_full_no_content vs sasrec (strong SASRec, Listen+ input) | not available " \
+        "(processed_dir mismatch) |" in p
+    assert "ndcg@10 (a4_full_dislike - sasrec) | +0.1000" in p

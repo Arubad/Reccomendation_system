@@ -15,11 +15,15 @@ Yambda-500M, HookSeq reaches NDCG@10 0.1009 against 0.0798 for our SASRec and 0.
 paper's. The paired per-user difference is +0.0211 (95% CI [+0.0198, +0.0223]) and Recall@100
 improves by +0.0483 [+0.0467, +0.0499]. The ablations do not support the motivating story,
 and we report them as they are. Audio and artist features *lower* warm accuracy at 50M
-(−0.0107 NDCG@10). Most of the gain comes from logQ correction and the event-type inputs, and
-the best 50M model has no content features at all. Content features give non-zero but very
+(−0.0107 NDCG@10). Most of the gain comes from two sources. The first is logQ correction
+(+0.0149 at 50M). The second is the training setup of the ablation base: all events as
+context, random windows, a ≥ 5-positive ID table and ID dropout. That setup is +0.0104 over
+our SASRec, but the comparison is unpaired and the four changes are confounded. The
+event-type, organic and played-ratio tokens add +0.0035, and the best 50M model has no content
+features at all. Content features give non-zero but very
 small scores on never-seen tracks: NDCG@10 0.0003 and Recall@100 0.0089 at 500M, against
 exactly 0 for every ID-only model. HookSeq also concentrates artist exposure more than SASRec
-does. Everything ran on Kaggle's free tier, about 14.8 GPU-hours in all.
+does. Everything ran on Kaggle's free tier, about 14.8 GPU-hours for the reported runs.
 
 **Contents.** [1 Introduction](#1-introduction-and-motivation) ·
 [2 Related work](#2-related-work) · [3 Data and EDA](#3-data-and-eda) ·
@@ -102,14 +106,14 @@ resumable, free-tier Kaggle pipeline with every reported number traceable to a r
 | 2 | HookSeq beats SASRec on NDCG@10 and Recall@100 on at least one size, ideally 500M | Met at both sizes, against the strong SASRec (§7.2) |
 | 3 | An ablation table reported honestly, including additions that do not help | Met: a0–a4 plus a7/a8; audio hurts warm accuracy (§6.6–6.7). The stretch steps a5/a6 were not run |
 | 4 | EDA findings visibly drive preprocessing | Met (§3) |
-| 5 | Tests pass; README with a results table and "Why this matters for Hook"; the Gradio demo runs | Met: 430 tests pass, and the demo is live on Hugging Face Spaces (§12) |
+| 5 | Tests pass; README with a results table and "Why this matters for Hook"; the Gradio demo runs | Met: 432 tests pass, and the demo is live on Hugging Face Spaces (§12) |
 
 ### Why this matters for Hook
 
 | Hook reality | What HookSeq uses | What we actually found |
 |---|---|---|
 | Remixing and Explore are session-driven ("what next?") | A causal transformer over each listener's recent events | +26% relative NDCG@10 over a strong SASRec at 500M (0.1009 vs 0.0798), significant under a paired bootstrap |
-| Hook's feed shapes what users see (feedback loops) | An organic/served flag on every input event; organic and served slices in evaluation | The gain is largest on served truth: 0.0336 vs 0.0189 NDCG@10 at 500M, against 0.1239 vs 0.1046 on organic truth. The flag's own effect was not isolated (it entered together with event type and played ratio). |
+| Hook's feed shapes what users see (feedback loops) | An organic/served flag on every input event; organic and served slices in evaluation | The relative gain is largest on served truth: 0.0336 vs 0.0189 NDCG@10 at 500M (+78%), against 0.1239 vs 0.1046 on organic truth (+18%; the absolute gain is larger there). The flag's own effect was not isolated (it entered together with event type and played ratio). |
 | The catalogue keeps growing (new deals, new artists) | Audio embedding and artist in the item representation, with ID dropout | Content makes never-seen tracks scorable (ID-only models score exactly 0), but only barely: NDCG@10 0.0003 and Recall@100 0.0089 at 500M. **Not a solved problem.** |
 | Artist-first positioning | Artist-exposure Gini, artist coverage and long-tail share next to accuracy | HookSeq concentrates exposure *more* than SASRec: artist Gini@10 0.9927 vs 0.9845, long-tail share@10 0.017 vs 0.042. That is a real cost for an artist-first product. |
 | Likes, skips and dislikes say more than plays | Event-type and played-ratio inputs; dislikes as hard negatives | Event, organic and ratio inputs together: +0.0035 NDCG@10 at 50M. Dislike negatives: +0.0012, which is within noise. |
@@ -179,7 +183,7 @@ Right: the organic share falls with user activity and with item popularity.*
 | §7 Events per user: median 2,594, 99th percentile 23,752, maximum 27,647 | `model.max_len: 200` (the official SASRec value). Histories stored uncapped at 50M and capped at 1,024 events at 500M (D13) |
 | §8 Audio coverage is 90.4–96.5% across popularity deciles, and the embedding map shows artist structure | `model.use_audio`, `use_artist`, a learned missing-audio vector, `pca_dim: 128` |
 | §9 The like rate rises with played ratio up to 27.6% at 80–90%. The dislike rate is about 1.0–1.3% | Dislikes as hard negatives. Likes kept out of the truth |
-| §10 3.0% of distinct test items have no train event, carrying 1.2% of test events | Keep them as misses. Report a `new_items` slice (D14, D17) |
+| §10 3.0% of distinct test items (any event type) have no train event, carrying 1.2% of test events. Over distinct test-*truth* items (Listen+ items of warm users, the denominator used by the evaluation slices) the share is 2.2% at 50M and 1.3% at 500M (`new_items_share.meta`) | Keep them as misses. Report a `new_items` slice (D14, D17) |
 
 One threshold rests on an approximation. The `min_count` evidence counts events of any type
 over the whole log, while the threshold counts train positives. A planned exact statistic
@@ -200,7 +204,8 @@ it disagrees with the paper text, we follow the code (D2, D6).
 - **Ranking.** Each model ranks the full catalogue (886,174 items at 50M, 2,838,520 at 500M).
   Seen items are not filtered. User state is frozen at the test start.
 - **Metrics.** NDCG@k (binary gains, IDCG over min(|T|, k)), `Recall@k` = hits@k / min(|T|, k)
-  (official), `Recall_paper@k` = hits@k / |T| (which matches the paper's tables), and
+  (official), `Recall_paper@k` = hits@k / |T| (much closer to the paper's tables, though not
+  equal to them; see §6.4), and
   Coverage@k = distinct recommended items / catalogue size, for k ∈ {10, 100}.
 - **Slices.** `organic` / `served` truth items; `warm_items` (with a data-vocabulary ID);
   `idless_items` (fewer than 5 train positives); `new_items` (no train event of any kind, a
@@ -210,8 +215,9 @@ it disagrees with the paper text, we follow the code (D2, D6).
 - **Statistics.** A bootstrap over users (1,000 resamples, 95% percentile interval) for each
   run, and a paired bootstrap of per-user differences for HookSeq vs SASRec (D21). Training
   randomness (one seed per configuration) is not covered (§9).
-- **Model selection.** Every neural model is early-stopped on validation NDCG@10 and refit on
-  the full training period for the selected number of steps (D9). Baselines pick their
+- **Model selection.** Every neural model except `sasrec_bce` is early-stopped on validation
+  NDCG@10 and refit on the full training period for the selected number of steps (D9).
+  `sasrec_bce` trains a fixed 3,500 steps in both passes, as the official recipe does. Baselines pick their
   hyperparameters on validation.
 
 ## 5 Method
@@ -263,7 +269,8 @@ type, so skips and dislikes are context. It is trained to predict the next *posi
 
 **Loss** ([src/hookrec/models/losses.py](src/hookrec/models/losses.py)). Each batch shares one
 negative set of 4,096 items drawn with replacement from the batch's targets plus 8,192 uniform
-items. With logQ on, each negative logit is reduced by log of its expected count in that set,
+items. With logQ on, the positive logit and each sampled-negative logit are reduced by the log
+of that item's expected count in the sampled set (the hard negatives are not),
 computed from positive-event popularity of the training period in use [3, 4]. With
 dislike negatives on, each row adds up to 4 of its most recent disliked items. Accidental hits
 are masked. The loss is a custom chunked kernel: fp16 matmuls, fp32 softmax statistics, and
@@ -340,11 +347,17 @@ the project's gate. (c) NDCG@10 was within 7% at both sizes:
 | 50M ours / paper | 0.0177 / 0.0186 (−4.8%) | 0.0256 / 0.0260 (−1.5%) | 0.0379 / 0.0407 (−6.9%) |
 | 500M ours / paper | 0.0161 / 0.0173 (−6.9%) | 0.0263 / 0.0267 (−1.5%) | 0.0392 / 0.0384 (+2.1%) |
 
-The official-definition recall, however, was 2–3 times the paper's. (d) **[evidence]** NDCG
-agreement validates the split, the truth and the users. **[hypothesis, strong]** The recall
-gap is a definitional change. The official `metrics.py` divides by min(|T|, k), but the repo
-carries a later commit "Fix yet another bug in metrics (#24)" and a leftover comment implying
-the old denominator was |T|. The paper's numbers fit hits/|T|. (e) We report both definitions
+Recall did not agree. With the official definition, our recall was 2.0–3.1× the paper's at
+k = 10 and 1.12–1.46× at k = 100. This holds over the 50M and 500M baselines, 50M `sasrec_bce`
+and 500M `sasrec` against the paper's SASRec. (d) **[evidence]** NDCG agreement validates the
+split, the truth and the users. **[hypothesis, strong]** Most of the recall gap is a
+definitional change. The official `metrics.py` divides by min(|T|, k), but the repo carries a
+later commit "Fix yet another bug in metrics (#24)" and a leftover comment implying the old
+denominator was |T|. With hits/|T| (`Recall_paper@k`) the gap shrinks, but it does not close.
+Where both are available (the 500M baselines and 50M `sasrec_bce`), our values sit 12–38%
+above the paper's. For example, 500M MostPop has a `Recall@10` of 0.0153 and a
+`Recall_paper@10` of 0.0068, against the paper's 0.0060, and 500M iALS has a `Recall_paper@10`
+of 0.0181 against 0.0131 while its NDCG@10 is within 2.1%. That remaining gap is unexplained. (e) We report both definitions
 and compare paper recall only against `Recall_paper@k` (D6).
 
 ### 6.5 SASRec: a throughput problem, then a faithful and a strong baseline (K4, 50M)
@@ -533,6 +546,7 @@ flag.
 | 50M a1 (+content) | 0.9723 | 0.0688 | 0.1480 | 0.0351 |
 | 50M a2 (+event/organic/ratio) | 0.9724 | 0.0685 | 0.1436 | 0.0346 |
 | 50M a3 (+logQ) | 0.9820 | 0.0521 | 0.0490 | 0.0233 |
+| 50M a4 (+dislikes, `hookseq.yaml`) | 0.9811 | 0.0544 | 0.0572 | 0.0244 |
 | 50M a7 | 0.9818 | 0.0534 | 0.0289 | 0.0224 |
 | 50M a8 | 0.9808 | 0.0555 | 0.0608 | 0.0248 |
 | 50M sasrec | 0.9701 | 0.0742 | 0.1029 | 0.0341 |
@@ -545,21 +559,27 @@ SASRec does.
 
 ## 8 Discussion
 
-**What drives the gain over SASRec.** Two components carry the improvement: logQ correction
-(+0.0149 NDCG@10 at 50M, a2 → a3) and HookSeq's input setting. The input setting is all event
-types as context with random training windows, and a0 alone is +0.0104 over `sasrec` (unpaired).
-Audio and artist features do not add warm accuracy, and the best 50M model drops them (a7).
+**What drives the gain over SASRec.** The ladder isolates only part of the gain.
+**[evidence]** logQ correction is a single-factor step, worth +0.0149 NDCG@10 at 50M (a2 → a3).
+The event-type, organic and played-ratio tokens add +0.0035 (a1 → a2), and dislike negatives
+add +0.0012, which is within noise. **[evidence, confounded]** The training setup of the
+ablation base a0 is +0.0104 over `sasrec` (unpaired). That gap bundles four changes, none of
+which was separated from the others: all event types as context instead of Listen+ only,
+random windows instead of one last window, an ID table restricted to items with ≥ 5 train
+positives, and ID dropout of 0.2. Audio and artist features do not add warm accuracy, and the
+best 50M model drops them (a7).
 **[hypothesis]** Two things may explain why logQ helps so much here. Item popularity is extremely
 concentrated (item Gini 0.907), so in-batch negatives, which are popularity-sampled, penalise
 the head heavily unless they are corrected [3]. And the Listen+ truth is itself head-heavy.
-**[hypothesis]** Context events help because skips and dislikes tell the model what a user
-rejected, and random windows show it many more distinct training contexts than one last window
-per user. Neither component was ablated on its own.
+**[hypothesis]** Within the a0 setup, context events may help because skips and dislikes tell
+the model what a user rejected, and random windows may help because they show it many more
+distinct training contexts than one last window per user. These four sub-factors of the a0
+setup were not ablated on their own.
 
 **Why audio did not deliver on new tracks at 500M.** The measured facts are these. At 500M a8
 scores 0.0003 NDCG@10 and 0.0089 Recall@100 on 2,006 `new_items` users, roughly half of its
 50M Recall@100 (0.0188). At 50M every content model was weak on this slice, and the strongest
-on Recall@100 was the model without logQ (a1, 0.0577). Candidate explanations, none of them
+on Recall@100 were the two models without logQ (a1 0.0577, a2 0.0480). Candidate explanations, none of them
 tested:
 1. **Catalogue size.** At 500M a content-only vector competes with 2,838,520 items instead of
    886,174.
@@ -570,7 +590,8 @@ tested:
 3. **logQ.** logQ shifts rankings towards the popular head (§7.4), where never-seen tracks
    are absent by definition.
 4. **Slice composition.** At 500M the `new_items` slice is a superset of the truly unseen items
-   (1.55% of test items by the slice definition vs 1.29% by the preprocessing count), because
+   (1.55% of distinct test-truth items by the slice definition vs 1.29% by the preprocessing
+   count), because
    1,024-event stored histories hide some old non-positive events. The extra items have train
    events but no train positive, so a8 has no ID for them either, and they are scored from
    content just like the truly new ones.
@@ -584,8 +605,9 @@ coverage@10 0.0394 vs 0.0686, long-tail share 0.017 vs 0.042. For an artist-firs
 trade-off has to be managed explicitly, for example with partial logQ (`loss.mix_uniform`),
 exposure-aware re-ranking [12] or a tail-exposure constraint. None of these was tried.
 
-**`idless_items`.** SASRec beats every HookSeq variant on items with 1–4 train positives at both
-sizes (500M: 0.0273 vs 0.0139), even though a8 also has an ID for each of them. **[hypothesis]**
+**`idless_items`.** SASRec beats every HookSeq variant on items with fewer than 5 train
+positives, never-seen items included, at both sizes (500M: 0.0273 vs 0.0139). This holds
+even though a8 has an ID for every such item with 1–4 positives. **[hypothesis]**
 ID dropout and the added content vector dilute the ID signal of rarely seen items, and SASRec's
 plain ID rows fit them more directly. This was not tested.
 
@@ -599,8 +621,9 @@ plain ID rows fit them more directly. This was not tested.
   steps) is far longer than any run trained, so the learning rate decays only slightly. Tuning
   could change every neural row, including `sasrec`.
 - **Test reuse in one decision.** The choice of a8 for 500M (D19) used 50M *test* results
-  (`new_items`, `idless_items`). Yambda's subsets share the time range, so the 500M test day
-  overlaps the 50M one for the 50M users. The 500M margin (+0.0211) is large relative to its
+  (`new_items`, `idless_items`). The two sizes share the official test day
+  (the same `test_timestamp`) and plausibly users, although we did not verify that the 50M users
+  are a subset of the 500M users. The 500M margin (+0.0211) is large relative to its
   CI, but the choice itself was not blind.
 - **Confounded comparisons.** `sasrec_bce` vs `sasrec` differ in loss, architecture, optimiser
   and dropout, and `sasrec` vs a0 differ in input filter, window sampling, ID table and ID
@@ -660,7 +683,7 @@ Locally (CPU, synthetic data only):
 
 ```bash
 uv venv .venv --python 3.12 && uv pip install --python .venv -e ".[dev,torch]"
-.venv/bin/pytest -q          # 430 tests on a synthetic Yambda-shaped fixture
+.venv/bin/pytest -q          # 432 tests on a synthetic Yambda-shaped fixture
 .venv/bin/ruff check .
 # rebuild the results tables from the committed run records (per-user .npz files, which the
 # paired section needs, are git-ignored and come from the K5 outputs)
@@ -673,8 +696,9 @@ name, the training steps, the step rate and the GPU hours.
 ## 12 Demo
 
 **Live:** [huggingface.co/spaces/Arush1050/musicreccmodel](https://huggingface.co/spaces/Arush1050/musicreccmodel)
-(Gradio 6.31.0 on ZeroGPU). We checked it end to end through `gradio_client`: loading a sample
-user and pressing Recommend returns HookSeq's and SASRec's top-k side by side. The Space runs
+(Gradio 6.31.0 on ZeroGPU). It was verified by a `gradio_client` call on 2026-11-14 (recorded
+in [docs/hf_space.md](docs/hf_space.md)). Loading a sample user returned its 20 session rows,
+and Recommend then returned HookSeq's and SASRec's top-5 side by side. The Space runs
 the code of the reported runs, tag `v0.1-demo`, which is the same commit as `v0.4`. The bundle
 was exported in a Kaggle CPU notebook from the **500M test checkpoints** of a8 (HookSeq) and
 `sasrec`. It holds a 56,120-item subset of the catalogue and 200 sample users, 57.1 MB in all

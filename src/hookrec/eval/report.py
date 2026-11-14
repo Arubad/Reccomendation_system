@@ -24,9 +24,11 @@ RECALL_FOOTNOTE = (
     "_Recall definitions._ `recall@k` is the official Yambda definition: hits@k / min(|T|, k) "
     "(benchmarks/yambda/evaluation/metrics.py, after the bug-fix commit "
     '"Fix yet another bug in metrics (#24)", whose leftover comment suggests the denominator '
-    "used to be |T|). `recall_paper@k` is hits@k / |T|. The paper's Recall column matches "
-    "hits/|T| (our NDCG agrees with the paper within 7% while min(|T|, k) recall is 2-3x "
-    "higher), so paper rows are shown under `recall_paper@k` and their `recall@k` is left as "
+    "used to be |T|). `recall_paper@k` is hits@k / |T|. The paper's Recall column is much "
+    "closer to hits/|T| than to min(|T|, k), though not equal to it: our NDCG@10 agrees with "
+    "the paper within 7%, our min(|T|, k) recall is 2.0-3.1x the paper's at k=10 (1.12-1.46x at "
+    "k=100), and hits/|T| is 12-38% above it. So paper rows are shown under `recall_paper@k` "
+    "and their `recall@k` is left as "
     '"-"; compare paper Recall against `recall_paper@k` only. Older run records without '
     '`recall_paper@k` show "-".'
 )
@@ -219,7 +221,7 @@ def paired_diff_ci(
 # Paired-diff baselines, preferred first: the paper-comparable SASRec row, then the same-code-path
 # control (HookSeq with every flag off, all-event input).
 PAIRED_BASELINES = (
-    ("sasrec", "SASRec, Listen+ input (paper setting)"),
+    ("sasrec", "strong SASRec, Listen+ input"),
     ("a0_sasrec", "a0 control, same code path"),
 )
 
@@ -257,7 +259,10 @@ def _hookseq_run(by: dict[str, dict]) -> tuple[str, str, dict] | None:
     if not cands:
         return None
     _, name, r = max(cands, key=lambda c: (c[0], c[1]))
-    why = "no hookseq or a4_full_dislike run; best test ndcg@10 among HookSeq-model runs"
+    if len(cands) == 1:
+        why = "the only HookSeq-model run at this size"
+    else:
+        why = "no hookseq or a4_full_dislike run; best test ndcg@10 among HookSeq-model runs"
     return name, why, r
 
 

@@ -16,7 +16,7 @@
 | BPR (paper) | 0.0400 | 0.0652 | - | - | 0.0137 | 0.0861 | 0.0244 |
 | SASRec (paper) | 0.0754 | 0.0884 | - | - | 0.0336 | 0.1240 | 0.0347 |
 
-_Recall definitions._ `recall@k` is the official Yambda definition: hits@k / min(|T|, k) (benchmarks/yambda/evaluation/metrics.py, after the bug-fix commit "Fix yet another bug in metrics (#24)", whose leftover comment suggests the denominator used to be |T|). `recall_paper@k` is hits@k / |T|. The paper's Recall column matches hits/|T| (our NDCG agrees with the paper within 7% while min(|T|, k) recall is 2-3x higher), so paper rows are shown under `recall_paper@k` and their `recall@k` is left as "-"; compare paper Recall against `recall_paper@k` only. Older run records without `recall_paper@k` show "-".
+_Recall definitions._ `recall@k` is the official Yambda definition: hits@k / min(|T|, k) (benchmarks/yambda/evaluation/metrics.py, after the bug-fix commit "Fix yet another bug in metrics (#24)", whose leftover comment suggests the denominator used to be |T|). `recall_paper@k` is hits@k / |T|. The paper's Recall column is much closer to hits/|T| than to min(|T|, k), though not equal to it: our NDCG@10 agrees with the paper within 7%, our min(|T|, k) recall is 2.0-3.1x the paper's at k=10 (1.12-1.46x at k=100), and hits/|T| is 12-38% above it. So paper rows are shown under `recall_paper@k` and their `recall@k` is left as "-"; compare paper Recall against `recall_paper@k` only. Older run records without `recall_paper@k` show "-".
 
 ## Headline (50m, test split, Listen+ truth and warm users)
 
@@ -42,7 +42,7 @@ _Recall definitions._ `recall@k` is the official Yambda definition: hits@k / min
 | SANSA (paper) | 0.0069 | 0.0095 | - | - | 0.0031 | 0.0137 | 0.0114 |
 | SASRec (paper) | 0.0748 | 0.0764 | - | - | 0.0325 | 0.1026 | 0.0130 |
 
-_Recall definitions._ `recall@k` is the official Yambda definition: hits@k / min(|T|, k) (benchmarks/yambda/evaluation/metrics.py, after the bug-fix commit "Fix yet another bug in metrics (#24)", whose leftover comment suggests the denominator used to be |T|). `recall_paper@k` is hits@k / |T|. The paper's Recall column matches hits/|T| (our NDCG agrees with the paper within 7% while min(|T|, k) recall is 2-3x higher), so paper rows are shown under `recall_paper@k` and their `recall@k` is left as "-"; compare paper Recall against `recall_paper@k` only. Older run records without `recall_paper@k` show "-".
+_Recall definitions._ `recall@k` is the official Yambda definition: hits@k / min(|T|, k) (benchmarks/yambda/evaluation/metrics.py, after the bug-fix commit "Fix yet another bug in metrics (#24)", whose leftover comment suggests the denominator used to be |T|). `recall_paper@k` is hits@k / |T|. The paper's Recall column is much closer to hits/|T| than to min(|T|, k), though not equal to it: our NDCG@10 agrees with the paper within 7%, our min(|T|, k) recall is 2.0-3.1x the paper's at k=10 (1.12-1.46x at k=100), and hits/|T| is 12-38% above it. So paper rows are shown under `recall_paper@k` and their `recall@k` is left as "-"; compare paper Recall against `recall_paper@k` only. Older run records without `recall_paper@k` show "-".
 
 ## Ablations (500m)
 
@@ -354,12 +354,12 @@ _Slices._ `organic` / `served`: truth items with an organic / recommender-served
 
 ### 500m
 
-_HookSeq = `a8_full_all_ids` (no hookseq or a4_full_dislike run; best test ndcg@10 among HookSeq-model runs)._
+_HookSeq = `a8_full_all_ids` (the only HookSeq-model run at this size)._
 
 | comparison | metric | mean diff | 95% CI |
 |---|---|---|---|
-| HookSeq (a8_full_all_ids) vs sasrec (SASRec, Listen+ input (paper setting)) | ndcg@10 (a8_full_all_ids - sasrec) | +0.0211 | [+0.0198, +0.0223] |
-| HookSeq (a8_full_all_ids) vs sasrec (SASRec, Listen+ input (paper setting)) | recall@100 (a8_full_all_ids - sasrec) | +0.0483 | [+0.0467, +0.0499] |
+| HookSeq (a8_full_all_ids) vs sasrec (strong SASRec, Listen+ input) | ndcg@10 (a8_full_all_ids - sasrec) | +0.0211 | [+0.0198, +0.0223] |
+| HookSeq (a8_full_all_ids) vs sasrec (strong SASRec, Listen+ input) | recall@100 (a8_full_all_ids - sasrec) | +0.0483 | [+0.0467, +0.0499] |
 
 ### 50m
 
@@ -367,15 +367,15 @@ _HookSeq = `a4_full_dislike` (no run named hookseq; a4_full_dislike's config equ
 
 | comparison | metric | mean diff | 95% CI |
 |---|---|---|---|
-| HookSeq (a4_full_dislike) vs sasrec (SASRec, Listen+ input (paper setting)) | ndcg@10 (a4_full_dislike - sasrec) | +0.0192 | [+0.0152, +0.0232] |
-| HookSeq (a4_full_dislike) vs sasrec (SASRec, Listen+ input (paper setting)) | recall@100 (a4_full_dislike - sasrec) | +0.0450 | [+0.0398, +0.0501] |
+| HookSeq (a4_full_dislike) vs sasrec (strong SASRec, Listen+ input) | ndcg@10 (a4_full_dislike - sasrec) | +0.0192 | [+0.0152, +0.0232] |
+| HookSeq (a4_full_dislike) vs sasrec (strong SASRec, Listen+ input) | recall@100 (a4_full_dislike - sasrec) | +0.0450 | [+0.0398, +0.0501] |
 | HookSeq (a4_full_dislike) vs a0_sasrec (a0 control, same code path) | ndcg@10 (a4_full_dislike - a0_sasrec) | +0.0089 | [+0.0052, +0.0127] |
 | HookSeq (a4_full_dislike) vs a0_sasrec (a0 control, same code path) | recall@100 (a4_full_dislike - a0_sasrec) | +0.0178 | [+0.0129, +0.0228] |
-| a7_full_no_content vs sasrec (SASRec, Listen+ input (paper setting)) | ndcg@10 (a7_full_no_content - sasrec) | +0.0236 | [+0.0196, +0.0277] |
-| a7_full_no_content vs sasrec (SASRec, Listen+ input (paper setting)) | recall@100 (a7_full_no_content - sasrec) | +0.0533 | [+0.0483, +0.0583] |
+| a7_full_no_content vs sasrec (strong SASRec, Listen+ input) | ndcg@10 (a7_full_no_content - sasrec) | +0.0236 | [+0.0196, +0.0277] |
+| a7_full_no_content vs sasrec (strong SASRec, Listen+ input) | recall@100 (a7_full_no_content - sasrec) | +0.0533 | [+0.0483, +0.0583] |
 | a7_full_no_content vs a0_sasrec (a0 control, same code path) | ndcg@10 (a7_full_no_content - a0_sasrec) | +0.0133 | [+0.0099, +0.0167] |
 | a7_full_no_content vs a0_sasrec (a0 control, same code path) | recall@100 (a7_full_no_content - a0_sasrec) | +0.0261 | [+0.0216, +0.0305] |
-| a8_full_all_ids vs sasrec (SASRec, Listen+ input (paper setting)) | ndcg@10 (a8_full_all_ids - sasrec) | +0.0214 | [+0.0175, +0.0252] |
-| a8_full_all_ids vs sasrec (SASRec, Listen+ input (paper setting)) | recall@100 (a8_full_all_ids - sasrec) | +0.0494 | [+0.0446, +0.0546] |
+| a8_full_all_ids vs sasrec (strong SASRec, Listen+ input) | ndcg@10 (a8_full_all_ids - sasrec) | +0.0214 | [+0.0175, +0.0252] |
+| a8_full_all_ids vs sasrec (strong SASRec, Listen+ input) | recall@100 (a8_full_all_ids - sasrec) | +0.0494 | [+0.0446, +0.0546] |
 | a8_full_all_ids vs a0_sasrec (a0 control, same code path) | ndcg@10 (a8_full_all_ids - a0_sasrec) | +0.0110 | [+0.0075, +0.0144] |
 | a8_full_all_ids vs a0_sasrec (a0 control, same code path) | recall@100 (a8_full_all_ids - a0_sasrec) | +0.0222 | [+0.0173, +0.0269] |

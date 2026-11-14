@@ -84,13 +84,18 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
 - **Decision.** `recall@k` = hits@k / min(|T|, k), the definition in the official
   `metrics.py`; `recall_paper@k` = hits@k / |T|. Paper rows are compared against
   `recall_paper@k` only.
-- **Alternatives.** Report only the official definition and accept a 2–3× mismatch with the
-  paper's Recall column; report only the paper-compatible one.
-- **Why.** Our NDCG matched the paper while the official recall was 2–3× the paper's. The
+- **Alternatives.** Report only the official definition and accept a mismatch with the paper's
+  Recall column (2.0–3.1× at k = 10, 1.12–1.46× at k = 100); report only the paper-compatible
+  one.
+- **Why.** Our NDCG agreed with the paper within 7%, while the official recall did not. The
   official repo has a later commit "Fix yet another bug in metrics (#24)" and a leftover comment
-  suggesting the denominator used to be |T|, so the paper's table most likely predates that fix.
-- **Evidence.** 50M SASRec (BCE) `recall_paper@100` 0.1200 vs paper 0.1026, while its
-  `recall@10` is 0.0662 against a paper Recall@10 of 0.0325 (`reports/results.md`).
+  suggesting the denominator used to be |T|, so the paper's table most likely predates that fix
+  (a strong hypothesis, not verified).
+- **Evidence.** A like-for-like pair, 500M MostPop at k = 10: `recall@10` 0.0153 and
+  `recall_paper@10` 0.0068, against the paper's 0.0060. hits/|T| is much closer but not equal.
+  Where both are available (the 500M baselines and 50M `sasrec_bce`), `recall_paper@k` is
+  12–38% above the paper at k ∈ {10, 100}, while NDCG@10 is within 7%. That residual gap is
+  unexplained (`reports/results.md`).
 - **Cost if wrong.** An extra column.
 
 ## Baselines and training
@@ -122,8 +127,8 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
 - **Why.** The `sasrec` row must stay paper-comparable, while HookSeq's whole point is to use the
   signals SASRec ignores. The a0 control (D7) carries HookSeq's input setting, so the ablation
   ladder compares like with like.
-- **Evidence.** a0 (0.1074) vs `sasrec` (0.0970) at 50M: the input setting and ID table alone,
-  without any HookSeq feature, move NDCG@10 by +0.0104. The factors are not separated (see README
+- **Evidence.** a0 (0.1074) vs `sasrec` (0.0970) at 50M: the input setting, ID table and ID dropout together,
+  without any HookSeq feature, move NDCG@10 by +0.0104 (unpaired). The four factors are not separated (see README
   §9).
 - **Cost if wrong.** One more config.
 
@@ -131,7 +136,8 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
 - **Decision.** A val pass trains on val-train, evaluates val NDCG@10 every 500 steps, stops after
   6 evaluations without improvement and records the best step. The test pass retrains from
   scratch on the full training period for exactly that many steps, with the same LR schedule
-  horizon, and is evaluated once.
+  horizon, and is evaluated once. The exception is `sasrec_bce`: like the official recipe, it
+  trains a fixed 3,500 steps in both passes and is evaluated once at the end (D7).
 - **Alternatives.** Evaluate the val-trained model on test (it misses the last train day).
 - **Why.** It mirrors the official hyperparameter-search and final passes, and the test model sees
   the day just before the test day.
@@ -149,7 +155,7 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
   51K valid positions per batch, does not fit a T4); uniform only.
 - **Why.** Mixed negatives are standard for large catalogues; logQ removes the popularity bias the
   in-batch half introduces.
-- **Evidence.** logQ is the largest single ablation gain (README §7.2).
+- **Evidence.** logQ is the largest single ablation gain (README §6.6).
 - **Cost if wrong.** The size of the logQ effect.
 
 ### D11. A chunked, fp16 sampled-softmax kernel, after profiling
@@ -173,7 +179,7 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
   disliked items from the input window as extra negatives for all of its target positions.
 - **Alternatives.** Position-causal dislikes (only those before each position); ignore dislikes.
 - **Why.** Cheap, and a disliked item is a safe negative regardless of position.
-- **Evidence.** a3 → a4: +0.0012 NDCG@10 at 50M, inside the confidence intervals (README §7.2).
+- **Evidence.** a3 → a4: +0.0012 NDCG@10 at 50M, inside the confidence intervals (README §6.6).
 - **Cost if wrong.** A small effect either way.
 
 ## Data and features
@@ -201,8 +207,9 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
   row. Nothing is dropped from the truth.
 - **Alternatives.** A train-only catalogue (test-only items would be out of vocabulary).
 - **Why.** Content features can only score a new track if it is in the catalogue being ranked.
-- **Evidence.** Test-truth items with no train event: 2.2% of distinct items at 50M and 1.3% at
-  500M (`new_items_share.meta` in the eval records).
+- **Evidence.** Distinct test-truth items (Listen+ items of warm users) with no train event:
+  2.2% at 50M and 1.3% at 500M (`new_items_share.meta` in the eval records). This is lower than
+  the EDA's 3.0% (EDA §10), which counts distinct test-day items of any event type.
 - **Cost if wrong.** None for warm metrics.
 
 ### D15. The item tower: an additive ID + audio + artist representation with ID dropout
@@ -336,8 +343,9 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
   a CPU Space.
 - **Why.** Free Hugging Face accounts get ZeroGPU hardware, and a 57 MB bundle fits in the
   Space repo.
-- **Evidence.** Unit tests on a synthetic bundle; the Kaggle export log; an end-to-end check
-  through `gradio_client` (load a sample user, then Recommend). See [docs/hf_space.md](hf_space.md).
+- **Evidence.** Unit tests on a synthetic bundle; the Kaggle export log; a `gradio_client` call
+  on 2026-11-14 (a sample user loaded with 20 session rows, then the HookSeq and SASRec top-5
+  tables). See [docs/hf_space.md](hf_space.md).
   The new-track tab demonstrates the mechanism only: on the 500M `new_items` slice the model's
   NDCG@10 is 0.0003.
 - **Cost if wrong.** The demo falls back to CPU.

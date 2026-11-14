@@ -21,6 +21,9 @@ The live demo is https://huggingface.co/spaces/Arush1050/musicreccmodel (ZeroGPU
 2. **Put the bundle in the Space.** Copy it to `bundle/` next to `app.py` in the Space repo and
    commit it together with `deploy/hf_space/{app.py,requirements.txt,README.md}`. `app.py` loads
    `bundle/` first, so no `HOOKSEQ_BUNDLE_REPO` variable and no separate model repo are needed.
+3. **Check it.** On 2026-11-14 the live Space was verified by a `gradio_client` call. Loading a
+   sample user returned 20 session rows, and Recommend then returned the HookSeq and SASRec top-5
+   tables.
 
 Steps 2 and 4 of the general route below (a model repo plus `HOOKSEQ_BUNDLE_REPO`) are the
 alternative for bundles too large to keep in the Space repo.
