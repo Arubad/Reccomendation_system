@@ -1,0 +1,36 @@
+{
+  "run_name": "mostpop-test",
+  "timestamp": "2026-11-13T23:22:23.750233+00:00",
+  "git_sha": "0f0924c845f970e66e5b2b410a5c9637bdf7775d",
+  "config_hash": "44136fa355",
+  "config": {},
+  "metrics": {
+    "ndcg@10": 0.016137839323618886,
+    "recall@10": 0.015295324302641217,
+    "recall_paper@10": 0.006819319067898814,
+    "coverage@10": 3.5229626706875416e-06,
+    "ndcg@100": 0.022268995165693597,
+    "recall@100": 0.03488235519356471,
+    "recall_paper@100": 0.03448661802687081,
+    "coverage@100": 3.522962670687541e-05
+  },
+  "extra": {
+    "split": "test",
+    "quick": false,
+    "processed_dir": "500m-9d2de0fa58",
+    "dataset_size": "500m",
+    "wall_time_s": 2.84,
+    "n_eval_users": 45921,
+    "metrics_cold": {
+      "ndcg@10": 0.09835490238774565,
+      "recall@10": 0.0875,
+      "recall_paper@10": 0.04794372294372294,
+      "coverage@10": 3.5229626706875416e-06,
+      "ndcg@100": 0.09587466574743017,
+      "recall@100": 0.1134199134199134,
+      "recall_paper@100": 0.1134199134199134,
+      "coverage@100": 3.522962670687541e-05
+    },
+    "n_cold_users": 8
+  }
+}

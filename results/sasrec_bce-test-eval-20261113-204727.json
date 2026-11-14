@@ -1,0 +1,213 @@
+{
+  "run_name": "sasrec_bce-test-eval",
+  "timestamp": "2026-11-13T20:47:27.394754+00:00",
+  "git_sha": "0f0924c845f970e66e5b2b410a5c9637bdf7775d",
+  "config_hash": "71c443c6ae",
+  "config": {
+    "data": {
+      "input_filter": "listen_plus",
+      "window_sampling": "last"
+    },
+    "model": {
+      "name": "sasrec",
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 2,
+      "max_len": 200,
+      "dropout": 0.0,
+      "arch": "official"
+    },
+    "train": {
+      "batch_size": 256,
+      "lr": 0.001,
+      "weight_decay": 0.0,
+      "warmup_steps": 0,
+      "lr_schedule": "constant",
+      "max_steps": 3500,
+      "schedule_steps": 3500,
+      "eval_every_steps": 3500,
+      "patience": 6,
+      "min_delta": 0.0,
+      "ckpt_every_steps": 1000,
+      "max_skipped_steps": 50,
+      "max_grad_norm": null,
+      "amp": false,
+      "max_hours": 8.0,
+      "num_workers": 4,
+      "seed": 42,
+      "log_every_steps": 100,
+      "eval_max_users": null,
+      "eval_batch_size": 1024
+    },
+    "loss": {
+      "type": "bce",
+      "chunk_rows": 8192,
+      "max_rows": null,
+      "n_uniform_negatives": 8192,
+      "n_in_batch_negatives": 4096,
+      "logq": false,
+      "mix_uniform": 0.0,
+      "temperature": 1.0,
+      "dislike_hard_negatives": false,
+      "n_hard": 4,
+      "like_weight": 0.0,
+      "neg_catalog": "listen_plus"
+    }
+  },
+  "metrics": {
+    "ndcg@10": 0.07706234917627712,
+    "recall@10": 0.06624592988525987,
+    "recall_paper@10": 0.0409489810228658,
+    "coverage@10": 0.009432684777481623,
+    "ndcg@100": 0.09087892832253719,
+    "recall@100": 0.12110559541171097,
+    "recall_paper@100": 0.11997316270883833,
+    "coverage@100": 0.021923459726870795
+  },
+  "extra": {
+    "split": "test",
+    "kind": "eval",
+    "source_run": "sasrec_bce-test",
+    "processed_dir": "50m-978e872edd",
+    "dataset_size": "50m",
+    "eval_catalog": "listen_plus",
+    "n_eval_users": 4597,
+    "n_cold_users": 1,
+    "metrics_cold": {
+      "ndcg@10": 0.0,
+      "recall@10": 0.0,
+      "recall_paper@10": 0.0,
+      "coverage@10": 1.1284465578994644e-05,
+      "ndcg@100": 0.0,
+      "recall@100": 0.0,
+      "recall_paper@100": 0.0,
+      "coverage@100": 0.00011284465578994644
+    },
+    "slices": {
+      "all": {
+        "n_users": 4597.0,
+        "ndcg@10": 0.07706234917627712,
+        "recall@10": 0.06624592988525987,
+        "recall_paper@10": 0.0409489810228658,
+        "coverage@10": 0.009432684777481623,
+        "ndcg@100": 0.09087892832253719,
+        "recall@100": 0.12110559541171097,
+        "recall_paper@100": 0.11997316270883833,
+        "coverage@100": 0.021923459726870795
+      },
+      "organic": {
+        "n_users": 3236.0,
+        "ndcg@10": 0.09576979540731508,
+        "recall@10": 0.0812691300253105,
+        "recall_paper@10": 0.060163288321327835,
+        "coverage@10": 0.007558335044810613,
+        "ndcg@100": 0.11317899079347143,
+        "recall@100": 0.15548737186292774,
+        "recall_paper@100": 0.15535736050744833,
+        "coverage@100": 0.018799919654605077
+      },
+      "served": {
+        "n_users": 2858.0,
+        "ndcg@10": 0.022226900602866206,
+        "recall@10": 0.024098187210503517,
+        "recall_paper@10": 0.011665043984314189,
+        "coverage@10": 0.007149837390851007,
+        "ndcg@100": 0.04030788554042768,
+        "recall@100": 0.07178935036531361,
+        "recall_paper@100": 0.0705361244301711,
+        "coverage@100": 0.01809802589559161
+      },
+      "idless_items": {
+        "n_users": 1270.0,
+        "ndcg@10": 0.006007197637744119,
+        "recall@10": 0.006418260217472817,
+        "recall_paper@10": 0.006400089411900436,
+        "coverage@10": 0.004684181661840677,
+        "ndcg@100": 0.007184476605588282,
+        "recall@100": 0.011088045084108076,
+        "recall_paper@100": 0.011088045084108076,
+        "coverage@100": 0.014934990193799413
+      },
+      "new_items": {
+        "n_users": 475.0,
+        "ndcg@10": 0.0,
+        "recall@10": 0.0,
+        "recall_paper@10": 0.0,
+        "coverage@10": 0.0023821506837257696,
+        "ndcg@100": 0.0,
+        "recall@100": 0.0,
+        "recall_paper@100": 0.0,
+        "coverage@100": 0.009596309528377046
+      },
+      "warm_items": {
+        "n_users": 4566.0,
+        "ndcg@10": 0.07725166316650056,
+        "recall@10": 0.06669621564496729,
+        "recall_paper@10": 0.04169393750406706,
+        "coverage@10": 0.009371748663355052,
+        "ndcg@100": 0.09195568395599182,
+        "recall@100": 0.12336957800825285,
+        "recall_paper@100": 0.12228318972242674,
+        "coverage@100": 0.021802715945175553
+      },
+      "users_low": {
+        "n_users": 1533.0,
+        "ndcg@10": 0.08544719048537472,
+        "recall@10": 0.07728439930005487,
+        "recall_paper@10": 0.05854868572831272,
+        "coverage@10": 0.004586006811303424,
+        "ndcg@100": 0.10951297915049985,
+        "recall@100": 0.15780594378616225,
+        "recall_paper@100": 0.15746841659545222,
+        "coverage@100": 0.013431899378677324
+      },
+      "users_mid": {
+        "n_users": 1532.0,
+        "ndcg@10": 0.07230274824467399,
+        "recall@10": 0.061195553068921216,
+        "recall_paper@10": 0.03676165579978064,
+        "coverage@10": 0.004921155438999564,
+        "ndcg@100": 0.08772444501586948,
+        "recall@100": 0.11622546129033286,
+        "recall_paper@100": 0.11535143933675154,
+        "coverage@100": 0.014323372159417902
+      },
+      "users_high": {
+        "n_users": 1532.0,
+        "ndcg@10": 0.07343163566476886,
+        "recall@10": 0.06025063201956153,
+        "recall_paper@10": 0.02752511348260231,
+        "coverage@10": 0.005097193102031881,
+        "ndcg@100": 0.07538719758268614,
+        "recall@100": 0.08926142531766226,
+        "recall_paper@100": 0.08707515748550804,
+        "coverage@100": 0.014743154278956503
+      }
+    },
+    "new_items_share": {
+      "slice": 0.022051337987201863,
+      "meta": 0.022051337987201863
+    },
+    "fairness": {
+      "artist_gini@10": 0.9942841644434597,
+      "artist_coverage@10": 0.027022939595377708,
+      "long_tail_share@10": 0.009114639982597317,
+      "artist_gini@100": 0.9933773291498915,
+      "artist_coverage@100": 0.047089070523616716,
+      "long_tail_share@100": 0.00188818794866219
+    },
+    "ci": {
+      "ndcg@10": [
+        0.07706234917627712,
+        0.07250158358928097,
+        0.08120090621194506
+      ],
+      "recall@100": [
+        0.12110559541171097,
+        0.1157136070617879,
+        0.1264461812469422
+      ]
+    },
+    "peruser_file": "sasrec_bce-test-50m-eval-peruser.npz"
+  }
+}

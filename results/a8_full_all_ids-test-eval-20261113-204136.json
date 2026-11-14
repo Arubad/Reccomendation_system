@@ -1,0 +1,218 @@
+{
+  "run_name": "a8_full_all_ids-test-eval",
+  "timestamp": "2026-11-13T20:41:36.716250+00:00",
+  "git_sha": "0f0924c845f970e66e5b2b410a5c9637bdf7775d",
+  "config_hash": "00219a3cbf",
+  "config": {
+    "data": {
+      "input_filter": "all",
+      "window_sampling": "random"
+    },
+    "model": {
+      "name": "hookseq",
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 2,
+      "max_len": 200,
+      "dropout": 0.2,
+      "use_audio": true,
+      "use_artist": true,
+      "use_event": true,
+      "use_organic": true,
+      "use_ratio": true,
+      "id_dropout": 0.2,
+      "id_min_count": 1
+    },
+    "train": {
+      "batch_size": 256,
+      "lr": 0.001,
+      "weight_decay": 0.01,
+      "warmup_steps": 1000,
+      "lr_schedule": "warmup_cosine",
+      "max_steps": 10000,
+      "schedule_steps": 200000,
+      "eval_every_steps": 500,
+      "patience": 6,
+      "min_delta": 0.0,
+      "ckpt_every_steps": 1000,
+      "max_skipped_steps": 50,
+      "max_grad_norm": 1.0,
+      "amp": true,
+      "max_hours": 8.0,
+      "num_workers": 4,
+      "seed": 42,
+      "log_every_steps": 100,
+      "eval_max_users": null,
+      "eval_batch_size": 1024
+    },
+    "loss": {
+      "type": "softmax",
+      "chunk_rows": 8192,
+      "max_rows": null,
+      "n_uniform_negatives": 8192,
+      "n_in_batch_negatives": 4096,
+      "logq": true,
+      "mix_uniform": 0.0,
+      "temperature": 1.0,
+      "dislike_hard_negatives": true,
+      "n_hard": 4,
+      "like_weight": 0.0
+    }
+  },
+  "metrics": {
+    "ndcg@10": 0.11842105924775405,
+    "recall@10": 0.11704734972083242,
+    "recall_paper@10": 0.07325830127911793,
+    "coverage@10": 0.024835980292809312,
+    "ndcg@100": 0.1451888022866263,
+    "recall@100": 0.2045638492302555,
+    "recall_paper@100": 0.20284672976734103,
+    "coverage@100": 0.09811391442312684
+  },
+  "extra": {
+    "split": "test",
+    "kind": "eval",
+    "source_run": "a8_full_all_ids-test",
+    "processed_dir": "50m-978e872edd",
+    "dataset_size": "50m",
+    "eval_catalog": "all",
+    "n_eval_users": 4597,
+    "n_cold_users": 1,
+    "metrics_cold": {
+      "ndcg@10": 0.0,
+      "recall@10": 0.0,
+      "recall_paper@10": 0.0,
+      "coverage@10": 1.1284465578994644e-05,
+      "ndcg@100": 0.0,
+      "recall@100": 0.0,
+      "recall_paper@100": 0.0,
+      "coverage@100": 0.00011284465578994644
+    },
+    "slices": {
+      "all": {
+        "n_users": 4597.0,
+        "ndcg@10": 0.11842105924775405,
+        "recall@10": 0.11704734972083242,
+        "recall_paper@10": 0.07325830127911793,
+        "coverage@10": 0.024835980292809312,
+        "ndcg@100": 0.1451888022866263,
+        "recall@100": 0.2045638492302555,
+        "recall_paper@100": 0.20284672976734103,
+        "coverage@100": 0.09811391442312684
+      },
+      "organic": {
+        "n_users": 3236.0,
+        "ndcg@10": 0.15409006583309962,
+        "recall@10": 0.15497049561480958,
+        "recall_paper@10": 0.11446257752955363,
+        "coverage@10": 0.019518740111987037,
+        "ndcg@100": 0.19025052005823448,
+        "recall@100": 0.27578472273352617,
+        "recall_paper@100": 0.2755102614764269,
+        "coverage@100": 0.08292953754003164
+      },
+      "served": {
+        "n_users": 2858.0,
+        "ndcg@10": 0.025810015385791196,
+        "recall@10": 0.02868528330389772,
+        "recall_paper@10": 0.013242617478830045,
+        "coverage@10": 0.017518004364831287,
+        "ndcg@100": 0.05283382381417107,
+        "recall@100": 0.09898640999317518,
+        "recall_paper@100": 0.09722668242820298,
+        "coverage@100": 0.07229505717838709
+      },
+      "idless_items": {
+        "n_users": 1270.0,
+        "ndcg@10": 0.014598885491439902,
+        "recall@10": 0.021405136857892765,
+        "recall_paper@10": 0.020441350558604923,
+        "coverage@10": 0.01139956712790039,
+        "ndcg@100": 0.021470609936049025,
+        "recall@100": 0.04726946680989381,
+        "recall_paper@100": 0.04726946680989381,
+        "coverage@100": 0.06266150891359937
+      },
+      "new_items": {
+        "n_users": 475.0,
+        "ndcg@10": 0.001180187798241106,
+        "recall@10": 0.0020350877192982456,
+        "recall_paper@10": 0.0017309941520467836,
+        "coverage@10": 0.0048466779661782,
+        "ndcg@100": 0.005749175026404251,
+        "recall@100": 0.018766081871345028,
+        "recall_paper@100": 0.018766081871345028,
+        "coverage@100": 0.03318648482126535
+      },
+      "warm_items": {
+        "n_users": 4566.0,
+        "ndcg@10": 0.11777759903558875,
+        "recall@10": 0.11673419477295956,
+        "recall_paper@10": 0.073909483516973,
+        "coverage@10": 0.0246554288435454,
+        "ndcg@100": 0.14586502004168966,
+        "recall@100": 0.2070962147122214,
+        "recall_paper@100": 0.20547890025473758,
+        "coverage@100": 0.09725629503912324
+      },
+      "users_low": {
+        "n_users": 1533.0,
+        "ndcg@10": 0.13440414484848004,
+        "recall@10": 0.1385847337412895,
+        "recall_paper@10": 0.1064008557718773,
+        "coverage@10": 0.010526149492086204,
+        "ndcg@100": 0.17643300377400933,
+        "recall@100": 0.2667213471184182,
+        "recall_paper@100": 0.26621710220356715,
+        "coverage@100": 0.050827489860907675
+      },
+      "users_mid": {
+        "n_users": 1532.0,
+        "ndcg@10": 0.10809047699091094,
+        "recall@10": 0.10672349662232171,
+        "recall_paper@10": 0.0680172888568786,
+        "coverage@10": 0.011257382861605058,
+        "ndcg@100": 0.1395616905503659,
+        "recall@100": 0.19691084091033498,
+        "recall_paper@100": 0.19572428821134516,
+        "coverage@100": 0.05370841392322501
+      },
+      "users_high": {
+        "n_users": 1532.0,
+        "ndcg@10": 0.11275812308037199,
+        "recall@10": 0.1058197604542252,
+        "recall_paper@10": 0.045335125687388525,
+        "coverage@10": 0.011783238957586208,
+        "ndcg@100": 0.11955131814810983,
+        "recall@100": 0.15001878688271295,
+        "recall_paper@100": 0.1465574344142412,
+        "coverage@100": 0.05582086587961281
+      }
+    },
+    "new_items_share": {
+      "slice": 0.022051337987201863,
+      "meta": 0.022051337987201863
+    },
+    "fairness": {
+      "artist_gini@10": 0.980830240499692,
+      "artist_coverage@10": 0.05545511414803154,
+      "long_tail_share@10": 0.0607787687622362,
+      "artist_gini@100": 0.9759693769077222,
+      "artist_coverage@100": 0.12592373632870232,
+      "long_tail_share@100": 0.05781596693495761
+    },
+    "ci": {
+      "ndcg@10": [
+        0.11842105924775405,
+        0.11292996394414005,
+        0.12460627688533514
+      ],
+      "recall@100": [
+        0.2045638492302555,
+        0.19749654079710713,
+        0.21204311216490207
+      ]
+    },
+    "peruser_file": "a8_full_all_ids-test-50m-eval-peruser.npz"
+  }
+}

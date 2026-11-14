@@ -1,0 +1,43 @@
+{
+  "run_name": "ials-val",
+  "timestamp": "2026-11-13T23:01:22.973670+00:00",
+  "git_sha": "0f0924c845f970e66e5b2b410a5c9637bdf7775d",
+  "config_hash": "b4a6630010",
+  "config": {
+    "iterations": 15,
+    "seed": 0,
+    "use_gpu": null,
+    "factors": 128,
+    "alpha": 40,
+    "regularization": 0.01
+  },
+  "metrics": {
+    "ndcg@10": 0.020825805427825996,
+    "recall@10": 0.021805022139163528,
+    "recall_paper@10": 0.010811203916237336,
+    "coverage@10": 0.019905091385651677,
+    "ndcg@100": 0.044238857558424084,
+    "recall@100": 0.08073635762741556,
+    "recall_paper@100": 0.0800200018502017,
+    "coverage@100": 0.03946951228104787
+  },
+  "extra": {
+    "split": "val",
+    "quick": false,
+    "processed_dir": "500m-9d2de0fa58",
+    "dataset_size": "500m",
+    "wall_time_s": 1240.84,
+    "n_eval_users": 45789,
+    "metrics_cold": {
+      "ndcg@10": 0.0,
+      "recall@10": 0.0,
+      "recall_paper@10": 0.0,
+      "coverage@10": 3.5229626706875416e-06,
+      "ndcg@100": 0.033157163999964434,
+      "recall@100": 0.15555555555555556,
+      "recall_paper@100": 0.15555555555555556,
+      "coverage@100": 3.522962670687541e-05
+    },
+    "n_cold_users": 9
+  }
+}

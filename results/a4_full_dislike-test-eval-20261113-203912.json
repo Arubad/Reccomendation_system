@@ -1,0 +1,217 @@
+{
+  "run_name": "a4_full_dislike-test-eval",
+  "timestamp": "2026-11-13T20:39:12.145678+00:00",
+  "git_sha": "0f0924c845f970e66e5b2b410a5c9637bdf7775d",
+  "config_hash": "b3ed46d5a0",
+  "config": {
+    "data": {
+      "input_filter": "all",
+      "window_sampling": "random"
+    },
+    "model": {
+      "name": "hookseq",
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 2,
+      "max_len": 200,
+      "dropout": 0.2,
+      "use_audio": true,
+      "use_artist": true,
+      "use_event": true,
+      "use_organic": true,
+      "use_ratio": true,
+      "id_dropout": 0.2
+    },
+    "train": {
+      "batch_size": 256,
+      "lr": 0.001,
+      "weight_decay": 0.01,
+      "warmup_steps": 1000,
+      "lr_schedule": "warmup_cosine",
+      "max_steps": 8500,
+      "schedule_steps": 200000,
+      "eval_every_steps": 500,
+      "patience": 6,
+      "min_delta": 0.0,
+      "ckpt_every_steps": 1000,
+      "max_skipped_steps": 50,
+      "max_grad_norm": 1.0,
+      "amp": true,
+      "max_hours": 8.0,
+      "num_workers": 4,
+      "seed": 42,
+      "log_every_steps": 100,
+      "eval_max_users": null,
+      "eval_batch_size": 1024
+    },
+    "loss": {
+      "type": "softmax",
+      "chunk_rows": 8192,
+      "max_rows": null,
+      "n_uniform_negatives": 8192,
+      "n_in_batch_negatives": 4096,
+      "logq": true,
+      "mix_uniform": 0.0,
+      "temperature": 1.0,
+      "dislike_hard_negatives": true,
+      "n_hard": 4,
+      "like_weight": 0.0
+    }
+  },
+  "metrics": {
+    "ndcg@10": 0.11627551453351893,
+    "recall@10": 0.11218203037868038,
+    "recall_paper@10": 0.06903844406544624,
+    "coverage@10": 0.024444409337218198,
+    "ndcg@100": 0.14361188803799488,
+    "recall@100": 0.20009989822054475,
+    "recall_paper@100": 0.19830242554488992,
+    "coverage@100": 0.10312985937298995
+  },
+  "extra": {
+    "split": "test",
+    "kind": "eval",
+    "source_run": "a4_full_dislike-test",
+    "processed_dir": "50m-978e872edd",
+    "dataset_size": "50m",
+    "eval_catalog": "all",
+    "n_eval_users": 4597,
+    "n_cold_users": 1,
+    "metrics_cold": {
+      "ndcg@10": 0.0,
+      "recall@10": 0.0,
+      "recall_paper@10": 0.0,
+      "coverage@10": 1.1284465578994644e-05,
+      "ndcg@100": 0.0,
+      "recall@100": 0.0,
+      "recall_paper@100": 0.0,
+      "coverage@100": 0.00011284465578994644
+    },
+    "slices": {
+      "all": {
+        "n_users": 4597.0,
+        "ndcg@10": 0.11627551453351893,
+        "recall@10": 0.11218203037868038,
+        "recall_paper@10": 0.06903844406544624,
+        "coverage@10": 0.024444409337218198,
+        "ndcg@100": 0.14361188803799488,
+        "recall@100": 0.20009989822054475,
+        "recall_paper@100": 0.19830242554488992,
+        "coverage@100": 0.10312985937298995
+      },
+      "organic": {
+        "n_users": 3236.0,
+        "ndcg@10": 0.14793095169123904,
+        "recall@10": 0.14521884258441736,
+        "recall_paper@10": 0.10635030782050786,
+        "coverage@10": 0.01923662847251217,
+        "ndcg@100": 0.18580863341460474,
+        "recall@100": 0.26959266530992,
+        "recall_paper@100": 0.26931631431483016,
+        "coverage@100": 0.08691295388941675
+      },
+      "served": {
+        "n_users": 2858.0,
+        "ndcg@10": 0.02810887868922616,
+        "recall@10": 0.03018163995245871,
+        "recall_paper@10": 0.014127558018644447,
+        "coverage@10": 0.01717157127155615,
+        "ndcg@100": 0.05367450372015035,
+        "recall@100": 0.094941239267731,
+        "recall_paper@100": 0.09304825716205804,
+        "coverage@100": 0.07391437798897282
+      },
+      "idless_items": {
+        "n_users": 1270.0,
+        "ndcg@10": 0.006604558458254041,
+        "recall@10": 0.011004874390701162,
+        "recall_paper@10": 0.009999538173285945,
+        "coverage@10": 0.01131267674294213,
+        "ndcg@100": 0.014494999889138735,
+        "recall@100": 0.041705602707971266,
+        "recall_paper@100": 0.041705602707971266,
+        "coverage@100": 0.0640404706073525
+      },
+      "new_items": {
+        "n_users": 475.0,
+        "ndcg@10": 0.003915862279777638,
+        "recall@10": 0.007087719298245613,
+        "recall_paper@10": 0.006748538011695906,
+        "coverage@10": 0.004857962431757195,
+        "ndcg@100": 0.009733723159752199,
+        "recall@100": 0.03115609536662168,
+        "recall_paper@100": 0.03115609536662168,
+        "coverage@100": 0.033633349658193534
+      },
+      "warm_items": {
+        "n_users": 4566.0,
+        "ndcg@10": 0.11631896370030732,
+        "recall@10": 0.1123321791850044,
+        "recall_paper@10": 0.07006835927713538,
+        "coverage@10": 0.02426837167418588,
+        "ndcg@100": 0.14471150372046349,
+        "recall@100": 0.20274980864730083,
+        "recall_paper@100": 0.2010538164217392,
+        "coverage@100": 0.102163909119428
+      },
+      "users_low": {
+        "n_users": 1533.0,
+        "ndcg@10": 0.1271234478333059,
+        "recall@10": 0.12899310409095144,
+        "recall_paper@10": 0.09864246305676382,
+        "coverage@10": 0.010433616874338449,
+        "ndcg@100": 0.17094076373063496,
+        "recall@100": 0.2577951427377306,
+        "recall_paper@100": 0.25721577091161796,
+        "coverage@100": 0.052473893388882996
+      },
+      "users_mid": {
+        "n_users": 1532.0,
+        "ndcg@10": 0.11205420931950785,
+        "recall@10": 0.1060070351029881,
+        "recall_paper@10": 0.06504185795266343,
+        "coverage@10": 0.011158079564509904,
+        "ndcg@100": 0.14046699484333044,
+        "recall@100": 0.1919519378447687,
+        "recall_paper@100": 0.19071847622715996,
+        "coverage@100": 0.054664208157765855
+      },
+      "users_high": {
+        "n_users": 1532.0,
+        "ndcg@10": 0.1096418055513333,
+        "recall@10": 0.10153497865638857,
+        "recall_paper@10": 0.04341168741472394,
+        "coverage@10": 0.01167377964146996,
+        "ndcg@100": 0.11941006684831389,
+        "recall@100": 0.1505149539978575,
+        "recall_paper@100": 0.14693457430962115,
+        "coverage@100": 0.057419874652156346
+      }
+    },
+    "new_items_share": {
+      "slice": 0.022051337987201863,
+      "meta": 0.022051337987201863
+    },
+    "fairness": {
+      "artist_gini@10": 0.9811468787634285,
+      "artist_coverage@10": 0.054389595033993494,
+      "long_tail_share@10": 0.057232978029149395,
+      "artist_gini@100": 0.976656485785754,
+      "artist_coverage@100": 0.1185613429665427,
+      "long_tail_share@100": 0.07511202958451169
+    },
+    "ci": {
+      "ndcg@10": [
+        0.11627551453351893,
+        0.11062235877764082,
+        0.12247174394655069
+      ],
+      "recall@100": [
+        0.20009989822054475,
+        0.19316873368813708,
+        0.20765012317342027
+      ]
+    },
+    "peruser_file": "a4_full_dislike-test-50m-eval-peruser.npz"
+  }
+}

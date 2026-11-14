@@ -1,0 +1,34 @@
+{
+  "run_name": "decaypop-val",
+  "timestamp": "2026-11-12T06:40:38.730314+00:00",
+  "git_sha": "12761f9d688eb2b808041a49df745147d78a7168",
+  "config_hash": "41177c7a8b",
+  "config": {
+    "half_life_days": 0.82
+  },
+  "metrics": {
+    "ndcg@10": 0.02567247997656067,
+    "recall@10": 0.02579536605363275,
+    "coverage@10": 1.1284465578994644e-05,
+    "ndcg@100": 0.03513202835110755,
+    "recall@100": 0.05631553966764976,
+    "coverage@100": 0.00011284465578994644
+  },
+  "extra": {
+    "split": "val",
+    "quick": false,
+    "processed_dir": "50m-978e872edd",
+    "dataset_size": "50m",
+    "wall_time_s": 1.08,
+    "n_eval_users": 4627,
+    "metrics_cold": {
+      "ndcg@10": 0.0,
+      "recall@10": 0.0,
+      "coverage@10": 1.1284465578994644e-05,
+      "ndcg@100": 0.0,
+      "recall@100": 0.0,
+      "coverage@100": 0.00011284465578994644
+    },
+    "n_cold_users": 1
+  }
+}

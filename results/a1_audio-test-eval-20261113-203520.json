@@ -1,0 +1,217 @@
+{
+  "run_name": "a1_audio-test-eval",
+  "timestamp": "2026-11-13T20:35:20.919799+00:00",
+  "git_sha": "0f0924c845f970e66e5b2b410a5c9637bdf7775d",
+  "config_hash": "23cbd4d0ff",
+  "config": {
+    "data": {
+      "input_filter": "all",
+      "window_sampling": "random"
+    },
+    "model": {
+      "name": "hookseq",
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 2,
+      "max_len": 200,
+      "dropout": 0.2,
+      "use_audio": true,
+      "use_artist": true,
+      "use_event": false,
+      "use_organic": false,
+      "use_ratio": false,
+      "id_dropout": 0.2
+    },
+    "train": {
+      "batch_size": 256,
+      "lr": 0.001,
+      "weight_decay": 0.01,
+      "warmup_steps": 1000,
+      "lr_schedule": "warmup_cosine",
+      "max_steps": 9500,
+      "schedule_steps": 200000,
+      "eval_every_steps": 500,
+      "patience": 6,
+      "min_delta": 0.0,
+      "ckpt_every_steps": 1000,
+      "max_skipped_steps": 50,
+      "max_grad_norm": 1.0,
+      "amp": true,
+      "max_hours": 8.0,
+      "num_workers": 4,
+      "seed": 42,
+      "log_every_steps": 100,
+      "eval_max_users": null,
+      "eval_batch_size": 1024
+    },
+    "loss": {
+      "type": "softmax",
+      "chunk_rows": 8192,
+      "max_rows": null,
+      "n_uniform_negatives": 8192,
+      "n_in_batch_negatives": 4096,
+      "logq": false,
+      "mix_uniform": 0.0,
+      "temperature": 1.0,
+      "dislike_hard_negatives": false,
+      "n_hard": 4,
+      "like_weight": 0.0
+    }
+  },
+  "metrics": {
+    "ndcg@10": 0.09674342906067938,
+    "recall@10": 0.09282554875332774,
+    "recall_paper@10": 0.058008409677403026,
+    "coverage@10": 0.03513869736643142,
+    "ndcg@100": 0.11608354387128593,
+    "recall@100": 0.16261863562712153,
+    "recall_paper@100": 0.16128450616477782,
+    "coverage@100": 0.16104512206406416
+  },
+  "extra": {
+    "split": "test",
+    "kind": "eval",
+    "source_run": "a1_audio-test",
+    "processed_dir": "50m-978e872edd",
+    "dataset_size": "50m",
+    "eval_catalog": "all",
+    "n_eval_users": 4597,
+    "n_cold_users": 1,
+    "metrics_cold": {
+      "ndcg@10": 0.0,
+      "recall@10": 0.0,
+      "recall_paper@10": 0.0,
+      "coverage@10": 1.1284465578994644e-05,
+      "ndcg@100": 0.0,
+      "recall@100": 0.0,
+      "recall_paper@100": 0.0,
+      "coverage@100": 0.00011284465578994644
+    },
+    "slices": {
+      "all": {
+        "n_users": 4597.0,
+        "ndcg@10": 0.09674342906067938,
+        "recall@10": 0.09282554875332774,
+        "recall_paper@10": 0.058008409677403026,
+        "coverage@10": 0.03513869736643142,
+        "ndcg@100": 0.11608354387128593,
+        "recall@100": 0.16261863562712153,
+        "recall_paper@100": 0.16128450616477782,
+        "coverage@100": 0.16104512206406416
+      },
+      "organic": {
+        "n_users": 3236.0,
+        "ndcg@10": 0.12716986133861607,
+        "recall@10": 0.12501545117428925,
+        "recall_paper@10": 0.0916990122855141,
+        "coverage@10": 0.026917964192133825,
+        "ndcg@100": 0.1569597804874807,
+        "recall@100": 0.22883001425711133,
+        "recall_paper@100": 0.22860837994753164,
+        "coverage@100": 0.13560767975589444
+      },
+      "served": {
+        "n_users": 2858.0,
+        "ndcg@10": 0.018880399440817503,
+        "recall@10": 0.02069615226543148,
+        "recall_paper@10": 0.009711355648855297,
+        "coverage@10": 0.02366239587259387,
+        "ndcg@100": 0.03526511453326692,
+        "recall@100": 0.063503536757996,
+        "recall_paper@100": 0.06215190592529603,
+        "coverage@100": 0.11938851737920544
+      },
+      "idless_items": {
+        "n_users": 1270.0,
+        "ndcg@10": 0.00816507633904296,
+        "recall@10": 0.015749906261717288,
+        "recall_paper@10": 0.014740107809439284,
+        "coverage@10": 0.012865419206611795,
+        "ndcg@100": 0.02272735856743905,
+        "recall@100": 0.07494155659029386,
+        "recall_paper@100": 0.07494155659029386,
+        "coverage@100": 0.0895535188349015
+      },
+      "new_items": {
+        "n_users": 475.0,
+        "ndcg@10": 0.0037004860126737707,
+        "recall@10": 0.005754385964912281,
+        "recall_paper@10": 0.005508771929824561,
+        "coverage@10": 0.005123147372863569,
+        "ndcg@100": 0.016121693297022215,
+        "recall@100": 0.05768261562998405,
+        "recall_paper@100": 0.05768261562998405,
+        "coverage@100": 0.04279069347554769
+      },
+      "warm_items": {
+        "n_users": 4566.0,
+        "ndcg@10": 0.09662269411274066,
+        "recall@10": 0.09273468841471467,
+        "recall_paper@10": 0.05886196924781365,
+        "coverage@10": 0.03491075116173573,
+        "ndcg@100": 0.11628211904900441,
+        "recall@100": 0.16327196909400984,
+        "recall_paper@100": 0.16203289365968337,
+        "coverage@100": 0.16002500637572306
+      },
+      "users_low": {
+        "n_users": 1533.0,
+        "ndcg@10": 0.10547370797520352,
+        "recall@10": 0.1065974487207364,
+        "recall_paper@10": 0.0818419700732551,
+        "coverage@10": 0.014034489840595639,
+        "ndcg@100": 0.13821657598051068,
+        "recall@100": 0.2100428061082139,
+        "recall_paper@100": 0.20972389575704237,
+        "coverage@100": 0.08463800562869143
+      },
+      "users_mid": {
+        "n_users": 1532.0,
+        "ndcg@10": 0.0925769022291651,
+        "recall@10": 0.08782067222015003,
+        "recall_paper@10": 0.056528395393006386,
+        "coverage@10": 0.01438995050633397,
+        "ndcg@100": 0.11230349663477573,
+        "recall@100": 0.15320373550138155,
+        "recall_paper@100": 0.15227983214210672,
+        "coverage@100": 0.08651348380792034
+      },
+      "users_high": {
+        "n_users": 1532.0,
+        "ndcg@10": 0.09217397836219009,
+        "recall@10": 0.08404953582825646,
+        "recall_paper@10": 0.03563930641164221,
+        "coverage@10": 0.014544547684766197,
+        "ndcg@100": 0.09771611184967502,
+        "recall@100": 0.12457840954691193,
+        "recall_paper@100": 0.1218181721946672,
+        "coverage@100": 0.0872187629066075
+      }
+    },
+    "new_items_share": {
+      "slice": 0.022051337987201863,
+      "meta": 0.022051337987201863
+    },
+    "fairness": {
+      "artist_gini@10": 0.9723169441380306,
+      "artist_coverage@10": 0.06876379159820993,
+      "long_tail_share@10": 0.1479878181422667,
+      "artist_gini@100": 0.9649510918453561,
+      "artist_coverage@100": 0.14863647924987455,
+      "long_tail_share@100": 0.2100696106156189
+    },
+    "ci": {
+      "ndcg@10": [
+        0.09674342906067938,
+        0.09139037435666662,
+        0.10227407048849514
+      ],
+      "recall@100": [
+        0.16261863562712153,
+        0.156252048268677,
+        0.1695348105475387
+      ]
+    },
+    "peruser_file": "a1_audio-test-50m-eval-peruser.npz"
+  }
+}

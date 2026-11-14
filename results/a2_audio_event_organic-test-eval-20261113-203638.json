@@ -1,0 +1,217 @@
+{
+  "run_name": "a2_audio_event_organic-test-eval",
+  "timestamp": "2026-11-13T20:36:38.558435+00:00",
+  "git_sha": "0f0924c845f970e66e5b2b410a5c9637bdf7775d",
+  "config_hash": "9ad3f5de96",
+  "config": {
+    "data": {
+      "input_filter": "all",
+      "window_sampling": "random"
+    },
+    "model": {
+      "name": "hookseq",
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 2,
+      "max_len": 200,
+      "dropout": 0.2,
+      "use_audio": true,
+      "use_artist": true,
+      "use_event": true,
+      "use_organic": true,
+      "use_ratio": true,
+      "id_dropout": 0.2
+    },
+    "train": {
+      "batch_size": 256,
+      "lr": 0.001,
+      "weight_decay": 0.01,
+      "warmup_steps": 1000,
+      "lr_schedule": "warmup_cosine",
+      "max_steps": 8000,
+      "schedule_steps": 200000,
+      "eval_every_steps": 500,
+      "patience": 6,
+      "min_delta": 0.0,
+      "ckpt_every_steps": 1000,
+      "max_skipped_steps": 50,
+      "max_grad_norm": 1.0,
+      "amp": true,
+      "max_hours": 8.0,
+      "num_workers": 4,
+      "seed": 42,
+      "log_every_steps": 100,
+      "eval_max_users": null,
+      "eval_batch_size": 1024
+    },
+    "loss": {
+      "type": "softmax",
+      "chunk_rows": 8192,
+      "max_rows": null,
+      "n_uniform_negatives": 8192,
+      "n_in_batch_negatives": 4096,
+      "logq": false,
+      "mix_uniform": 0.0,
+      "temperature": 1.0,
+      "dislike_hard_negatives": false,
+      "n_hard": 4,
+      "like_weight": 0.0
+    }
+  },
+  "metrics": {
+    "ndcg@10": 0.10016582327199254,
+    "recall@10": 0.09679293949470151,
+    "recall_paper@10": 0.060945769313580846,
+    "coverage@10": 0.03457447408748169,
+    "ndcg@100": 0.11861741018512548,
+    "recall@100": 0.16569102631943305,
+    "recall_paper@100": 0.16444546830389084,
+    "coverage@100": 0.15881869700532852
+  },
+  "extra": {
+    "split": "test",
+    "kind": "eval",
+    "source_run": "a2_audio_event_organic-test",
+    "processed_dir": "50m-978e872edd",
+    "dataset_size": "50m",
+    "eval_catalog": "all",
+    "n_eval_users": 4597,
+    "n_cold_users": 1,
+    "metrics_cold": {
+      "ndcg@10": 0.0,
+      "recall@10": 0.0,
+      "recall_paper@10": 0.0,
+      "coverage@10": 1.1284465578994644e-05,
+      "ndcg@100": 0.0,
+      "recall@100": 0.0,
+      "recall_paper@100": 0.0,
+      "coverage@100": 0.00011284465578994644
+    },
+    "slices": {
+      "all": {
+        "n_users": 4597.0,
+        "ndcg@10": 0.10016582327199254,
+        "recall@10": 0.09679293949470151,
+        "recall_paper@10": 0.060945769313580846,
+        "coverage@10": 0.03457447408748169,
+        "ndcg@100": 0.11861741018512548,
+        "recall@100": 0.16569102631943305,
+        "recall_paper@100": 0.16444546830389084,
+        "coverage@100": 0.15881869700532852
+      },
+      "organic": {
+        "n_users": 3236.0,
+        "ndcg@10": 0.13143566477744673,
+        "recall@10": 0.1306586860125179,
+        "recall_paper@10": 0.0968431622652753,
+        "coverage@10": 0.026517365664079515,
+        "ndcg@100": 0.16052106853057482,
+        "recall@100": 0.2341388057692342,
+        "recall_paper@100": 0.23393680597532604,
+        "coverage@100": 0.13410684583388816
+      },
+      "served": {
+        "n_users": 2858.0,
+        "ndcg@10": 0.020526482425211375,
+        "recall@10": 0.02181664944960956,
+        "recall_paper@10": 0.010477283935144202,
+        "coverage@10": 0.023288880061929147,
+        "ndcg@100": 0.036580812789204546,
+        "recall@100": 0.06414164104778174,
+        "recall_paper@100": 0.06285263116960049,
+        "coverage@100": 0.11713500960308021
+      },
+      "idless_items": {
+        "n_users": 1270.0,
+        "ndcg@10": 0.009784634362315065,
+        "recall@10": 0.0179143232095988,
+        "recall_paper@10": 0.01685820808313696,
+        "coverage@10": 0.012825923577085313,
+        "ndcg@100": 0.022071083262254418,
+        "recall@100": 0.06656471000907738,
+        "recall_paper@100": 0.06656471000907738,
+        "coverage@100": 0.08835059480418067
+      },
+      "new_items": {
+        "n_users": 475.0,
+        "ndcg@10": 0.004669861312605356,
+        "recall@10": 0.0069824561403508765,
+        "recall_paper@10": 0.006736842105263158,
+        "coverage@10": 0.005088165529568685,
+        "ndcg@100": 0.015243536802421385,
+        "recall@100": 0.04797746697746698,
+        "recall_paper@100": 0.04797746697746698,
+        "coverage@100": 0.04218584612051358
+      },
+      "warm_items": {
+        "n_users": 4566.0,
+        "ndcg@10": 0.09987583248951655,
+        "recall@10": 0.09653173212634449,
+        "recall_paper@10": 0.06164088134127662,
+        "coverage@10": 0.03435668390180709,
+        "ndcg@100": 0.11895834423308328,
+        "recall@100": 0.16694350971575173,
+        "recall_paper@100": 0.16578578700782723,
+        "coverage@100": 0.15770830559235546
+      },
+      "users_low": {
+        "n_users": 1533.0,
+        "ndcg@10": 0.1091137346941577,
+        "recall@10": 0.11113259611302664,
+        "recall_paper@10": 0.08593826172006834,
+        "coverage@10": 0.013797516063436752,
+        "ndcg@100": 0.14152603483059178,
+        "recall@100": 0.2158599900676773,
+        "recall_paper@100": 0.21552667540469567,
+        "coverage@100": 0.08316199753095893
+      },
+      "users_mid": {
+        "n_users": 1532.0,
+        "ndcg@10": 0.09503834878706616,
+        "recall@10": 0.09024203240913425,
+        "recall_paper@10": 0.05764552700628165,
+        "coverage@10": 0.014157490515406681,
+        "ndcg@100": 0.114067710772574,
+        "recall@100": 0.15522631485195867,
+        "recall_paper@100": 0.15431437394362676,
+        "coverage@100": 0.08539857860871566
+      },
+      "users_high": {
+        "n_users": 1532.0,
+        "ndcg@10": 0.0963395456615017,
+        "recall@10": 0.0889948298727672,
+        "recall_paper@10": 0.039237205577051515,
+        "coverage@10": 0.014438473708323648,
+        "ndcg@100": 0.10024353154186762,
+        "recall@100": 0.12595402667329225,
+        "recall_paper@100": 0.12346201273887174,
+        "coverage@100": 0.08649317176987815
+      }
+    },
+    "new_items_share": {
+      "slice": 0.022051337987201863,
+      "meta": 0.022051337987201863
+    },
+    "fairness": {
+      "artist_gini@10": 0.9723769499494483,
+      "artist_coverage@10": 0.06850256755734899,
+      "long_tail_share@10": 0.14355014139656297,
+      "artist_gini@100": 0.9648877900637491,
+      "artist_coverage@100": 0.14854711313063265,
+      "long_tail_share@100": 0.20221013704589952
+    },
+    "ci": {
+      "ndcg@10": [
+        0.10016582327199254,
+        0.09495711678039244,
+        0.10535770067274637
+      ],
+      "recall@100": [
+        0.16569102631943305,
+        0.15869402291498863,
+        0.1725277224509533
+      ]
+    },
+    "peruser_file": "a2_audio_event_organic-test-50m-eval-peruser.npz"
+  }
+}

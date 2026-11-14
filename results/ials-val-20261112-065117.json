@@ -1,0 +1,39 @@
+{
+  "run_name": "ials-val",
+  "timestamp": "2026-11-12T06:51:17.473817+00:00",
+  "git_sha": "12761f9d688eb2b808041a49df745147d78a7168",
+  "config_hash": "d83e671acc",
+  "config": {
+    "iterations": 15,
+    "seed": 0,
+    "use_gpu": null,
+    "factors": 128,
+    "alpha": 1,
+    "regularization": 0.01
+  },
+  "metrics": {
+    "ndcg@10": 0.03847193219618977,
+    "recall@10": 0.03940955605641148,
+    "coverage@10": 0.008212834048392303,
+    "ndcg@100": 0.07081491696676856,
+    "recall@100": 0.12107762288148931,
+    "coverage@100": 0.025109064359820982
+  },
+  "extra": {
+    "split": "val",
+    "quick": false,
+    "processed_dir": "50m-978e872edd",
+    "dataset_size": "50m",
+    "wall_time_s": 129.34,
+    "n_eval_users": 4627,
+    "metrics_cold": {
+      "ndcg@10": 0.0,
+      "recall@10": 0.0,
+      "coverage@10": 1.1284465578994644e-05,
+      "ndcg@100": 0.14272046498997473,
+      "recall@100": 0.4,
+      "coverage@100": 0.00011284465578994644
+    },
+    "n_cold_users": 1
+  }
+}
