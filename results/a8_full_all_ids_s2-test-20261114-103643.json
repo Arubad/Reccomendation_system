@@ -1,0 +1,99 @@
+{
+  "run_name": "a8_full_all_ids_s2-test",
+  "timestamp": "2026-11-14T10:36:43.177261+00:00",
+  "git_sha": "d806dd5ea88779ba475b8989d9660890a269e22f",
+  "config_hash": "97f19f4399",
+  "config": {
+    "data": {
+      "input_filter": "all",
+      "window_sampling": "random"
+    },
+    "model": {
+      "name": "hookseq",
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 2,
+      "max_len": 200,
+      "dropout": 0.2,
+      "use_audio": true,
+      "use_artist": true,
+      "use_event": true,
+      "use_organic": true,
+      "use_ratio": true,
+      "id_dropout": 0.2,
+      "id_min_count": 1
+    },
+    "train": {
+      "batch_size": 256,
+      "lr": 0.001,
+      "weight_decay": 0.01,
+      "warmup_steps": 1000,
+      "lr_schedule": "warmup_cosine",
+      "max_steps": 15000,
+      "schedule_steps": 200000,
+      "eval_every_steps": 500,
+      "patience": 6,
+      "min_delta": 0.0,
+      "ckpt_every_steps": 1000,
+      "max_skipped_steps": 50,
+      "max_grad_norm": 1.0,
+      "amp": true,
+      "max_hours": 8.0,
+      "num_workers": 4,
+      "seed": 1,
+      "log_every_steps": 100,
+      "eval_max_users": null,
+      "eval_batch_size": 256
+    },
+    "loss": {
+      "type": "softmax",
+      "chunk_rows": 8192,
+      "max_rows": null,
+      "n_uniform_negatives": 8192,
+      "n_in_batch_negatives": 4096,
+      "logq": true,
+      "mix_uniform": 0.0,
+      "temperature": 1.0,
+      "dislike_hard_negatives": true,
+      "n_hard": 4,
+      "like_weight": 0.0
+    }
+  },
+  "metrics": {
+    "ndcg@10": 0.09957949794129471,
+    "recall@10": 0.09698646536857813,
+    "recall_paper@10": 0.05820558295400879,
+    "coverage@10": 0.022194312529064442,
+    "ndcg@100": 0.1304593727647559,
+    "recall@100": 0.188793733355631,
+    "recall_paper@100": 0.187141654560587,
+    "coverage@100": 0.07872799909812156
+  },
+  "extra": {
+    "split": "test",
+    "processed_dir": "500m-9d2de0fa58",
+    "training_hash": "da703c0dc5",
+    "eval_catalog": "all",
+    "dataset_size": "500m",
+    "best_step": 15000,
+    "steps": 15000,
+    "stopped_reason": "max_steps",
+    "val_best_metric": null,
+    "wall_time_s": 3072.8,
+    "steps_per_sec": 4.86,
+    "gpu_name": "Tesla T4",
+    "gpu_hours": 0.8536,
+    "metrics_cold": {
+      "ndcg@10": 0.04452589838850277,
+      "recall@10": 0.125,
+      "recall_paper@10": 0.125,
+      "coverage@10": 2.7479108831362822e-05,
+      "ndcg@100": 0.06605296958430901,
+      "recall@100": 0.1788961038961039,
+      "recall_paper@100": 0.1788961038961039,
+      "coverage@100": 0.00024237983174330284
+    },
+    "n_cold_users": 8,
+    "n_eval_users": 45921
+  }
+}

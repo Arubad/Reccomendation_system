@@ -1,0 +1,92 @@
+{
+  "run_name": "sasrec_s2-val",
+  "timestamp": "2026-11-14T07:35:56.678377+00:00",
+  "git_sha": "d806dd5ea88779ba475b8989d9660890a269e22f",
+  "config_hash": "070f616bb1",
+  "config": {
+    "data": {
+      "input_filter": "listen_plus",
+      "window_sampling": "last"
+    },
+    "model": {
+      "name": "sasrec",
+      "d_model": 64,
+      "n_layers": 2,
+      "n_heads": 2,
+      "max_len": 200,
+      "dropout": 0.2
+    },
+    "train": {
+      "batch_size": 256,
+      "lr": 0.001,
+      "weight_decay": 0.01,
+      "warmup_steps": 1000,
+      "lr_schedule": "warmup_cosine",
+      "max_steps": 200000,
+      "schedule_steps": 200000,
+      "eval_every_steps": 500,
+      "patience": 6,
+      "min_delta": 0.0,
+      "ckpt_every_steps": 1000,
+      "max_skipped_steps": 50,
+      "max_grad_norm": 1.0,
+      "amp": true,
+      "max_hours": 8.0,
+      "num_workers": 4,
+      "seed": 1,
+      "log_every_steps": 100,
+      "eval_max_users": null,
+      "eval_batch_size": 256
+    },
+    "loss": {
+      "type": "softmax",
+      "chunk_rows": 8192,
+      "max_rows": null,
+      "n_uniform_negatives": 8192,
+      "n_in_batch_negatives": 4096,
+      "logq": false,
+      "mix_uniform": 0.0,
+      "temperature": 1.0,
+      "dislike_hard_negatives": false,
+      "n_hard": 4,
+      "like_weight": 0.0
+    }
+  },
+  "metrics": {
+    "ndcg@10": 0.08112017440272533,
+    "recall@10": 0.07815606576335137,
+    "recall_paper@10": 0.049444875891516374,
+    "coverage@10": 0.04766920789707312,
+    "ndcg@100": 0.10161198919027416,
+    "recall@100": 0.14426569562703306,
+    "recall_paper@100": 0.14323229321107928,
+    "coverage@100": 0.11173851161873088
+  },
+  "extra": {
+    "split": "val",
+    "processed_dir": "500m-9d2de0fa58",
+    "training_hash": "9aec88fb24",
+    "eval_catalog": "all",
+    "dataset_size": "500m",
+    "best_step": 28000,
+    "steps": 31000,
+    "stopped_reason": "converged",
+    "val_best_metric": 0.08112017440272533,
+    "wall_time_s": 9466.92,
+    "steps_per_sec": 3.269,
+    "gpu_name": "Tesla T4",
+    "gpu_hours": 2.6297,
+    "metrics_cold": {
+      "ndcg@10": 0.0,
+      "recall@10": 0.0,
+      "recall_paper@10": 0.0,
+      "coverage@10": 3.5229626706875416e-06,
+      "ndcg@100": 0.033157163999964434,
+      "recall@100": 0.15555555555555556,
+      "recall_paper@100": 0.15555555555555556,
+      "coverage@100": 3.522962670687541e-05
+    },
+    "n_cold_users": 9,
+    "n_eval_users": 45789
+  }
+}
