@@ -1,0 +1,3 @@
+extends: ../ablations/a8_full_all_ids.yaml
+# Seed replicate 2 of 3 for the 500M headline comparison (seed 42 is the reported a8 run).
+train: {seed: 1}

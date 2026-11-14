@@ -1,0 +1,3 @@
+extends: ../sasrec.yaml
+# Seed replicate 3 of 3 for the 500M headline comparison (seed 42 is the reported sasrec run).
+train: {seed: 2}
