@@ -326,12 +326,20 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
   only have raised every number.
 - **Cost if wrong.** Absolute numbers are probably not optimal for any row, including `sasrec`.
 
-### D25. The demo targets Hugging Face ZeroGPU and is not yet deployed
-- **Decision.** A Gradio app (session → next tracks, HookSeq next to SASRec; new-track audience)
-  reads a self-contained exported bundle; the Space kit loads on CPU and moves to the GPU only
-  inside ZeroGPU calls.
-- **Why.** Free Hugging Face accounts get ZeroGPU hardware.
-- **Evidence.** Unit tests on a synthetic bundle; [docs/hf_space.md](hf_space.md).
+### D25. The demo runs on Hugging Face ZeroGPU from a bundle stored in the Space
+- **Decision.** A Gradio app with two tabs: session → next tracks (HookSeq next to SASRec) and
+  new-track audience. It reads a self-contained bundle exported from the 500M test checkpoints
+  of a8 and `sasrec` (56,120 items, 200 sample users, 57.1 MB), stored in the Space's `bundle/`
+  directory, so there is no separate model repo. The code is pinned to tag `v0.1-demo` (= `v0.4`).
+  Live at https://huggingface.co/spaces/Arush1050/musicreccmodel.
+- **Alternatives.** A separate model repo for the bundle (supported via `HOOKSEQ_BUNDLE_REPO`);
+  a CPU Space.
+- **Why.** Free Hugging Face accounts get ZeroGPU hardware, and a 57 MB bundle fits in the
+  Space repo.
+- **Evidence.** Unit tests on a synthetic bundle; the Kaggle export log; an end-to-end check
+  through `gradio_client` (load a sample user, then Recommend). See [docs/hf_space.md](hf_space.md).
+  The new-track tab demonstrates the mechanism only: on the 500M `new_items` slice the model's
+  NDCG@10 is 0.0003.
 - **Cost if wrong.** The demo falls back to CPU.
 
 ### D26. The README is written as a short paper with a decision log

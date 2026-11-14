@@ -94,6 +94,16 @@ strong SASRec, with paired confidence intervals, slices and exposure metrics (§
 resumable, free-tier Kaggle pipeline with every reported number traceable to a run record
 (§11).
 
+**Success criteria of the design spec (§1), and where each is met.**
+
+| # | criterion | status |
+|---|---|---|
+| 1 | Reproduced SASRec within ~15% of the paper's 50M NDCG@10 | Met: 0.0771 vs 0.0748, +3.1% (§6.5) |
+| 2 | HookSeq beats SASRec on NDCG@10 and Recall@100 on at least one size, ideally 500M | Met at both sizes, against the strong SASRec (§7.2) |
+| 3 | An ablation table reported honestly, including additions that do not help | Met: a0–a4 plus a7/a8; audio hurts warm accuracy (§6.6–6.7). The stretch steps a5/a6 were not run |
+| 4 | EDA findings visibly drive preprocessing | Met (§3) |
+| 5 | Tests pass; README with a results table and "Why this matters for Hook"; the Gradio demo runs | Met: 430 tests pass, and the demo is live on Hugging Face Spaces (§12) |
+
 ### Why this matters for Hook
 
 | Hook reality | What HookSeq uses | What we actually found |
@@ -662,17 +672,33 @@ name, the training steps, the step rate and the GPU hours.
 
 ## 12 Demo
 
-**Status: pending, not deployed.** A Gradio app ([src/hookrec/demo/app.py](src/hookrec/demo/app.py))
-has two tabs. The first builds a session (track, event type, organic or served) and shows
-HookSeq's next tracks next to SASRec's, with each track's artist and popularity. The second
-shows the users a new, ID-less track would rank highest for. It is tested on a synthetic bundle
-only. A bundle has not yet been exported from the real checkpoints, and there is no public
-Space, so there is no link or screenshot here. To run it locally from real checkpoints
-([docs/hf_space.md](docs/hf_space.md)):
+**Live:** [huggingface.co/spaces/Arush1050/musicreccmodel](https://huggingface.co/spaces/Arush1050/musicreccmodel)
+(Gradio 6.31.0 on ZeroGPU). We checked it end to end through `gradio_client`: loading a sample
+user and pressing Recommend returns HookSeq's and SASRec's top-k side by side. The Space runs
+the code of the reported runs, tag `v0.1-demo`, which is the same commit as `v0.4`. The bundle
+was exported in a Kaggle CPU notebook from the **500M test checkpoints** of a8 (HookSeq) and
+`sasrec`. It holds a 56,120-item subset of the catalogue and 200 sample users, 57.1 MB in all
+(export log), and it lives in the Space's `bundle/` directory next to `app.py`. There is no
+screenshot or GIF.
+
+The app ([src/hookrec/demo/app.py](src/hookrec/demo/app.py)) has two tabs:
+- **Session → next tracks.** Load a sample user, or build a session of tracks with event type
+  and organic/served flags, then compare HookSeq's top-k with SASRec's side by side. Each
+  recommended track shows its artist and popularity. Editing the event or organic flags shows
+  how HookSeq's typed inputs move its ranking; SASRec reads only full listens.
+- **New-track audience.** Pick a track with no ID (scored from audio and artist only) and see
+  the sample users HookSeq ranks it highest for. This tab **demonstrates the mechanism**, not
+  cold-start accuracy. On the 500M `new_items` slice the same model scores NDCG@10 0.0003 and
+  Recall@100 0.0089 (§7.3, §8).
+
+Track and artist IDs are Yambda's anonymised integers, because the dataset has no titles.
+Recommendations are restricted to the bundle's item subset. To export a bundle and run it
+locally, see [docs/hf_space.md](docs/hf_space.md):
 
 ```bash
 python scripts/export_demo.py --processed PROCESSED_DIR \
-    --hookseq-ckpt ckpt/hookseq/test --sasrec-ckpt ckpt/a0_sasrec/test --out bundle/
+    --hookseq-ckpt ckpt/a8_full_all_ids/test/model_final.pt \
+    --sasrec-ckpt ckpt/sasrec/test/model_final.pt --out bundle/
 pip install -e ".[demo]" && python -m hookrec.demo.app --bundle bundle/
 ```
 

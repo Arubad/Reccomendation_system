@@ -23,7 +23,7 @@ HERE = Path(__file__).resolve().parent
 # Pin HOOKREC_REF to a tag (or full commit SHA), never a moving branch: create the tag with
 # `git tag v0.1-demo && git push origin v0.1-demo` in the code repo, then use that name here.
 HOOKREC_REPO = "git+https://github.com/Arubad/Reccomendation_system.git"
-HOOKREC_REF = "v0.1-demo"  # TODO create this tag (or put a commit SHA) before deploying
+HOOKREC_REF = "v0.1-demo"  # = v0.4 (0f0924c), the code of the reported runs
 
 
 def ensure_hookrec(ref: str = HOOKREC_REF) -> None:

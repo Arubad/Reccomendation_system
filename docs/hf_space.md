@@ -3,6 +3,30 @@
 The demo reads a self-contained bundle (under 200 MB, no processed data needed), so the Space
 only needs the bundle and the `hookrec` package.
 
+## The route actually used (live Space)
+
+The live demo is https://huggingface.co/spaces/Arush1050/musicreccmodel (ZeroGPU, gradio
+6.31.0, code pinned to tag `v0.1-demo` = `v0.4`).
+
+1. **Export on Kaggle, CPU.** Create a CPU notebook. Attach the K2 output (500M) and both K4
+   outputs (the a8 HookSeq run and the `sasrec` run). Clone the repo at the tag, then run:
+
+       python scripts/export_demo.py --processed <k2>/out/processed/500m-<hash> \
+           --hookseq-ckpt <k4-hookseq>/out/ckpt/a8_full_all_ids/test/model_final.pt \
+           --sasrec-ckpt <k4-sasrec>/out/ckpt/sasrec/test/model_final.pt \
+           --out /kaggle/working/bundle
+
+   The 500M export logged "56120 items, 200 sample users, 57.1 MB" (`arrays.npz`, `hookseq.pt`,
+   `sasrec.pt`, `meta.json`).
+2. **Put the bundle in the Space.** Copy it to `bundle/` next to `app.py` in the Space repo and
+   commit it together with `deploy/hf_space/{app.py,requirements.txt,README.md}`. `app.py` loads
+   `bundle/` first, so no `HOOKSEQ_BUNDLE_REPO` variable and no separate model repo are needed.
+
+Steps 2 and 4 of the general route below (a model repo plus `HOOKSEQ_BUNDLE_REPO`) are the
+alternative for bundles too large to keep in the Space repo.
+
+## General route
+
 1. **Export the bundle** from real checkpoints (the `model_final.pt` of the HookSeq and SASRec
    test runs, e.g. from the K4 outputs) and the matching processed dir:
 
