@@ -267,24 +267,21 @@ def _peruser_file(results_dir: Path, rec: dict, name: str, size: str) -> Path:
     return results_dir / fname
 
 
-def _paired_section(evals: list[dict], results_dir: Path, size: str) -> str:
-    """HookSeq vs SASRec paired diffs for one size, against every evaluated baseline of
-    `PAIRED_BASELINES` (`sasrec` first); each needs the same processed_dir as HookSeq.
+# Follow-up controls that get their own paired rows (after the HookSeq stand-in's) whenever
+# their eval record and per-user npz exist for the size: a7 = full model minus audio/artist,
+# a8 = full model with an ID for every item (F5). They separate "content features help" from
+# "the ID-vocab threshold" in the paired comparison.
+EXTRA_PAIRED_RUNS = ("a7_full_no_content", "a8_full_all_ids")
 
-    The HookSeq side is `_hookseq_run`'s choice, named in every row and in a caption line."""
-    header = ["comparison", "metric", "mean diff", "95% CI"]
-    by = {r["run_name"]: r for r in evals if r.get("extra", {}).get("dataset_size") == size}
-    hs = _hookseq_run(by)
-    found = [
-        (n, label, by[f"{n}-test-eval"]) for n, label in PAIRED_BASELINES if f"{n}-test-eval" in by
-    ]
-    if hs is None or not found:
-        return _table(header, [[f"HookSeq vs SASRec: {NOT_RUN}", "-", "-", "-"]])
-    hs_name, why, a_rec = hs
-    a = _peruser_file(results_dir, a_rec, hs_name, size)
+
+def _paired_rows(
+    a_name: str, a_rec: dict, label: str, found: list, results_dir: Path, size: str
+) -> list[list]:
+    """Rows of `a_name` minus each baseline in `found`, labelled `label` in column one."""
+    a = _peruser_file(results_dir, a_rec, a_name, size)
     rows = []
-    for name, label, b_rec in found:
-        base = f"HookSeq ({hs_name}) vs {name} ({label})"
+    for name, base_label, b_rec in found:
+        base = f"{label} vs {name} ({base_label})"
         if a_rec["extra"].get("processed_dir") != b_rec["extra"].get("processed_dir"):
             rows.append([base, "not available (processed_dir mismatch)", "-", "-"])
             continue
@@ -296,8 +293,35 @@ def _paired_section(evals: list[dict], results_dir: Path, size: str) -> str:
                 log.warning("paired diff %s vs %s unavailable: %s", m, name, e)
                 rows.append([base, f"{m}: not available", "-", "-"])
                 continue
-            diff = [f"{m} ({hs_name} - {name})", f"{mean:+.4f}", f"[{lo:+.4f}, {hi:+.4f}]"]
+            diff = [f"{m} ({a_name} - {name})", f"{mean:+.4f}", f"[{lo:+.4f}, {hi:+.4f}]"]
             rows.append([base, *diff])
+    return rows
+
+
+def _paired_section(evals: list[dict], results_dir: Path, size: str) -> str:
+    """HookSeq vs SASRec paired diffs for one size, against every evaluated baseline of
+    `PAIRED_BASELINES` (`sasrec` first); each needs the same processed_dir as HookSeq.
+
+    The HookSeq side is `_hookseq_run`'s choice, named in every row and in a caption line.
+    Each run of `EXTRA_PAIRED_RUNS` other than that choice follows with its own rows, if its
+    eval record and per-user npz exist for `size`."""
+    header = ["comparison", "metric", "mean diff", "95% CI"]
+    by = {r["run_name"]: r for r in evals if r.get("extra", {}).get("dataset_size") == size}
+    hs = _hookseq_run(by)
+    found = [
+        (n, label, by[f"{n}-test-eval"]) for n, label in PAIRED_BASELINES if f"{n}-test-eval" in by
+    ]
+    if hs is None or not found:
+        return _table(header, [[f"HookSeq vs SASRec: {NOT_RUN}", "-", "-", "-"]])
+    hs_name, why, a_rec = hs
+    rows = _paired_rows(hs_name, a_rec, f"HookSeq ({hs_name})", found, results_dir, size)
+    for name in EXTRA_PAIRED_RUNS:
+        rec = by.get(f"{name}-test-eval")
+        if name == hs_name or rec is None:
+            continue
+        if not _peruser_file(results_dir, rec, name, size).is_file():
+            continue
+        rows += _paired_rows(name, rec, name, found, results_dir, size)
     caption = f"_HookSeq = `{hs_name}` ({why})._"
     return caption + "\n\n" + _table(header, rows)
 

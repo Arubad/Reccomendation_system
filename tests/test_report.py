@@ -369,3 +369,49 @@ def test_slice_table_renames_legacy_cold_items_and_footnote(tmp_path):
     _write(res, r, 1)
     text = write_readme_tables(res, tmp_path / "o.md").read_text()
     assert "`new_items`" in text and "`idless_items`" in text
+
+
+# ---- Task 20: paired rows for the follow-up controls a7 / a8 ---------------------------------
+
+
+def test_paired_adds_a7_a8_rows_against_both_baselines(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    # a4 stands in for HookSeq; a7 and a8 get their own paired rows vs sasrec and a0_sasrec
+    _write_cfg(res, _hs_eval("a4_full_dislike", 0.30), 1)
+    _write_cfg(res, _hs_eval("a7_full_no_content", 0.40), 2)
+    _write_cfg(res, _hs_eval("a8_full_all_ids", 0.35), 3)
+    _write_cfg(res, _hs_eval("a0_sasrec", 0.20), 4)
+    _write_cfg(res, _hs_eval("sasrec", 0.25, model="sasrec"), 5)
+    _peruser(res, "a4_full_dislike", "50m", 0.1)
+    _peruser(res, "a7_full_no_content", "50m", 0.3)
+    _peruser(res, "a8_full_all_ids", "50m", 0.2)
+    _peruser(res, "a0_sasrec", "50m", 0.05)
+    _peruser(res, "sasrec", "50m", 0.0)
+    p = _paired(res, tmp_path)
+    assert "_HookSeq = `a4_full_dislike`" in p
+    assert "ndcg@10 (a4_full_dislike - sasrec) | +0.1000" in p
+    assert "| a7_full_no_content vs sasrec (SASRec, Listen+ input" in p
+    assert "ndcg@10 (a7_full_no_content - sasrec) | +0.3000" in p
+    assert "ndcg@10 (a7_full_no_content - a0_sasrec) | +0.2500" in p
+    assert "recall@100 (a8_full_all_ids - sasrec) | +0.2000" in p
+    assert "ndcg@10 (a8_full_all_ids - a0_sasrec) | +0.1500" in p
+    # HookSeq rows first, then a7, then a8
+    assert p.index("(a4_full_dislike - sasrec)") < p.index("(a7_full_no_content - sasrec)")
+    assert p.index("(a7_full_no_content - sasrec)") < p.index("(a8_full_all_ids - sasrec)")
+
+
+def test_paired_extra_rows_skip_missing_npz_and_chosen_run(tmp_path):
+    res = tmp_path / "results"
+    res.mkdir()
+    # only a8 and a7 at this size: a8 (best) stands in for HookSeq and is not repeated as an
+    # extra row; a7 has an eval record but no per-user npz, so it gets no rows at all
+    _write_cfg(res, _hs_eval("a8_full_all_ids", 0.35), 1)
+    _write_cfg(res, _hs_eval("a7_full_no_content", 0.30), 2)
+    _write_cfg(res, _hs_eval("sasrec", 0.25, model="sasrec"), 3)
+    _peruser(res, "a8_full_all_ids", "50m", 0.2)
+    _peruser(res, "sasrec", "50m", 0.0)
+    p = _paired(res, tmp_path)
+    assert "_HookSeq = `a8_full_all_ids`" in p
+    assert p.count("ndcg@10 (a8_full_all_ids - sasrec)") == 1
+    assert "a7_full_no_content" not in p
