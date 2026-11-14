@@ -20,7 +20,7 @@ tag; until it exists, `git clone -b v0.4` fails fast in the install cell. For a 
 release, regenerate with the new tag:
 
 ```
-.venv/bin/python scripts/make_notebooks.py --git-ref v0.3-r2
+.venv/bin/python scripts/make_notebooks.py --git-ref v0.5
 ```
 
 To point them at another repo, tag or branch (for example `hookseq-impl` for a quick
@@ -248,6 +248,14 @@ take one K4 output for all of them.
 
 At 500M keep the list to at most 2 configs per notebook (disk, section 4).
 
+**500M HookSeq needs a smaller eval batch.** The reported 500M HookSeq run (a8) used
+`OVERRIDES = ["train.eval_batch_size=256"]`. With the default 1024, its first periodic eval
+(step 500) ran out of CUDA memory on the T4 (14.56 GiB): the process already held 11.47 GiB
+(training state plus scoring buffers) when the tie check of the chunked top-k merge asked for
+3.82 GiB more. The key is
+operational (not in `training_hash`), so it changes no result and a resumed run may set it.
+The 500M `sasrec` run and K5's 500M scoring (no training state on the GPU) ran at 1024.
+
 **Alternative: one notebook per config.** Import `k4_train.ipynb` again, name it after the
 config (for example `k4_hookseq`) and set `CONFIGS` to that one file. Each config then has its
 own version history and resume chain.
@@ -259,16 +267,23 @@ use `extra.gpu_hours` in the run JSON, or the version's run time.
 
 | Runs | Size | Est. GPU-h | Logged actual hours |
 |---|---|---|---|
-| SASRec reproduction + 1-2 debug runs | 50M | ~2 | |
-| Ablation ladder (about 5 configs x ~0.5 h) | 50M | ~3 | |
-| Small hyperparameter sweep on the best config (about 4 runs) | 50M | ~2 | |
-| SASRec baseline | 500M | ~4-5 | |
-| Full HookSeq | 500M | ~5-6 | |
-| Scoring / eval | both | ~1-2 | |
-| **Total** | | **~17-20** | |
+| SASRec reproduction + 1-2 debug runs | 50M | ~2 | 0.62: `sasrec` 0.41 (val 0.28 + test 0.14), `sasrec_bce` 0.21 (0.10 + 0.10) |
+| Ablation ladder (about 5 configs x ~0.5 h) | 50M | ~3 | 3.58: a0 1.04, a1 0.70, a2 0.62, a3 0.49, a4 0.72 (one session, 3.63 h wall) |
+| Small hyperparameter sweep on the best config (about 4 runs) | 50M | ~2 | not run; the budget went to the follow-ups a7 0.92 and a8 0.90 (1.83, one session) |
+| SASRec baseline | 500M | ~4-5 | 5.08 (val 3.04 + test 2.04; session 5.14 h wall) |
+| Full HookSeq | 500M | ~5-6 | 3.15 for a8 (val 1.94 + test 1.22; session 3.22 h wall), plus a failed first version (CUDA OOM at the first eval, session 0.12 h wall) |
+| Scoring / eval | both | ~1-2 | 0.38 (K5 500M session wall; K5 50M ran on CPU) |
+| **Total** | | **~17-20** | **about 14.8**: 14.26 in the training records' `extra.gpu_hours` plus the two session walls above |
+
+Sources: `extra.gpu_hours` in `results/*-{val,test}-*.json` (rounded per run), and the Kaggle
+version logs for session wall times. Not counted, because their records were superseded and are
+not in `results/`: the first 50M `sasrec` run at v0.2-r2 (before the loss rewrite of v0.3) and
+the two K4P profiling sessions.
 
 Recalibrate after the first 50M run: `steps_per_sec` and `wall_time_s` are in every training
-record. If a 500M run exceeds a session, it chains through the resume procedure above.
+record. If a 500M run exceeds a session, it chains through the resume procedure above. Measured
+step rates on a T4: 50M HookSeq-path runs 7.0-9.4 steps/s, 50M `sasrec` 6.0, 500M a8 3.3 (val)
+and 4.6 (test), 500M `sasrec` 3.3 (val) and 4.5 (test); the val passes include periodic evals.
 
 ## 7. Notes
 
