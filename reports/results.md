@@ -4,6 +4,7 @@
 
 | model | ndcg@10 | ndcg@100 | recall@10 | recall@100 | recall_paper@10 | recall_paper@100 | coverage@10 |
 |---|---|---|---|---|---|---|---|
+| a7_full_no_content | 0.1009 | 0.1324 | 0.0982 | 0.1921 | 0.0592 | 0.1905 | 0.0207 |
 | a8_full_all_ids | 0.1009 | 0.1322 | 0.0980 | 0.1909 | 0.0591 | 0.1892 | 0.0236 |
 | decaypop | 0.0263 | 0.0365 | 0.0276 | 0.0587 | 0.0150 | 0.0582 | 0.0000 |
 | ials | 0.0392 | 0.0677 | 0.0401 | 0.1136 | 0.0181 | 0.1123 | 0.0052 |
@@ -15,6 +16,8 @@
 | iALS (paper) | 0.0384 | 0.0621 | - | - | 0.0131 | 0.0811 | 0.0022 |
 | BPR (paper) | 0.0400 | 0.0652 | - | - | 0.0137 | 0.0861 | 0.0244 |
 | SASRec (paper) | 0.0754 | 0.0884 | - | - | 0.0336 | 0.1240 | 0.0347 |
+
+_Seed replicates (`<run>_sN`) are summarized below, not listed here._
 
 _Recall definitions._ `recall@k` is the official Yambda definition: hits@k / min(|T|, k) (benchmarks/yambda/evaluation/metrics.py, after the bug-fix commit "Fix yet another bug in metrics (#24)", whose leftover comment suggests the denominator used to be |T|). `recall_paper@k` is hits@k / |T|. The paper's Recall column is much closer to hits/|T| than to min(|T|, k), though not equal to it: our NDCG@10 agrees with the paper within 7%, our min(|T|, k) recall is 2.0-3.1x the paper's at k=10 (1.12-1.46x at k=100), and hits/|T| is 12-38% above it. So paper rows are shown under `recall_paper@k` and their `recall@k` is left as "-"; compare paper Recall against `recall_paper@k` only. Older run records without `recall_paper@k` show "-".
 
@@ -48,6 +51,7 @@ _Recall definitions._ `recall@k` is the official Yambda definition: hits@k / min
 
 | run | ndcg@10 | d ndcg@10 | recall@100 | d recall@100 |
 |---|---|---|---|---|
+| a7_full_no_content | 0.1009 | n/a | 0.1921 | n/a |
 | a8_full_all_ids | 0.1009 | n/a | 0.1909 | n/a |
 
 ## Ablations (50m)
@@ -139,6 +143,81 @@ _Slices._ `organic` / `served`: truth items with an organic / recommender-served
 | users_low | 15307 | 0.0877 | 0.0887 | 0.1197 | 0.1834 | 0.0244 |
 | users_mid | 15307 | 0.0754 | 0.0719 | 0.0976 | 0.1387 | 0.0258 |
 | users_high | 15307 | 0.0764 | 0.0700 | 0.0843 | 0.1058 | 0.0258 |
+| cold users (n=8) | - | 0.0984 | 0.0875 | 0.0959 | 0.1134 | 0.0000 |
+
+### a7_full_no_content-test (500m)
+
+| slice | users | ndcg@10 | recall@10 | ndcg@100 | recall@100 | coverage@10 (within slice) |
+|---|---|---|---|---|---|---|
+| all | 45921 | 0.1009 | 0.0982 | 0.1324 | 0.1921 | 0.0207 |
+| organic | 31907 | 0.1244 | 0.1237 | 0.1630 | 0.2442 | 0.0179 |
+| served | 28491 | 0.0331 | 0.0355 | 0.0633 | 0.1132 | 0.0152 |
+| idless_items | 4852 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0084 |
+| new_items | 2006 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0044 |
+| warm_items | 45765 | 0.1015 | 0.0991 | 0.1336 | 0.1944 | 0.0206 |
+| users_low | 15307 | 0.1100 | 0.1117 | 0.1561 | 0.2450 | 0.0113 |
+| users_mid | 15307 | 0.0942 | 0.0909 | 0.1277 | 0.1867 | 0.0118 |
+| users_high | 15307 | 0.0985 | 0.0921 | 0.1133 | 0.1447 | 0.0123 |
+| cold users (n=8) | - | 0.1250 | 0.1250 | 0.1457 | 0.1732 | 0.0000 |
+
+### a8_full_all_ids_s2-test (500m)
+
+| slice | users | ndcg@10 | recall@10 | ndcg@100 | recall@100 | coverage@10 (within slice) |
+|---|---|---|---|---|---|---|
+| all | 45921 | 0.0996 | 0.0970 | 0.1305 | 0.1888 | 0.0222 |
+| organic | 31907 | 0.1222 | 0.1214 | 0.1604 | 0.2396 | 0.0193 |
+| served | 28491 | 0.0332 | 0.0359 | 0.0627 | 0.1122 | 0.0159 |
+| idless_items | 4852 | 0.0128 | 0.0164 | 0.0170 | 0.0311 | 0.0088 |
+| new_items | 2006 | 0.0003 | 0.0005 | 0.0022 | 0.0080 | 0.0045 |
+| warm_items | 45765 | 0.0995 | 0.0971 | 0.1309 | 0.1901 | 0.0220 |
+| users_low | 15307 | 0.1072 | 0.1088 | 0.1527 | 0.2389 | 0.0121 |
+| users_mid | 15307 | 0.0927 | 0.0895 | 0.1258 | 0.1838 | 0.0124 |
+| users_high | 15307 | 0.0988 | 0.0926 | 0.1129 | 0.1437 | 0.0126 |
+| cold users (n=8) | - | 0.0445 | 0.1250 | 0.0661 | 0.1789 | 0.0000 |
+
+### a8_full_all_ids_s3-test (500m)
+
+| slice | users | ndcg@10 | recall@10 | ndcg@100 | recall@100 | coverage@10 (within slice) |
+|---|---|---|---|---|---|---|
+| all | 45921 | 0.1028 | 0.0994 | 0.1339 | 0.1929 | 0.0237 |
+| organic | 31907 | 0.1262 | 0.1245 | 0.1652 | 0.2455 | 0.0204 |
+| served | 28491 | 0.0344 | 0.0369 | 0.0637 | 0.1130 | 0.0170 |
+| idless_items | 4852 | 0.0142 | 0.0187 | 0.0185 | 0.0349 | 0.0092 |
+| new_items | 2006 | 0.0004 | 0.0010 | 0.0025 | 0.0101 | 0.0046 |
+| warm_items | 45765 | 0.1026 | 0.0994 | 0.1343 | 0.1942 | 0.0235 |
+| users_low | 15307 | 0.1108 | 0.1118 | 0.1570 | 0.2444 | 0.0125 |
+| users_mid | 15307 | 0.0965 | 0.0922 | 0.1296 | 0.1882 | 0.0130 |
+| users_high | 15307 | 0.1010 | 0.0941 | 0.1150 | 0.1460 | 0.0134 |
+| cold users (n=8) | - | 0.1353 | 0.1429 | 0.1550 | 0.1848 | 0.0000 |
+
+### sasrec_s2-test (500m)
+
+| slice | users | ndcg@10 | recall@10 | ndcg@100 | recall@100 | coverage@10 (within slice) |
+|---|---|---|---|---|---|---|
+| all | 45921 | 0.0808 | 0.0776 | 0.1014 | 0.1438 | 0.0479 |
+| organic | 31907 | 0.1056 | 0.1036 | 0.1326 | 0.1933 | 0.0398 |
+| served | 28491 | 0.0194 | 0.0211 | 0.0386 | 0.0699 | 0.0348 |
+| idless_items | 4852 | 0.0271 | 0.0348 | 0.0306 | 0.0506 | 0.0131 |
+| new_items | 2006 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0060 |
+| warm_items | 45765 | 0.0800 | 0.0771 | 0.1013 | 0.1446 | 0.0477 |
+| users_low | 15307 | 0.0881 | 0.0893 | 0.1209 | 0.1862 | 0.0238 |
+| users_mid | 15307 | 0.0764 | 0.0729 | 0.0982 | 0.1397 | 0.0253 |
+| users_high | 15307 | 0.0777 | 0.0705 | 0.0852 | 0.1055 | 0.0254 |
+| cold users (n=8) | - | 0.0984 | 0.0875 | 0.0959 | 0.1134 | 0.0000 |
+
+### sasrec_s3-test (500m)
+
+| slice | users | ndcg@10 | recall@10 | ndcg@100 | recall@100 | coverage@10 (within slice) |
+|---|---|---|---|---|---|---|
+| all | 45921 | 0.0805 | 0.0777 | 0.1011 | 0.1433 | 0.0479 |
+| organic | 31907 | 0.1050 | 0.1036 | 0.1321 | 0.1932 | 0.0399 |
+| served | 28491 | 0.0197 | 0.0213 | 0.0387 | 0.0694 | 0.0349 |
+| idless_items | 4852 | 0.0285 | 0.0370 | 0.0316 | 0.0511 | 0.0131 |
+| new_items | 2006 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0060 |
+| warm_items | 45765 | 0.0797 | 0.0773 | 0.1010 | 0.1441 | 0.0477 |
+| users_low | 15307 | 0.0877 | 0.0896 | 0.1201 | 0.1847 | 0.0239 |
+| users_mid | 15307 | 0.0768 | 0.0726 | 0.0984 | 0.1394 | 0.0254 |
+| users_high | 15307 | 0.0771 | 0.0710 | 0.0849 | 0.1058 | 0.0254 |
 | cold users (n=8) | - | 0.0984 | 0.0875 | 0.0959 | 0.1134 | 0.0000 |
 
 ### a0_sasrec-test (50m)
@@ -332,6 +411,11 @@ _Slices._ `organic` / `served`: truth items with an organic / recommender-served
 | ials-test | 0.9976 | 0.0127 | 0.0000 | 0.9970 | 0.0211 | 0.0000 | 0.0393 [0.0384, 0.0402] | 0.1135 [0.1119, 0.1150] |
 | mostpop-test | 1.0000 | 0.0000 | 0.0000 | 0.9999 | 0.0002 | 0.0000 | 0.0161 [0.0156, 0.0167] | 0.0349 [0.0341, 0.0357] |
 | sasrec-test | 0.9845 | 0.0686 | 0.0416 | 0.9836 | 0.1131 | 0.0250 | 0.0798 [0.0784, 0.0814] | 0.1426 [0.1407, 0.1447] |
+| a7_full_no_content-test | 0.9934 | 0.0349 | 0.0066 | 0.9923 | 0.0644 | 0.0040 | 0.1009 [0.0991, 0.1025] | 0.1921 [0.1900, 0.1945] |
+| a8_full_all_ids_s2-test | 0.9929 | 0.0379 | 0.0156 | 0.9916 | 0.0821 | 0.0160 | 0.0996 [0.0979, 0.1012] | 0.1888 [0.1865, 0.1911] |
+| a8_full_all_ids_s3-test | 0.9928 | 0.0396 | 0.0168 | 0.9917 | 0.0840 | 0.0163 | 0.1028 [0.1010, 0.1044] | 0.1929 [0.1906, 0.1952] |
+| sasrec_s2-test | 0.9847 | 0.0682 | 0.0410 | 0.9835 | 0.1142 | 0.0260 | 0.0808 [0.0794, 0.0823] | 0.1438 [0.1419, 0.1458] |
+| sasrec_s3-test | 0.9847 | 0.0682 | 0.0404 | 0.9837 | 0.1135 | 0.0259 | 0.0805 [0.0791, 0.0821] | 0.1433 [0.1414, 0.1454] |
 
 ### 50m
 
@@ -354,12 +438,14 @@ _Slices._ `organic` / `served`: truth items with an organic / recommender-served
 
 ### 500m
 
-_HookSeq = `a8_full_all_ids` (the only HookSeq-model run at this size)._
+_HookSeq = `a8_full_all_ids` (no hookseq or a4_full_dislike run; best test ndcg@10 among HookSeq-model runs)._
 
 | comparison | metric | mean diff | 95% CI |
 |---|---|---|---|
 | HookSeq (a8_full_all_ids) vs sasrec (strong SASRec, Listen+ input) | ndcg@10 (a8_full_all_ids - sasrec) | +0.0211 | [+0.0198, +0.0223] |
 | HookSeq (a8_full_all_ids) vs sasrec (strong SASRec, Listen+ input) | recall@100 (a8_full_all_ids - sasrec) | +0.0483 | [+0.0467, +0.0499] |
+| a7_full_no_content vs sasrec (strong SASRec, Listen+ input) | ndcg@10 (a7_full_no_content - sasrec) | +0.0210 | [+0.0197, +0.0223] |
+| a7_full_no_content vs sasrec (strong SASRec, Listen+ input) | recall@100 (a7_full_no_content - sasrec) | +0.0495 | [+0.0480, +0.0511] |
 
 ### 50m
 
@@ -379,3 +465,27 @@ _HookSeq = `a4_full_dislike` (no run named hookseq; a4_full_dislike's config equ
 | a8_full_all_ids vs sasrec (strong SASRec, Listen+ input) | recall@100 (a8_full_all_ids - sasrec) | +0.0494 | [+0.0446, +0.0546] |
 | a8_full_all_ids vs a0_sasrec (a0 control, same code path) | ndcg@10 (a8_full_all_ids - a0_sasrec) | +0.0110 | [+0.0075, +0.0144] |
 | a8_full_all_ids vs a0_sasrec (a0 control, same code path) | recall@100 (a8_full_all_ids - a0_sasrec) | +0.0222 | [+0.0173, +0.0269] |
+
+## Seed replicates
+
+### 500m
+
+_Replicate 1 is the un-suffixed run (`train.seed: 42`); `<base>_sN` is replicate N. Values come from the eval records (`-test-eval`: metrics, and `long_tail_share@10` from the fairness block), falling back to the training test records when a run has no eval record (the headline table above uses the training test records). Cells are mean ± sample std, then the per-seed values in seed order._
+
+| base | n seeds | ndcg@10 | recall@100 | coverage@10 | long_tail_share@10 |
+|---|---|---|---|---|---|
+| a8_full_all_ids | 3 | 0.1011 ± 0.0016 (0.1009, 0.0996, 0.1028) | 0.1908 ± 0.0020 (0.1909, 0.1888, 0.1929) | 0.0231 ± 0.0008 (0.0236, 0.0222, 0.0237) | 0.0165 ± 0.0008 (0.0170, 0.0156, 0.0168) |
+| sasrec | 3 | 0.0804 ± 0.0005 (0.0798, 0.0808, 0.0805) | 0.1433 ± 0.0006 (0.1426, 0.1438, 0.1433) | 0.0482 ± 0.0005 (0.0488, 0.0479, 0.0479) | 0.0410 ± 0.0006 (0.0416, 0.0410, 0.0404) |
+
+_Paired by seed: same seed N on both sides, per-user diffs over shared users._
+
+| comparison | seed | metric | mean diff (summary: mean ± std) | 95% CI |
+|---|---|---|---|---|
+| a8_full_all_ids - sasrec | seed 1 | ndcg@10 | +0.0211 | [+0.0198, +0.0223] |
+| a8_full_all_ids - sasrec | seed 1 | recall@100 | +0.0483 | [+0.0467, +0.0499] |
+| a8_full_all_ids - sasrec | seed 2 | ndcg@10 | +0.0188 | [+0.0176, +0.0201] |
+| a8_full_all_ids - sasrec | seed 2 | recall@100 | +0.0450 | [+0.0434, +0.0465] |
+| a8_full_all_ids - sasrec | seed 3 | ndcg@10 | +0.0222 | [+0.0209, +0.0235] |
+| a8_full_all_ids - sasrec | seed 3 | recall@100 | +0.0495 | [+0.0480, +0.0511] |
+| a8_full_all_ids - sasrec | summary | ndcg@10 | +0.0207 ± 0.0017 (n=3) | min lo / max hi [+0.0176, +0.0235] |
+| a8_full_all_ids - sasrec | summary | recall@100 | +0.0476 ± 0.0023 (n=3) | min lo / max hi [+0.0434, +0.0511] |
