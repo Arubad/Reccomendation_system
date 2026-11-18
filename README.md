@@ -13,17 +13,21 @@ first reproduce the paper's SASRec on Yambda-50M within 3.1% of its NDCG@10 (0.0
 0.0748), then build a stronger SASRec baseline (0.0970) and measure HookSeq against that. On
 Yambda-500M, HookSeq reaches NDCG@10 0.1009 against 0.0798 for our SASRec and 0.0754 for the
 paper's. The paired per-user difference is +0.0211 (95% CI [+0.0198, +0.0223]) and Recall@100
-improves by +0.0483 [+0.0467, +0.0499]. The ablations do not support the motivating story,
+improves by +0.0483 [+0.0467, +0.0499]. The result holds over three training seeds: 0.1011 ±
+0.0016 against 0.0804 ± 0.0005, with a seed-paired difference of +0.0188 to +0.0222 and every
+95% CI above zero. The ablations do not support the motivating story,
 and we report them as they are. Audio and artist features *lower* warm accuracy at 50M
 (−0.0107 NDCG@10). Most of the gain comes from two sources. The first is logQ correction
 (+0.0149 at 50M). The second is the training setup of the ablation base: all events as
 context, random windows, a ≥ 5-positive ID table and ID dropout. That setup is +0.0104 over
 our SASRec, but the comparison is unpaired and the four changes are confounded. The
 event-type, organic and played-ratio tokens add +0.0035, and the best 50M model has no content
-features at all. Content features give non-zero but very
+features at all. At 500M that model (a7) ties a8 on warm accuracy (paired ΔNDCG@10 −0.0001
+[−0.0009, +0.0009]). Content features give non-zero but very
 small scores on never-seen tracks: NDCG@10 0.0003 and Recall@100 0.0089 at 500M, against
 exactly 0 for every ID-only model. HookSeq also concentrates artist exposure more than SASRec
-does. Everything ran on Kaggle's free tier, about 14.8 GPU-hours for the reported runs.
+does. Everything ran on Kaggle's free tier: about 14.8 GPU-hours for the original runs and
+18.8 for the 500M seed replicates and the a7 control (§6.10).
 
 **Contents.** [1 Introduction](#1-introduction-and-motivation) ·
 [2 Related work](#2-related-work) · [3 Data and EDA](#3-data-and-eda) ·
@@ -34,7 +38,7 @@ does. Everything ran on Kaggle's free tier, about 14.8 GPU-hours for the reporte
 [12 Demo](#12-demo) · [13 Future work](#13-future-work) · [References](#references)
 
 Companion documents: the full generated results in [reports/results.md](reports/results.md),
-the decision log in [docs/decisions.md](docs/decisions.md) (cited below as D1–D26), the EDA
+the decision log in [docs/decisions.md](docs/decisions.md) (cited below as D1–D27), the EDA
 write-up in [reports/eda_summary.md](reports/eda_summary.md), the run procedure in
 [docs/kaggle_runbook.md](docs/kaggle_runbook.md), and the original design spec in
 [docs/superpowers/specs/2026-11-12-hookseq-design.md](docs/superpowers/specs/2026-11-12-hookseq-design.md).
@@ -56,7 +60,10 @@ write-up in [reports/eda_summary.md](reports/eda_summary.md), the run procedure 
 | MostPop (paper) | 0.0173 | 0.0237 | – | – | 0.0060 | 0.0309 | 0.0000 |
 
 HookSeq − SASRec, paired bootstrap over users: **NDCG@10 +0.0211 [+0.0198, +0.0223]**,
-**Recall@100 +0.0483 [+0.0467, +0.0499]**. `Recall@k` is the official Yambda definition,
+**Recall@100 +0.0483 [+0.0467, +0.0499]**. Over three training seeds per model (§6.9):
+HookSeq 0.1011 ± 0.0016 and SASRec 0.0804 ± 0.0005 NDCG@10, and the seed-paired difference is
++0.0207 ± 0.0017 NDCG@10 and +0.0476 ± 0.0023 Recall@100, with every per-seed CI above zero.
+The table shows seed 42. `Recall@k` is the official Yambda definition,
 hits@k / min(|T|, k). The paper's Recall column corresponds to `Recall_paper@k` = hits@k / |T|
 (§4, D6), so compare paper recall against that column only. Paper rows are from the Yambda
 paper's Table 6 [1]. Source: [reports/results.md](reports/results.md), generated from
@@ -103,10 +110,10 @@ resumable, free-tier Kaggle pipeline with every reported number traceable to a r
 | # | criterion | status |
 |---|---|---|
 | 1 | Reproduced SASRec within ~15% of the paper's 50M NDCG@10 | Met: 0.0771 vs 0.0748, +3.1% (§6.5) |
-| 2 | HookSeq beats SASRec on NDCG@10 and Recall@100 on at least one size, ideally 500M | Met at both sizes, against the strong SASRec (§7.2) |
+| 2 | HookSeq beats SASRec on NDCG@10 and Recall@100 on at least one size, ideally 500M | Met at both sizes, against the strong SASRec (§7.2); at 500M on all three training seeds (§6.9) |
 | 3 | An ablation table reported honestly, including additions that do not help | Met: a0–a4 plus a7/a8; audio hurts warm accuracy (§6.6–6.7). The stretch steps a5/a6 were not run |
 | 4 | EDA findings visibly drive preprocessing | Met (§3) |
-| 5 | Tests pass; README with a results table and "Why this matters for Hook"; the Gradio demo runs | Met: 432 tests pass, and the demo is live on Hugging Face Spaces (§12) |
+| 5 | Tests pass; README with a results table and "Why this matters for Hook"; the Gradio demo runs | Met: 438 tests pass, and the demo is live on Hugging Face Spaces (§12) |
 
 ### Why this matters for Hook
 
@@ -214,7 +221,8 @@ it disagrees with the paper text, we follow the code (D2, D6).
   which is the share of recommendations outside the top 20% of items by train popularity.
 - **Statistics.** A bootstrap over users (1,000 resamples, 95% percentile interval) for each
   run, and a paired bootstrap of per-user differences for HookSeq vs SASRec (D21). Training
-  randomness (one seed per configuration) is not covered (§9).
+  randomness is covered only for the 500M headline pair, which has three seeds per model and a
+  seed-paired comparison (§6.9). Every other configuration has one seed (§9).
 - **Model selection.** Every neural model except `sasrec_bce` is early-stopped on validation
   NDCG@10 and refit on the full training period for the selected number of steps (D9).
   `sasrec_bce` trains a fixed 3,500 steps in both passes, as the official recipe does. Baselines pick their
@@ -458,7 +466,36 @@ Recall@100 on `new_items` (2,006 users), and `sasrec` beats a8 on `idless_items`
 content path at 500M is near-useless for never-seen tracks. **[hypotheses]** §8. (e) We report
 it as it is, and note it as the first item of future work.
 
-### 6.9 Compute used
+### 6.9 500M follow-ups: seed replicates and the a7 control (K4 + K5)
+
+(a) §6.8 left two questions open. Does the single-seed 500M margin survive training
+randomness? And does a7, which drops content and was best at 50M, still lead at 500M? We
+trained two more seeds of both `sasrec` and a8 (`train.seed` 1 and 2, `configs/seeds/`), plus
+a7, at tag v0.5. Its training code is identical to v0.4. The seeds went to the headline pair
+rather than the 50M ladder (D27). A final K5 session then re-scored every 500M run at v0.6.
+(b) We expected the seed spread to be far smaller than the +0.021 margin, and a7 to edge out a8
+on warm items as it did at 50M. (c) All six runs completed on the first attempt, with the
+evaluation batch of 256 from D20. (d) **[evidence]** Seeds (test day; seed 42 is the run in the
+headline table):
+
+| | NDCG@10 per seed (42 / 1 / 2) | NDCG@10 mean ± std | Recall@100 mean ± std |
+|---|---|---|---|
+| HookSeq (a8) | 0.1009 / 0.0996 / 0.1028 | 0.1011 ± 0.0016 | 0.1908 ± 0.0020 |
+| SASRec (strong) | 0.0798 / 0.0808 / 0.0805 | 0.0804 ± 0.0005 | 0.1433 ± 0.0006 |
+| a8 − sasrec, paired by seed | +0.0211 / +0.0188 / +0.0222 | +0.0207 ± 0.0017 | +0.0476 ± 0.0023 |
+
+The lowest per-seed lower bound is +0.0176 for NDCG@10 and +0.0434 for Recall@100, and the
+seed spread of the difference is about 8% of the difference itself. a7 at 500M: val 0.1031
+(above a8's 0.1018), test NDCG@10 **0.1009**, Recall@100 0.1921. Against a8 (seed 42, paired)
+it gives ΔNDCG@10 −0.0001 [−0.0009, +0.0009] and ΔRecall@100 +0.0013 [+0.0001, +0.0024]. a7
+scores exactly 0 on `idless_items` and `new_items`, against 0.0139 and 0.0003 for a8, and its
+exposure is narrower (long-tail share@10 0.0066 vs 0.0170, Coverage@10 0.0207 vs 0.0236).
+(e) The headline result does not depend on the training seed. At 500M, removing content
+together with the full ID table neither helps nor hurts warm users; the a7 − a8 difference is
+a tie at one seed. a7 and a8 differ in both content and ID table, as at 50M, so the two factors
+remain unseparated. a8 stays the HookSeq row because it can score tracks that a7 cannot.
+
+### 6.10 Compute used
 
 | stage | GPU-h (from `extra.gpu_hours`) |
 |---|---|
@@ -467,8 +504,14 @@ it as it is, and note it as the first item of future work.
 | 50M a7 + a8 | 1.83 |
 | 500M `sasrec` | 5.08 |
 | 500M a8 | 3.15 (+ 0.12 h of session for the out-of-memory attempt) |
-| 500M scoring (K5) | 0.38 (session wall time) |
-| **total** | **≈ 14.8** of a planned 20 |
+| 500M scoring (K5, first pass) | 0.38 (session wall time) |
+| **subtotal, original plan** | **≈ 14.8** of a planned 20 |
+| 500M a7 | 3.28 (val 2.07 + test 1.21) |
+| 500M `sasrec` seeds 1, 2 | 4.37 + 4.70 |
+| 500M a8 seeds 1, 2 | 2.29 + 3.73 |
+| 500M final scoring (K5, v0.6) | 0.46 (session wall time) |
+| **subtotal, follow-ups (§6.9)** | **≈ 18.8** |
+| **total** | **≈ 33.6** |
 
 The superseded first SASRec run and two profiling sessions are not counted, because their
 records are not kept. Per-run details are in [docs/kaggle_runbook.md §6](docs/kaggle_runbook.md#6-gpu-budget-spec-section-9a).
@@ -509,23 +552,31 @@ metric. That can flip a fourth decimal, as in a3 (0.1151 vs 0.1152) and 500M iAL
 | 50M | a4 − a0 | +0.0089 [+0.0052, +0.0127] | +0.0178 [+0.0129, +0.0228] |
 | 50M | a7 − a0 | +0.0133 [+0.0099, +0.0167] | +0.0261 [+0.0216, +0.0305] |
 | 50M | a8 − a0 | +0.0110 [+0.0075, +0.0144] | +0.0222 [+0.0173, +0.0269] |
+| 500M | a8 − sasrec, seed 1 | +0.0188 [+0.0176, +0.0201] | +0.0450 [+0.0434, +0.0465] |
+| 500M | a8 − sasrec, seed 2 | +0.0222 [+0.0209, +0.0235] | +0.0495 [+0.0480, +0.0511] |
+| 500M | a7 − sasrec | +0.0210 [+0.0197, +0.0223] | +0.0495 [+0.0480, +0.0511] |
+| 500M | a7 − a8 | −0.0001 [−0.0009, +0.0009] | +0.0013 [+0.0001, +0.0024] |
 
-At 500M no HookSeq variant other than a8 was trained, so there is no 500M ablation.
+The first 500M row and the a7 rows use seed 42. The seed rows pair runs with the same seed.
+At 500M the only HookSeq variants are a8 (three seeds) and a7 (one seed), so there is no 500M
+ablation ladder. reports/results.md pairs every model against `sasrec` only. The a7 − a8 row
+comes from `hookrec.eval.report.paired_diff_ci` on those runs' per-user files, with the same
+bootstrap settings.
 
 ### 7.3 Slices (NDCG@10; Recall@100 for `new_items`)
 
-| slice | 500M a8 | 500M sasrec | 50M a4 | 50M a7 | 50M a8 | 50M sasrec |
-|---|---|---|---|---|---|---|
-| all | 0.1009 | 0.0798 | 0.1163 | 0.1207 | 0.1184 | 0.0970 |
-| organic truth | 0.1239 | 0.1046 | 0.1479 | 0.1578 | 0.1541 | 0.1317 |
-| served truth | 0.0336 | 0.0189 | 0.0281 | 0.0252 | 0.0258 | 0.0142 |
-| warm_items | 0.1007 | 0.0791 | 0.1163 | 0.1221 | 0.1178 | 0.0960 |
-| idless_items | 0.0139 | **0.0273** | 0.0066 | 0 | 0.0146 | **0.0184** |
-| new_items NDCG@10 | 0.0003 | 0 | 0.0039 | 0 | 0.0012 | 0 |
-| new_items Recall@100 | 0.0089 | 0 | 0.0312 | 0 | 0.0188 | 0 |
-| users, low activity | 0.1089 | 0.0877 | 0.1271 | 0.1352 | 0.1344 | 0.1095 |
-| users, mid activity | 0.0952 | 0.0754 | 0.1121 | 0.1113 | 0.1081 | 0.0908 |
-| users, high activity | 0.0987 | 0.0764 | 0.1096 | 0.1155 | 0.1128 | 0.0908 |
+| slice | 500M a8 | 500M a7 | 500M sasrec | 50M a4 | 50M a7 | 50M a8 | 50M sasrec |
+|---|---|---|---|---|---|---|---|
+| all | 0.1009 | 0.1009 | 0.0798 | 0.1163 | 0.1207 | 0.1184 | 0.0970 |
+| organic truth | 0.1239 | 0.1244 | 0.1046 | 0.1479 | 0.1578 | 0.1541 | 0.1317 |
+| served truth | 0.0336 | 0.0331 | 0.0189 | 0.0281 | 0.0252 | 0.0258 | 0.0142 |
+| warm_items | 0.1007 | 0.1015 | 0.0791 | 0.1163 | 0.1221 | 0.1178 | 0.0960 |
+| idless_items | 0.0139 | 0 | **0.0273** | 0.0066 | 0 | 0.0146 | **0.0184** |
+| new_items NDCG@10 | 0.0003 | 0 | 0 | 0.0039 | 0 | 0.0012 | 0 |
+| new_items Recall@100 | 0.0089 | 0 | 0 | 0.0312 | 0 | 0.0188 | 0 |
+| users, low activity | 0.1089 | 0.1100 | 0.0877 | 0.1271 | 0.1352 | 0.1344 | 0.1095 |
+| users, mid activity | 0.0952 | 0.0942 | 0.0754 | 0.1121 | 0.1113 | 0.1081 | 0.0908 |
+| users, high activity | 0.0987 | 0.0985 | 0.0764 | 0.1096 | 0.1155 | 0.1128 | 0.0908 |
 
 Slice users at 500M: organic 31,907, served 28,491, idless 4,852, new 2,006. At 50M: organic
 3,236, served 2,858, idless 1,270, new 475. HookSeq leads SASRec in every activity tercile. Its
@@ -540,6 +591,7 @@ flag.
 | run | artist Gini@10 | artist coverage@10 | long-tail share@10 | Coverage@10 |
 |---|---|---|---|---|
 | 500M a8 | 0.9927 | 0.0394 | 0.0170 | 0.0236 |
+| 500M a7 | 0.9934 | 0.0349 | 0.0066 | 0.0207 |
 | 500M sasrec | 0.9845 | 0.0686 | 0.0416 | 0.0488 |
 | 500M iALS | 0.9976 | 0.0127 | 0.0000 | 0.0052 |
 | 50M a0 | 0.9723 | 0.0700 | 0.0622 | 0.0319 |
@@ -567,7 +619,9 @@ ablation base a0 is +0.0104 over `sasrec` (unpaired). That gap bundles four chan
 which was separated from the others: all event types as context instead of Listen+ only,
 random windows instead of one last window, an ID table restricted to items with ≥ 5 train
 positives, and ID dropout of 0.2. Audio and artist features do not add warm accuracy, and the
-best 50M model drops them (a7).
+best 50M model drops them (a7). At 500M a7 and a8 tie on warm users (§6.9), so content
+neither helps nor hurts warm accuracy at that scale. Its only measured benefits are the small
+`new_items` and `idless_items` scores and somewhat broader exposure (§7.4).
 **[hypothesis]** Two things may explain why logQ helps so much here. Item popularity is extremely
 concentrated (item Gini 0.907), so in-batch negatives, which are popularity-sampled, penalise
 the head heavily unless they are corrected [3]. And the Listen+ truth is itself head-heavy.
@@ -613,9 +667,11 @@ plain ID rows fit them more directly. This was not tested.
 
 ## 9 Threats to validity and limitations
 
-- **One seed per configuration.** The CIs cover user sampling, not training randomness.
+- **Seeds.** Only the 500M headline pair (a8, `sasrec`) has three seeds (§6.9). Every 50M row
+  and 500M a7 have one seed, so their CIs cover user sampling, not training randomness.
   Differences between neighbouring ablation steps that lie within the CIs (a3 vs a4, a7 vs a8)
-  should be read as ties.
+  should be read as ties. The ladder's smaller steps, such as the event tokens' +0.0035, are
+  single-seed, and the 500M seed std of a8 alone is 0.0016.
 - **No hyperparameter tuning** beyond early stopping (D24). All transformer rows share the
   official SASRec sizes (d = 64, 2 layers) and learning rate. The cosine horizon (200,000
   steps) is far longer than any run trained, so the learning rate decays only slightly. Tuning
@@ -630,16 +686,17 @@ plain ID rows fit them more directly. This was not tested.
   dropout. Neither gap is attributed to a single factor. The ladder is cumulative, not
   factorial, so order effects are not identified.
 - **Mixed code versions.** The 50M baselines ran at v0.2-r2, the SASRec rows at v0.3, a0–a4
-  at v0.3.1, and a7, a8 and every 500M run at v0.4. All 50M rows share one processed bundle,
-  and every evaluation record was re-scored at v0.4 with a drift check against the training
-  record.
+  at v0.3.1, a7, a8 and the first 500M runs at v0.4, and the 500M a7 and seed replicates at
+  v0.5, whose training code is identical to v0.4. All 50M rows share one processed bundle.
+  Every evaluation record was re-scored with a drift check against its training record: at v0.4
+  for 50M, at v0.6 for 500M. The scoring code is unchanged from v0.4 to v0.6.
 - **Paper comparisons are cross-implementation.** We matched the official code where we could
   read it, but our scoring ranks the full vocabulary for every row except `sasrec_bce` (masked
   to the Listen+ catalogue, as in the official evaluation), and the recall definition is
   ambiguous (D6).
 - **500M details.** Stored histories are capped at 1,024 events, so the neural models'
-  windows are unaffected but the `new_items` slice is a superset (§8). Only one HookSeq
-  configuration ran.
+  windows are unaffected but the `new_items` slice is a superset (§8). Only two HookSeq
+  configurations ran (a8 and a7), and there is no 500M ablation ladder.
 - **Tiny cold-user sets** (n = 1 and n = 8). Those rows are not interpretable.
 - **The `min_count` evidence is approximate** (§3).
 - **Offline only.** A temporal hold-out of logged data cannot measure what a recommender does to
@@ -663,7 +720,8 @@ HookSeq would be a candidate generator, not the final ranker:
 ## 11 Reproduce on Kaggle
 
 Every number comes from six headless Kaggle notebooks (`notebooks/kaggle/k0…k5`), pinned to the
-tag **v0.4** of this repository. The step-by-step procedure, inputs, resume logic and
+tag **v0.4** of this repository. The 500M seed replicates and a7 ran at v0.5, and the final 500M
+re-scoring at v0.6; the training and scoring code is the same across the three tags. The step-by-step procedure, inputs, resume logic and
 troubleshooting table are in [docs/kaggle_runbook.md](docs/kaggle_runbook.md).
 
 | step | notebook | accelerator | what it does |
@@ -676,14 +734,15 @@ troubleshooting table are in [docs/kaggle_runbook.md](docs/kaggle_runbook.md).
 | K5 | `k5_eval_report` | CPU at 50M, GPU at 500M | re-scoring, slices, exposure, CIs, `reports/results.md` |
 
 Settings for the reported runs: `CONFIGS` lists `configs/sasrec.yaml`,
-`configs/sasrec_bce.yaml`, `configs/ablations/a0…a4`, `a7`, `a8`. At 500M, a8 needs
+`configs/sasrec_bce.yaml`, `configs/ablations/a0…a4`, `a7`, `a8`, and
+`configs/seeds/*` for the 500M replicates. At 500M, a8 needs
 `OVERRIDES = ["train.eval_batch_size=256"]`.
 
 Locally (CPU, synthetic data only):
 
 ```bash
 uv venv .venv --python 3.12 && uv pip install --python .venv -e ".[dev,torch]"
-.venv/bin/pytest -q          # 432 tests on a synthetic Yambda-shaped fixture
+.venv/bin/pytest -q          # 438 tests on a synthetic Yambda-shaped fixture
 .venv/bin/ruff check .
 # rebuild the results tables from the committed run records (per-user .npz files, which the
 # paired section needs, are git-ignored and come from the K5 outputs)

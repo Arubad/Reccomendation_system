@@ -273,7 +273,12 @@ use `extra.gpu_hours` in the run JSON, or the version's run time.
 | SASRec baseline | 500M | ~4-5 | 5.08 (val 3.04 + test 2.04; session 5.14 h wall) |
 | Full HookSeq | 500M | ~5-6 | 3.15 for a8 (val 1.94 + test 1.22; session 3.22 h wall), plus a failed first version (CUDA OOM at the first eval, session 0.12 h wall) |
 | Scoring / eval | both | ~1-2 | 0.38 (K5 500M session wall; K5 50M ran on CPU) |
-| **Total** | | **~17-20** | **about 14.8**: 14.26 in the training records' `extra.gpu_hours` plus the two session walls above |
+| **Subtotal, original plan** | | **~17-20** | **about 14.8**: 14.26 in the training records' `extra.gpu_hours` plus the two session walls above |
+| Follow-up: a7 (v0.5) | 500M | ~3-5 | 3.28 (val 2.07 + test 1.21; `k4-500m-a7-a8s2`) |
+| Follow-up: seed replicates of `sasrec` (seeds 1, 2; v0.5) | 500M | ~10 | 9.07: s2 4.37 (2.63 + 1.75), s3 4.70 (2.81 + 1.88) |
+| Follow-up: seed replicates of a8 (seeds 1, 2; v0.5) | 500M | ~6 | 6.02: s2 2.29 (1.44 + 0.85), s3 3.73 (2.26 + 1.47) |
+| Follow-up: final re-scoring (`k5-500m-final`, v0.6) | 500M | ~0.5 | 0.46 (session wall, 1,641 s) |
+| **Total** | | | **about 33.6**: 14.8 original + 18.8 follow-ups (18.37 in `extra.gpu_hours` + 0.46 K5 wall) |
 
 Sources: `extra.gpu_hours` in `results/*-{val,test}-*.json` (rounded per run), and the Kaggle
 version logs for session wall times. Not counted, because their records were superseded and are

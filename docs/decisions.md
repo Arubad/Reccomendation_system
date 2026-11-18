@@ -280,6 +280,9 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
 - **Cost if wrong.** The 500M headline may understate the best achievable model by up to the a7–a8
   gap (0.0023 at 50M); an a7 500M run costs about 3–5 GPU-h. This choice also used 50M *test*
   numbers, which is a mild form of test reuse (README §9).
+- **Follow-up (README §6.9).** a7 was later trained at 500M: test NDCG@10 0.1009, the same as a8
+  (paired −0.0001 [−0.0009, +0.0009]). The cost above did not materialise; the headline does not
+  understate the best of the two.
 
 ### D20. A smaller evaluation batch for 500M HookSeq
 - **Decision.** `train.eval_batch_size=256` for the 500M a8 run (operational key, not in the
@@ -356,3 +359,17 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
 - **Why.** The reader should be able to see what was tried, what failed, and why each number is
   what it is.
 - **Cost if wrong.** A cheap restructure.
+
+### D27. Seed replicates at 500M on the headline pair, not on the 50M ladder
+- **Decision.** Spend the follow-up budget on two extra training seeds (`train.seed` 1 and 2,
+  `configs/seeds/`) of both `sasrec` and a8 at 500M, plus one a7 run at 500M. Pair the seeds
+  (same seed on both sides) and report mean ± sample std and per-seed CIs.
+- **Alternatives.** Seeds of the 50M ladder steps (a0–a4); more 500M HookSeq variants.
+- **Why.** The headline claim (HookSeq beats SASRec at 500M) matters most to the project, and a
+  single-seed margin could have been training noise. a7 at 500M answers whether content costs
+  warm accuracy at scale, which D19 left open.
+- **Evidence.** a8 0.1011 ± 0.0016, `sasrec` 0.0804 ± 0.0005 NDCG@10; seed-paired difference
+  +0.0207 ± 0.0017, lowest per-seed lower bound +0.0176 (`reports/results.md`, "Seed
+  replicates"). 18.4 GPU-h of training plus 0.46 h of K5 re-scoring.
+- **Cost if wrong.** The ladder's step sizes (for example +0.0035 for the event tokens) remain
+  single-seed and are flagged as such in README §9.
