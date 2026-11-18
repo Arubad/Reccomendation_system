@@ -26,8 +26,9 @@ features at all. At 500M that model (a7) ties a8 on warm accuracy (paired ΔNDCG
 [−0.0009, +0.0009]). Content features give non-zero but very
 small scores on never-seen tracks: NDCG@10 0.0003 and Recall@100 0.0089 at 500M, against
 exactly 0 for every ID-only model. HookSeq also concentrates artist exposure more than SASRec
-does. Everything ran on Kaggle's free tier: about 14.8 GPU-hours for the original runs and
-18.8 for the 500M seed replicates and the a7 control (§6.10).
+does. Two further steps, a like-prediction head and a time-gap embedding, are ties (§6.10).
+Everything ran on Kaggle's free tier: about 14.8 GPU-hours for the original runs and 20.5
+for the follow-ups (§6.11).
 
 **Contents.** [1 Introduction](#1-introduction-and-motivation) ·
 [2 Related work](#2-related-work) · [3 Data and EDA](#3-data-and-eda) ·
@@ -111,7 +112,7 @@ resumable, free-tier Kaggle pipeline with every reported number traceable to a r
 |---|---|---|
 | 1 | Reproduced SASRec within ~15% of the paper's 50M NDCG@10 | Met: 0.0771 vs 0.0748, +3.1% (§6.5) |
 | 2 | HookSeq beats SASRec on NDCG@10 and Recall@100 on at least one size, ideally 500M | Met at both sizes, against the strong SASRec (§7.2); at 500M on all three training seeds (§6.9) |
-| 3 | An ablation table reported honestly, including additions that do not help | Met: a0–a4 plus a7/a8; audio hurts warm accuracy (§6.6–6.7). The stretch steps a5/a6 were not run |
+| 3 | An ablation table reported honestly, including additions that do not help | Met: a0–a6 plus a7/a8; audio hurts warm accuracy (§6.6–6.7), and the stretch steps a5/a6 add nothing (§6.10) |
 | 4 | EDA findings visibly drive preprocessing | Met (§3) |
 | 5 | Tests pass; README with a results table and "Why this matters for Hook"; the Gradio demo runs | Met: 438 tests pass, and the demo is live on Hugging Face Spaces (§12) |
 
@@ -402,6 +403,8 @@ to help. (c) Results, test NDCG@10 and Recall@100, with Δ against a0:
 | a2_audio_event_organic | + event type, organic, played ratio | 0.1002 | −0.0072 | 0.1657 | −0.0166 | [0.0950, 0.1054] |
 | a3_full_logq | + logQ correction | 0.1151 | +0.0077 | 0.2016 | +0.0193 | [0.1095, 0.1210] |
 | a4_full_dislike | + dislike hard negatives (= `hookseq.yaml`) | 0.1163 | +0.0089 | 0.2001 | +0.0178 | [0.1106, 0.1225] |
+| a5_like_head | + like-prediction head (stretch, run later, §6.10) | 0.1171 | +0.0097 | 0.2034 | +0.0211 | [0.1115, 0.1230] |
+| a6_time_gap | + time-gap embedding (stretch, run later, §6.10) | 0.1169 | +0.0095 | 0.2031 | +0.0208 | [0.1112, 0.1228] |
 
 (d) **[evidence]** Content features hurt warm accuracy (−10% relative), event-type, organic and
 ratio inputs recover part of the loss (+0.0035), and logQ is the largest single step (+0.0149
@@ -495,7 +498,32 @@ together with the full ID table neither helps nor hurts warm users; the a7 − a
 a tie at one seed. a7 and a8 differ in both content and ID table, as at 50M, so the two factors
 remain unseparated. a8 stays the HookSeq row because it can score tracks that a7 cannot.
 
-### 6.10 Compute used
+### 6.10 The stretch steps a5 and a6 (K4 + K5, 50M)
+
+(a) The design (D16) had two more ladder steps on top of a4. a5 adds a multi-task "will this
+be liked" head (bilinear score, BCE weight 0.2). a6 adds an embedding of the bucketed time
+since the previous event, with a session edge at 30 minutes (EDA §3). They had been
+implemented and tested but not trained. We ran them in one 50M session at tag v0.6. Its
+training code matches v0.3.1, where a0–a4 ran, apart from the optional `model.id_min_count`,
+which a4–a6 do not set. (b) We expected small gains: likes are a stronger signal than full
+listens, and gaps mark session boundaries. (c) Both runs completed. The re-scoring drift
+against the training records was at most 3.2×10⁻⁵. (d) **[evidence]** Test NDCG@10 is
+0.1171 for a5 and 0.1169 for a6, against 0.1163 for a4. The paired steps are ties:
+
+| step | ΔNDCG@10 [95% CI] | ΔRecall@100 [95% CI] |
+|---|---|---|
+| a5 − a4 (+ like head) | +0.0008 [−0.0016, +0.0033] | +0.0033 [+0.0002, +0.0063] |
+| a6 − a5 (+ time gap) | −0.0002 [−0.0028, +0.0024] | −0.0003 [−0.0035, +0.0029] |
+
+a6 had the best validation score of the HookSeq-path models with content (0.1178), but this did
+not carry over to test. On `new_items`, a5 matches a4 (Recall@100 0.0313 vs 0.0312) and a6
+falls to 0.0240. The exposure numbers barely move (§7.4). a7, with no content at all, remains
+the best 50M model (0.1207). (e) Neither feature earns its place at 50M. The like head's
+Recall@100 gain only just clears zero, and like many small effects here it is single-seed (§9).
+`hookseq.yaml` stays a4. These paired rows come from `hookrec.eval.report.paired_diff_ci` on
+the K5 per-user files; reports/results.md pairs runs only against `sasrec` and `a0_sasrec`.
+
+### 6.11 Compute used
 
 | stage | GPU-h (from `extra.gpu_hours`) |
 |---|---|
@@ -511,7 +539,8 @@ remain unseparated. a8 stays the HookSeq row because it can score tracks that a7
 | 500M a8 seeds 1, 2 | 2.29 + 3.73 |
 | 500M final scoring (K5, v0.6) | 0.46 (session wall time) |
 | **subtotal, follow-ups (§6.9)** | **≈ 18.8** |
-| **total** | **≈ 33.6** |
+| 50M a5 + a6 (§6.10) | 0.98 + 0.69 (val 0.55 + test 0.43; val 0.40 + test 0.29) |
+| **total** | **≈ 35.3** |
 
 The superseded first SASRec run and two profiling sessions are not counted, because their
 records are not kept. Per-run details are in [docs/kaggle_runbook.md §6](docs/kaggle_runbook.md#6-gpu-budget-spec-section-9a).
@@ -599,6 +628,8 @@ flag.
 | 50M a2 (+event/organic/ratio) | 0.9724 | 0.0685 | 0.1436 | 0.0346 |
 | 50M a3 (+logQ) | 0.9820 | 0.0521 | 0.0490 | 0.0233 |
 | 50M a4 (+dislikes, `hookseq.yaml`) | 0.9811 | 0.0544 | 0.0572 | 0.0244 |
+| 50M a5 (+like head) | 0.9810 | 0.0545 | 0.0650 | 0.0251 |
+| 50M a6 (+time gap) | 0.9815 | 0.0532 | 0.0558 | 0.0239 |
 | 50M a7 | 0.9818 | 0.0534 | 0.0289 | 0.0224 |
 | 50M a8 | 0.9808 | 0.0555 | 0.0608 | 0.0248 |
 | 50M sasrec | 0.9701 | 0.0742 | 0.1029 | 0.0341 |
@@ -687,9 +718,10 @@ plain ID rows fit them more directly. This was not tested.
   factorial, so order effects are not identified.
 - **Mixed code versions.** The 50M baselines ran at v0.2-r2, the SASRec rows at v0.3, a0–a4
   at v0.3.1, a7, a8 and the first 500M runs at v0.4, and the 500M a7 and seed replicates at
-  v0.5, whose training code is identical to v0.4. All 50M rows share one processed bundle.
+  v0.5, whose training code is identical to v0.4, and the 50M a5/a6 at v0.6 (same training
+  code). All 50M rows share one processed bundle.
   Every evaluation record was re-scored with a drift check against its training record: at v0.4
-  for 50M, at v0.6 for 500M. The scoring code is unchanged from v0.4 to v0.6.
+  for 50M (a5/a6 at v0.6), at v0.6 for 500M. The scoring code is unchanged from v0.4 to v0.6.
 - **Paper comparisons are cross-implementation.** We matched the official code where we could
   read it, but our scoring ranks the full vocabulary for every row except `sasrec_bce` (masked
   to the Listen+ catalogue, as in the official evaluation), and the recall definition is
@@ -734,7 +766,7 @@ troubleshooting table are in [docs/kaggle_runbook.md](docs/kaggle_runbook.md).
 | K5 | `k5_eval_report` | CPU at 50M, GPU at 500M | re-scoring, slices, exposure, CIs, `reports/results.md` |
 
 Settings for the reported runs: `CONFIGS` lists `configs/sasrec.yaml`,
-`configs/sasrec_bce.yaml`, `configs/ablations/a0…a4`, `a7`, `a8`, and
+`configs/sasrec_bce.yaml`, `configs/ablations/a0…a8`, and
 `configs/seeds/*` for the 500M replicates. At 500M, a8 needs
 `OVERRIDES = ["train.eval_batch_size=256"]`.
 
@@ -798,9 +830,7 @@ In priority order, with the evidence each item would address:
    architecture (`sasrec` vs `sasrec_bce`).
 4. **Seeds and tuning:** seeds for the 50M ladder and 500M a7 (the 500M headline pair already
    has three, §6.9), and a small learning-rate and width sweep for both `sasrec` and HookSeq.
-5. **The stretch features** already implemented but not run: a multi-task like head (a5) and a
-   time-gap embedding (a6).
-6. Out of scope by design (spec §13): a second-stage GBDT ranker, real-time serving, bandit
+5. Out of scope by design (spec §13): a second-stage GBDT ranker, real-time serving, bandit
    exploration, raw-audio processing.
 
 ## References

@@ -232,7 +232,9 @@ the file is named; that code ships inside the Hugging Face dataset repo `yandex/
 ### D16. A cumulative ablation ladder
 - **Decision.** a0 (all off) → a1 (+audio, +artist) → a2 (+event type, organic flag, played-ratio
   bucket inputs) → a3 (+logQ) → a4 (+dislike hard negatives = `configs/hookseq.yaml`). Two
-  stretch steps (a5 like head, a6 time-gap embedding) were configured but not run.
+  stretch steps (a5 like head, a6 time-gap embedding) were run later, on 2026-11-18 at v0.6
+  (README §6.10): both are ties (a5 − a4 +0.0008 [−0.0016, +0.0033], a6 − a5 −0.0002
+  [−0.0028, +0.0024] NDCG@10), so `hookseq.yaml` stays a4.
 - **Alternatives.** A full factorial design (2⁵ runs) or leave-one-out from the full model.
 - **Why.** The GPU budget allowed about five 50M configurations; a ladder answers "what does each
   addition contribute on top of the previous ones".

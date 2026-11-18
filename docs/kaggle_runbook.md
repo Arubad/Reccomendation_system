@@ -278,7 +278,8 @@ use `extra.gpu_hours` in the run JSON, or the version's run time.
 | Follow-up: seed replicates of `sasrec` (seeds 1, 2; v0.5) | 500M | ~10 | 9.07: s2 4.37 (2.63 + 1.75), s3 4.70 (2.81 + 1.88) |
 | Follow-up: seed replicates of a8 (seeds 1, 2; v0.5) | 500M | ~6 | 6.02: s2 2.29 (1.44 + 0.85), s3 3.73 (2.26 + 1.47) |
 | Follow-up: final re-scoring (`k5-500m-final`, v0.6) | 500M | ~0.5 | 0.46 (session wall, 1,641 s) |
-| **Total** | | | **about 33.6**: 14.8 original + 18.8 follow-ups (18.37 in `extra.gpu_hours` + 0.46 K5 wall) |
+| Stretch: a5 + a6 (v0.6, `k4-50m-a5a6`; K5 `k5-50m-a5a6` on CPU) | 50M | ~2 | 1.67: a5 0.98 (0.55 + 0.43), a6 0.69 (0.40 + 0.29) |
+| **Total** | | | **about 35.3**: 14.8 original + 18.8 500M follow-ups (18.37 in `extra.gpu_hours` + 0.46 K5 wall) + 1.67 stretch |
 
 Sources: `extra.gpu_hours` in `results/*-{val,test}-*.json` (rounded per run), and the Kaggle
 version logs for session wall times. Not counted, because their records were superseded and are
