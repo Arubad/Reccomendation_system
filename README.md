@@ -793,10 +793,11 @@ In priority order, with the evidence each item would address:
    models at 500M on `new_items` (§8).
 2. **Exposure-aware training or re-ranking:** partial logQ (`loss.mix_uniform`), a tail-exposure
    constraint, or an artist-diversity re-ranker, measured on the exposure table (§7.4).
-3. **Disentangle the confounds:** a7 at 500M; single-factor runs for input filter vs window
-   sampling (a0 vs `sasrec`), and for loss vs architecture (`sasrec` vs `sasrec_bce`).
-4. **Seeds and tuning:** 3 seeds for the headline rows, and a small learning-rate and width sweep
-   for both `sasrec` and HookSeq.
+3. **Disentangle the confounds:** content vs ID table (a7 and a8 differ in both, §6.9);
+   single-factor runs for input filter vs window sampling (a0 vs `sasrec`), and for loss vs
+   architecture (`sasrec` vs `sasrec_bce`).
+4. **Seeds and tuning:** seeds for the 50M ladder and 500M a7 (the 500M headline pair already
+   has three, §6.9), and a small learning-rate and width sweep for both `sasrec` and HookSeq.
 5. **The stretch features** already implemented but not run: a multi-task like head (a5) and a
    time-gap embedding (a6).
 6. Out of scope by design (spec §13): a second-stage GBDT ranker, real-time serving, bandit
